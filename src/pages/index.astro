@@ -1,0 +1,7852 @@
+---
+const appName = "LANDCAM";
+const appVersion = "UI PROTOTYPE 0.1";
+
+const bands = [
+  { key: "B", name: "BLUE", value: "0.214" },
+  { key: "G", name: "GREEN", value: "0.462" },
+  { key: "R", name: "RED", value: "0.183" },
+  { key: "NIR", name: "NIR", value: "0.731" },
+];
+
+const captures = [
+  {
+    no: 1842,
+    time: "08:42:31",
+    lat: "-7.79561",
+    lon: "110.36949",
+    alt: "98.4 m",
+    status: "SAVED",
+  },
+  {
+    no: 1841,
+    time: "08:42:30",
+    lat: "-7.79558",
+    lon: "110.36944",
+    alt: "98.5 m",
+    status: "SAVED",
+  },
+  {
+    no: 1840,
+    time: "08:42:29",
+    lat: "-7.79552",
+    lon: "110.36938",
+    alt: "98.7 m",
+    status: "SAVED",
+  },
+  {
+    no: 1839,
+    time: "08:42:28",
+    lat: "-7.79547",
+    lon: "110.36932",
+    alt: "99.0 m",
+    status: "SAVED",
+  },
+  {
+    no: 1838,
+    time: "08:42:27",
+    lat: "-7.79541",
+    lon: "110.36926",
+    alt: "99.2 m",
+    status: "SAVED",
+  },
+  {
+    no: 1837,
+    time: "08:42:26",
+    lat: "-7.79535",
+    lon: "110.36921",
+    alt: "99.5 m",
+    status: "SAVED",
+  },
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <meta
+      name="description"
+      content="LandCam Multispectral Camera Controller UI Prototype"
+    />
+    <meta
+      name="theme-color"
+      content="#090b0a"
+      id="themeColor"
+    />
+    <title>LANDCAM — Controller</title>
+
+    <style>
+      html {
+        background: #090b0a;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="app" data-app>
+      <!-- =========================================================
+           HEADER
+      ========================================================== -->
+      <header class="topbar">
+        <div class="topbar__brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+
+          <div>
+            <div class="brand-name">LANDCAM</div>
+            <div class="brand-sub">MULTISPECTRAL CONTROLLER</div>
+          </div>
+        </div>
+
+        <div class="topbar__center">
+          <div class="system-chip">
+            <span
+              class="system-dot"
+              id="systemDot"
+            ></span>
+
+            <span id="systemLabel">
+              SYSTEM READY
+            </span>
+          </div>
+        </div>
+
+        <div class="topbar__right">
+          <button
+            class="device-trigger"
+            id="topConnect"
+            type="button"
+            aria-label="Open device list"
+            aria-haspopup="dialog"
+            aria-expanded="false"
+          >
+            <span class="device-trigger__status"></span>
+
+            <span class="device-trigger__copy">
+              <small>DEVICE</small>
+              <strong id="topDeviceName">LC-4 SPECTRA</strong>
+            </span>
+
+            <span class="device-trigger__chevron">⌄</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- =========================================================
+           MAIN
+      ========================================================== -->
+      <main class="main">
+
+        <!-- =======================================================
+             HOME
+        ======================================================== -->
+        <section
+          class="screen is-active"
+          id="screen-home"
+          data-screen="home"
+        >
+          <div class="screen-head">
+            <div>
+              <div class="eyebrow">DEVICE OVERVIEW</div>
+              <h1>Controller</h1>
+              <p>
+                Field acquisition console for LC-4 Spectra.
+              </p>
+            </div>
+
+            <div class="screen-head__meta">
+              <span>22 SEP 2026</span>
+              <strong>FIELD 01</strong>
+            </div>
+          </div>
+
+          <!-- DEVICE -->
+          <article class="device-card">
+            <div class="device-card__top">
+              <div class="device-card__identity">
+                <div class="micro-label">
+                  SELECTED DEVICE
+                </div>
+
+                <div
+                  class="device-name"
+                  id="homeDeviceName"
+                >
+                  LC-4 SPECTRA
+                </div>
+
+                <div
+                  class="device-id"
+                  id="homeDeviceId"
+                >
+                  LANDCAM / DEMO-LC4-001
+                </div>
+              </div>
+
+              <button
+                class="status-pill status-pill--online"
+                id="connectButton"
+                type="button"
+                aria-haspopup="dialog"
+                aria-expanded="false"
+              >
+                <span class="status-pill__dot"></span>
+
+                <span id="connectLabel">
+                  CONNECTED
+                </span>
+              </button>
+            </div>
+
+            <div class="device-card__bottom">
+              <div>
+                <span class="micro-label">CAPTURE</span>
+                <strong id="homeCaptureCount">
+                  01,842
+                </strong>
+              </div>
+
+              <div>
+                <span class="micro-label">STORAGE</span>
+                <strong>42.8 / 64 GB</strong>
+              </div>
+
+              <div>
+                <span class="micro-label">FIRMWARE</span>
+                <strong id="homeFirmware">
+                  1.0.0
+                </strong>
+              </div>
+            </div>
+          </article>
+
+          <!-- TELEMETRY -->
+          <div class="section-label">
+            <span>01 / TELEMETRY</span>
+            <span class="section-line"></span>
+            <span>LIVE</span>
+          </div>
+
+          <div class="telemetry-grid">
+            <article class="telemetry-card">
+              <span class="telemetry-card__label">
+                GNSS
+              </span>
+
+              <strong class="telemetry-card__value value-ok">
+                FIX
+              </strong>
+
+              <span class="telemetry-card__meta">
+                12 SAT · ±0.03 M
+              </span>
+            </article>
+
+            <article class="telemetry-card">
+              <span class="telemetry-card__label">
+                PPS
+              </span>
+
+              <strong class="telemetry-card__value value-ok">
+                LOCKED
+              </strong>
+
+              <span class="telemetry-card__meta">
+                TIME SYNC READY
+              </span>
+            </article>
+
+            <article class="telemetry-card">
+              <span class="telemetry-card__label">
+                BATTERY
+              </span>
+
+              <strong
+                class="telemetry-card__value"
+                id="homeBattery"
+              >
+                87%
+              </strong>
+
+              <span class="telemetry-card__meta">
+                EXTERNAL POWER
+              </span>
+            </article>
+
+            <article class="telemetry-card">
+              <span class="telemetry-card__label">
+                TEMP
+              </span>
+
+              <strong class="telemetry-card__value">
+                31.4°C
+              </strong>
+
+              <span class="telemetry-card__meta">
+                NORMAL RANGE
+              </span>
+            </article>
+          </div>
+
+          <!-- CAMERA SUMMARY -->
+          <div class="section-label">
+            <span>02 / CAMERA</span>
+            <span class="section-line"></span>
+            <span>RGB + NIR</span>
+          </div>
+
+          <article class="camera-summary">
+            <div class="camera-preview camera-preview--small">
+              <div class="preview-grid"></div>
+              <div class="preview-horizon"></div>
+
+              <div class="preview-field">
+                <div class="field-block field-block--a"></div>
+                <div class="field-block field-block--b"></div>
+                <div class="field-track"></div>
+              </div>
+
+              <div class="preview-crosshair">
+                <span></span>
+                <i></i>
+              </div>
+
+              <div class="preview-label">
+                FRAME PREVIEW
+              </div>
+
+              <div class="preview-tag">
+                RGB-NIR
+              </div>
+            </div>
+
+            <div class="camera-summary__info">
+              <div class="camera-summary__head">
+                <div>
+                  <span class="micro-label">
+                    LAST CAPTURE
+                  </span>
+
+                  <strong>08:42:31</strong>
+                </div>
+
+                <span class="mini-badge">
+                  SAVED
+                </span>
+              </div>
+
+              <div class="camera-summary__stats">
+                <div>
+                  <span>BAND</span>
+                  <strong>04</strong>
+                </div>
+
+                <div>
+                  <span>ALT</span>
+                  <strong>98.4 M</strong>
+                </div>
+
+                <div>
+                  <span>GSD</span>
+                  <strong>—</strong>
+                </div>
+              </div>
+
+              <button
+                class="wide-button wide-button--primary"
+                data-go="camera"
+                type="button"
+              >
+                <span>OPEN CAMERA</span>
+                <span class="button-arrow">↗</span>
+              </button>
+            </div>
+          </article>
+
+          <!-- QUICK ACTION -->
+          <div class="section-label">
+            <span>03 / QUICK ACTION</span>
+            <span class="section-line"></span>
+            <span>FIELD</span>
+          </div>
+
+          <div class="quick-grid">
+            <button
+              class="quick-card quick-card--primary"
+              data-action="capture"
+              type="button"
+            >
+              <span class="quick-card__icon">+</span>
+
+              <span class="quick-card__main">
+                <strong>CAPTURE</strong>
+                <small>TAKE FRAME</small>
+              </span>
+
+              <span class="quick-card__arrow">↗</span>
+            </button>
+
+            <button
+              class="quick-card"
+              data-go="mission"
+              type="button"
+            >
+              <span class="quick-card__icon">◎</span>
+
+              <span class="quick-card__main">
+                <strong>MISSION</strong>
+                <small>FLIGHT SESSION</small>
+              </span>
+
+              <span class="quick-card__arrow">↗</span>
+            </button>
+
+            <button
+              class="quick-card"
+              data-go="data"
+              type="button"
+            >
+              <span class="quick-card__icon">▦</span>
+
+              <span class="quick-card__main">
+                <strong>DAILY DATA</strong>
+                <small>22 SEP 2026</small>
+              </span>
+
+              <span class="quick-card__arrow">↗</span>
+            </button>
+
+            <button
+              class="quick-card"
+              data-go="more"
+              type="button"
+            >
+              <span class="quick-card__icon">◇</span>
+
+              <span class="quick-card__main">
+                <strong>CALIBRATE</strong>
+                <small>3 PANEL REFERENCE</small>
+              </span>
+
+              <span class="quick-card__arrow">↗</span>
+            </button>
+          </div>
+
+          <!-- TODAY -->
+          <div class="section-label">
+            <span>04 / TODAY</span>
+            <span class="section-line"></span>
+            <span>22 SEP</span>
+          </div>
+
+          <article class="today-card">
+            <div class="today-card__top">
+              <div>
+                <span class="micro-label">
+                  ACTIVE SESSION
+                </span>
+
+                <strong>
+                  FIELD 01 / MORNING PASS
+                </strong>
+              </div>
+
+              <span class="session-status">
+                <span></span>
+                READY
+              </span>
+            </div>
+
+            <div class="today-stats">
+              <div>
+                <span>CAPTURES</span>
+                <strong id="todayCaptureCount">
+                  1,842
+                </strong>
+              </div>
+
+              <div>
+                <span>TRACK</span>
+                <strong>12.6 KM</strong>
+              </div>
+
+              <div>
+                <span>AREA</span>
+                <strong>84.7 HA</strong>
+              </div>
+            </div>
+
+            <div class="progress-track">
+              <span style="width:68%"></span>
+            </div>
+
+            <div class="today-card__footer">
+              <span>MISSION COMPLETION</span>
+              <strong>68%</strong>
+            </div>
+          </article>
+
+          <!-- SYSTEM CHECK -->
+          <div class="section-label">
+            <span>05 / SYSTEM CHECK</span>
+            <span class="section-line"></span>
+            <span>READY</span>
+          </div>
+
+          <div class="check-list">
+            <div class="check-row">
+              <span class="check-icon">✓</span>
+
+              <div>
+                <strong>CAMERA LINK</strong>
+                <small>DEVICE CHANNEL AVAILABLE</small>
+              </div>
+
+              <b>OK</b>
+            </div>
+
+            <div class="check-row">
+              <span class="check-icon">✓</span>
+
+              <div>
+                <strong>GNSS PPK</strong>
+                <small>FIXED POSITION</small>
+              </div>
+
+              <b>OK</b>
+            </div>
+
+            <div class="check-row">
+              <span class="check-icon">✓</span>
+
+              <div>
+                <strong>STORAGE</strong>
+                <small>21.2 GB REMAINING</small>
+              </div>
+
+              <b>OK</b>
+            </div>
+
+            <div class="check-row">
+              <span class="check-icon">✓</span>
+
+              <div>
+                <strong>SYNC QUEUE</strong>
+                <small>18 RECORDS WAITING</small>
+              </div>
+
+              <b>READY</b>
+            </div>
+          </div>
+        </section>
+
+        <!-- =======================================================
+             CAMERA
+        ======================================================== -->
+        <section
+          class="screen"
+          id="screen-camera"
+          data-screen="camera"
+        >
+          <div class="screen-head">
+            <div>
+              <div class="eyebrow">ACQUISITION</div>
+              <h1>Camera</h1>
+              <p>
+                Capture and monitor the current LandCam frame.
+              </p>
+            </div>
+
+            <div class="screen-head__meta">
+              <span>LC-4</span>
+              <strong>04 BANDS</strong>
+            </div>
+          </div>
+
+          <article class="capture-panel">
+            <div class="capture-panel__bar">
+              <div class="camera-status">
+                <span></span>
+                DEVICE READY
+              </div>
+
+              <div class="frame-counter">
+                FRAME
+                <strong id="cameraFrameCounter">
+                  001842
+                </strong>
+              </div>
+            </div>
+
+            <div
+              class="camera-preview camera-preview--large"
+              id="cameraPreview"
+            >
+              <div class="preview-grid"></div>
+              <div class="preview-scan"></div>
+              <div class="preview-horizon"></div>
+
+              <div class="preview-field preview-field--large">
+                <div class="field-block field-block--a"></div>
+                <div class="field-block field-block--b"></div>
+                <div class="field-block field-block--c"></div>
+                <div class="field-track"></div>
+                <div class="field-track field-track--two"></div>
+              </div>
+
+              <div
+                class="preview-crosshair preview-crosshair--large"
+              >
+                <span></span>
+                <i></i>
+              </div>
+
+              <div class="preview-readout preview-readout--top">
+                <span>MODE</span>
+                <strong id="previewMode">
+                  RGB
+                </strong>
+              </div>
+
+              <div class="preview-readout preview-readout--bottom">
+                <span>FRAME CHANNEL</span>
+                <strong>RGB-NIR</strong>
+              </div>
+
+              <div
+                class="capture-flash"
+                id="captureFlash"
+              ></div>
+            </div>
+
+            <div class="band-strip">
+              <button
+                class="band-item is-active"
+                data-band="B"
+                type="button"
+              >
+                <span class="band-item__index">01</span>
+                <strong>BLUE</strong>
+                <small>B</small>
+              </button>
+
+              <button
+                class="band-item"
+                data-band="G"
+                type="button"
+              >
+                <span class="band-item__index">02</span>
+                <strong>GREEN</strong>
+                <small>G</small>
+              </button>
+
+              <button
+                class="band-item"
+                data-band="R"
+                type="button"
+              >
+                <span class="band-item__index">03</span>
+                <strong>RED</strong>
+                <small>R</small>
+              </button>
+
+              <button
+                class="band-item"
+                data-band="NIR"
+                type="button"
+              >
+                <span class="band-item__index">04</span>
+                <strong>NIR</strong>
+                <small>NIR</small>
+              </button>
+            </div>
+
+            <div class="capture-actions">
+              <button
+                class="capture-secondary"
+                id="frameModeButton"
+                type="button"
+              >
+                <span>DISPLAY</span>
+                <strong id="frameModeLabel">
+                  RGB
+                </strong>
+              </button>
+
+              <button
+                class="shutter-button"
+                data-action="capture"
+                type="button"
+              >
+                <span class="shutter-ring">
+                  <i></i>
+                </span>
+                <strong>CAPTURE</strong>
+              </button>
+
+              <button
+                class="capture-secondary"
+                id="triggerModeButton"
+                type="button"
+              >
+                <span>TRIGGER</span>
+                <strong id="triggerModeLabel">
+                  SINGLE
+                </strong>
+              </button>
+            </div>
+          </article>
+
+          <div class="section-label">
+            <span>01 / CAPTURE METADATA</span>
+            <span class="section-line"></span>
+            <span>AUTO</span>
+          </div>
+
+          <div class="metadata-grid">
+            <div class="meta-tile">
+              <span>TIME</span>
+              <strong id="captureTime">
+                08:42:31
+              </strong>
+            </div>
+
+            <div class="meta-tile">
+              <span>LAT</span>
+              <strong>-7.79561</strong>
+            </div>
+
+            <div class="meta-tile">
+              <span>LON</span>
+              <strong>110.36949</strong>
+            </div>
+
+            <div class="meta-tile">
+              <span>ALT</span>
+              <strong>98.4 M</strong>
+            </div>
+
+            <div class="meta-tile">
+              <span>GNSS</span>
+              <strong class="value-ok">FIX</strong>
+            </div>
+
+            <div class="meta-tile">
+              <span>PPS</span>
+              <strong class="value-ok">LOCKED</strong>
+            </div>
+          </div>
+
+          <div class="section-label">
+            <span>02 / BAND OVERVIEW</span>
+            <span class="section-line"></span>
+            <span>4 / 4</span>
+          </div>
+
+          <div class="band-overview">
+            {bands.map((band) => (
+              <div class="band-overview__row">
+                <div class="band-name">
+                  <span
+                    class={`band-dot band-dot--${band.key.toLowerCase()}`}
+                  ></span>
+
+                  {band.name}
+                </div>
+
+                <div class="band-value">
+                  {band.value}
+                </div>
+
+                <div class="band-bar">
+                  <span
+                    style={`width:${band.key === "B" ? "24%" : band.key === "G" ? "48%" : band.key === "R" ? "20%" : "76%"}`}
+                  ></span>
+                </div>
+
+                <div class="band-unit">
+                  DN
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div class="notice-card">
+            <span class="notice-mark">!</span>
+
+            <div>
+              <strong>PREVIEW CHANNEL</strong>
+
+              <p>
+                UI-only display. The actual LC-4 transport,
+                live frame protocol, trigger protocol, and image
+                transfer layer will be connected later.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <!-- =======================================================
+             MISSION
+        ======================================================== -->
+        <section
+          class="screen"
+          id="screen-mission"
+          data-screen="mission"
+        >
+          <div class="screen-head">
+            <div>
+              <div class="eyebrow">FIELD OPERATION</div>
+              <h1>Mission</h1>
+              <p>
+                Prepare and run one acquisition session.
+              </p>
+            </div>
+
+            <div class="screen-head__meta">
+              <span>SESSION 01</span>
+              <strong id="missionStatusTop">
+                READY
+              </strong>
+            </div>
+          </div>
+
+          <article class="mission-hero">
+            <div class="mission-hero__head">
+              <div>
+                <span class="micro-label">
+                  CURRENT MISSION
+                </span>
+
+                <h2>
+                  FIELD 01 / MORNING PASS
+                </h2>
+
+                <p>
+                  Kebun Trial Site — Block A
+                </p>
+              </div>
+
+              <span
+                class="mission-tag"
+                id="missionBadge"
+              >
+                READY
+              </span>
+            </div>
+
+            <div class="mission-hero__stats">
+              <div>
+                <span>START</span>
+                <strong>08:10</strong>
+              </div>
+
+              <div>
+                <span>CAPTURE</span>
+                <strong id="missionCaptureCount">
+                  1,842
+                </strong>
+              </div>
+
+              <div>
+                <span>ALTITUDE</span>
+                <strong>100 M</strong>
+              </div>
+
+              <div>
+                <span>RATE</span>
+                <strong>1.0 S</strong>
+              </div>
+            </div>
+          </article>
+
+          <div class="section-label">
+            <span>01 / FLIGHT TRACK</span>
+            <span class="section-line"></span>
+            <span>GPS</span>
+          </div>
+
+          <article class="map-card">
+            <div class="map-grid"></div>
+
+            <div class="map-route">
+              <span class="map-point map-point--start"></span>
+              <span class="map-point map-point--end"></span>
+
+              <svg
+                viewBox="0 0 600 300"
+                preserveAspectRatio="none"
+                aria-hidden="true"
+              >
+                <path
+                  d="M80,250 C120,205 115,100 220,125 C325,150 278,50 388,72 C492,94 440,190 530,120"
+                />
+              </svg>
+            </div>
+
+            <div class="map-overlay map-overlay--top">
+              <span>TRACK</span>
+              <strong>12.6 KM</strong>
+            </div>
+
+            <div class="map-overlay map-overlay--bottom">
+              <span>POSITION</span>
+              <strong>
+                -7.79561 / 110.36949
+              </strong>
+            </div>
+
+            <div class="map-center">
+              <span></span>
+            </div>
+          </article>
+
+          <div class="section-label">
+            <span>02 / PRE-FLIGHT</span>
+            <span class="section-line"></span>
+            <span id="preflightStatus">
+              05 / 05
+            </span>
+          </div>
+
+          <div class="preflight-list">
+            <label class="preflight-row">
+              <input type="checkbox" checked />
+              <span class="custom-check"></span>
+
+              <span class="preflight-copy">
+                <strong>CAMERA CONNECTED</strong>
+                <small>
+                  LC-4 communication channel
+                </small>
+              </span>
+
+              <b>READY</b>
+            </label>
+
+            <label class="preflight-row">
+              <input type="checkbox" checked />
+              <span class="custom-check"></span>
+
+              <span class="preflight-copy">
+                <strong>GNSS FIXED</strong>
+                <small>
+                  RTK / PPK position source
+                </small>
+              </span>
+
+              <b>READY</b>
+            </label>
+
+            <label class="preflight-row">
+              <input type="checkbox" checked />
+              <span class="custom-check"></span>
+
+              <span class="preflight-copy">
+                <strong>PPS LOCKED</strong>
+                <small>Time synchronization</small>
+              </span>
+
+              <b>READY</b>
+            </label>
+
+            <label class="preflight-row">
+              <input type="checkbox" checked />
+              <span class="custom-check"></span>
+
+              <span class="preflight-copy">
+                <strong>STORAGE AVAILABLE</strong>
+                <small>21.2 GB free</small>
+              </span>
+
+              <b>READY</b>
+            </label>
+
+            <label class="preflight-row">
+              <input type="checkbox" checked />
+              <span class="custom-check"></span>
+
+              <span class="preflight-copy">
+                <strong>CALIBRATION LOADED</strong>
+                <small>
+                  Reference profile A-03
+                </small>
+              </span>
+
+              <b>READY</b>
+            </label>
+          </div>
+
+          <div class="section-label">
+            <span>03 / MISSION PLAN</span>
+            <span class="section-line"></span>
+            <span>ACTIVE CONFIG</span>
+          </div>
+
+          <div class="mission-config-grid">
+            <div class="config-card">
+              <span>TRIGGER</span>
+              <strong>AUTO</strong>
+              <small>1.0 SEC INTERVAL</small>
+            </div>
+
+            <div class="config-card">
+              <span>CAPTURE</span>
+              <strong>RGB-NIR</strong>
+              <small>4 SPECTRAL BANDS</small>
+            </div>
+
+            <div class="config-card">
+              <span>POSITION</span>
+              <strong>PPK</strong>
+              <small>GNSS TIMESTAMPED</small>
+            </div>
+
+            <div class="config-card">
+              <span>OUTPUT</span>
+              <strong>LOCAL</strong>
+              <small>SYNC QUEUE ENABLED</small>
+            </div>
+          </div>
+
+          <div class="mission-actions">
+            <button
+              class="wide-button wide-button--primary"
+              id="missionStart"
+              type="button"
+            >
+              <span id="missionStartText">
+                START MISSION
+              </span>
+              <span class="button-arrow">→</span>
+            </button>
+
+            <button
+              class="wide-button"
+              id="missionStop"
+              type="button"
+            >
+              <span>STOP SESSION</span>
+              <span class="button-arrow">■</span>
+            </button>
+          </div>
+        </section>
+
+        <!-- =======================================================
+             DATA
+        ======================================================== -->
+        <section
+          class="screen"
+          id="screen-data"
+          data-screen="data"
+        >
+          <div class="screen-head">
+            <div>
+              <div class="eyebrow">DATA MANAGEMENT</div>
+              <h1>Daily Data</h1>
+              <p>
+                One-day acquisition, validation and sync overview.
+              </p>
+            </div>
+
+            <div class="screen-head__meta">
+              <span>DAY</span>
+              <strong>22 SEP</strong>
+            </div>
+          </div>
+
+          <div class="date-bar">
+            <button
+              class="date-arrow"
+              type="button"
+              aria-label="Previous day"
+            >
+              ←
+            </button>
+
+            <div>
+              <span class="micro-label">
+                SELECTED DAY
+              </span>
+
+              <strong>
+                22 SEP 2026
+              </strong>
+            </div>
+
+            <button
+              class="date-arrow"
+              type="button"
+              aria-label="Next day"
+            >
+              →
+            </button>
+          </div>
+
+          <div class="daily-summary">
+            <div>
+              <span>CAPTURES</span>
+              <strong id="dailyCount">
+                1,842
+              </strong>
+            </div>
+
+            <div>
+              <span>SESSIONS</span>
+              <strong>03</strong>
+            </div>
+
+            <div>
+              <span>FILES</span>
+              <strong>7,368</strong>
+            </div>
+
+            <div>
+              <span>SYNC</span>
+              <strong id="syncCount">
+                18
+              </strong>
+            </div>
+          </div>
+
+          <div class="data-tabs" role="tablist">
+            <button
+              class="data-tab is-active"
+              data-data-tab="captures"
+              type="button"
+            >
+              CAPTURES
+            </button>
+
+            <button
+              class="data-tab"
+              data-data-tab="validation"
+              type="button"
+            >
+              VALIDATION
+            </button>
+
+            <button
+              class="data-tab"
+              data-data-tab="postgis"
+              type="button"
+            >
+              POSTGIS
+            </button>
+          </div>
+
+          <!-- CAPTURES -->
+          <div
+            class="data-pane is-active"
+            id="data-captures"
+          >
+            <div class="timeline-head">
+              <span>TIME</span>
+              <span>CAPTURE</span>
+              <span>POSITION</span>
+              <span>STATE</span>
+            </div>
+
+            <div
+              class="timeline"
+              id="captureList"
+            >
+              {captures.map((capture) => (
+                <article class="capture-row">
+                  <div class="capture-row__time">
+                    <strong>{capture.time}</strong>
+                    <small>{capture.alt}</small>
+                  </div>
+
+                  <div class="capture-row__id">
+                    <strong>
+                      #{String(capture.no).padStart(6, "0")}
+                    </strong>
+
+                    <small>RGB-NIR</small>
+                  </div>
+
+                  <div class="capture-row__position">
+                    <strong>{capture.lat}</strong>
+                    <small>{capture.lon}</small>
+                  </div>
+
+                  <div class="capture-row__status">
+                    <span>{capture.status}</span>
+                  </div>
+                </article>
+              ))}
+            </div>
+
+            <button
+              class="load-more"
+              id="loadMore"
+              type="button"
+            >
+              LOAD MORE CAPTURES
+              <span>↓</span>
+            </button>
+          </div>
+
+          <!-- VALIDATION -->
+          <div
+            class="data-pane"
+            id="data-validation"
+          >
+            <article class="validation-hero">
+              <div>
+                <span class="micro-label">
+                  CROSS-INSTRUMENT TEST
+                </span>
+
+                <h2>
+                  LANDCAM ↔ DJI MULTISPECTRAL
+                </h2>
+
+                <p>
+                  Common-band comparison view for Blue,
+                  Green, Red and NIR. Red Edge is kept
+                  outside the common-band comparison.
+                </p>
+              </div>
+
+              <span class="validation-badge">
+                TEST 01
+              </span>
+            </article>
+
+            <div class="comparison-table">
+              <div class="comparison-row comparison-row--head">
+                <span>BAND</span>
+                <span>LANDCAM</span>
+                <span>DJI REF</span>
+                <span>Δ</span>
+              </div>
+
+              <div class="comparison-row">
+                <span>B / BLUE</span>
+                <strong>0.214</strong>
+                <strong>0.219</strong>
+                <b class="delta-good">-0.005</b>
+              </div>
+
+              <div class="comparison-row">
+                <span>G / GREEN</span>
+                <strong>0.462</strong>
+                <strong>0.455</strong>
+                <b class="delta-good">+0.007</b>
+              </div>
+
+              <div class="comparison-row">
+                <span>R / RED</span>
+                <strong>0.183</strong>
+                <strong>0.190</strong>
+                <b class="delta-warn">-0.007</b>
+              </div>
+
+              <div class="comparison-row">
+                <span>NIR</span>
+                <strong>0.731</strong>
+                <strong>0.724</strong>
+                <b class="delta-good">+0.007</b>
+              </div>
+            </div>
+
+            <div class="index-grid">
+              <article class="index-card">
+                <span>NDVI / LANDCAM</span>
+                <strong>0.599</strong>
+                <small>DEMO VALUE</small>
+              </article>
+
+              <article class="index-card">
+                <span>NDVI / DJI REF</span>
+                <strong>0.585</strong>
+                <small>DEMO VALUE</small>
+              </article>
+
+              <article class="index-card">
+                <span>MAE</span>
+                <strong>0.0065</strong>
+                <small>4 COMMON BANDS</small>
+              </article>
+
+              <article class="index-card">
+                <span>RMSE</span>
+                <strong>0.0071</strong>
+                <small>4 COMMON BANDS</small>
+              </article>
+            </div>
+
+            <div class="validation-note">
+              <span>i</span>
+
+              <p>
+                Comparison values are placeholder UI data
+                only. Final validation must use calibrated
+                reflectance and measured reference data.
+              </p>
+            </div>
+          </div>
+
+          <!-- POSTGIS -->
+          <div
+            class="data-pane"
+            id="data-postgis"
+          >
+            <article class="storage-hero">
+              <div class="storage-visual">
+                <div class="storage-ring">
+                  <span>67%</span>
+                </div>
+              </div>
+
+              <div class="storage-info">
+                <span class="micro-label">
+                  LOCAL DATASET
+                </span>
+
+                <h2>
+                  FIELD 01 / 22 SEP
+                </h2>
+
+                <p>
+                  Local capture queue prepared for API
+                  synchronization.
+                </p>
+
+                <div class="storage-progress">
+                  <span style="width:67%"></span>
+                </div>
+
+                <div class="storage-meta">
+                  <span>42.8 GB USED</span>
+                  <strong>21.2 GB FREE</strong>
+                </div>
+              </div>
+            </article>
+
+            <div class="postgis-grid">
+              <article class="postgis-card">
+                <span>CAPTURE RECORDS</span>
+                <strong>1,842</strong>
+                <small>READY</small>
+              </article>
+
+              <article class="postgis-card">
+                <span>GEOMETRIES</span>
+                <strong>1,842</strong>
+                <small>POINTS</small>
+              </article>
+
+              <article class="postgis-card">
+                <span>SYNC QUEUE</span>
+                <strong id="postgisQueue">18</strong>
+                <small>WAITING</small>
+              </article>
+
+              <article class="postgis-card">
+                <span>SCHEMA</span>
+                <strong>CAPTURE</strong>
+                <small>READY</small>
+              </article>
+            </div>
+
+            <div class="data-schema">
+              <div class="data-schema__head">
+                <span>01 / CAPTURE RECORD</span>
+                <span>LOCAL</span>
+              </div>
+
+              <div class="schema-row">
+                <span>capture_id</span>
+                <strong>
+                  LC4-20260922-001842
+                </strong>
+              </div>
+
+              <div class="schema-row">
+                <span>timestamp_utc</span>
+                <strong>
+                  2026-09-22T01:42:31Z
+                </strong>
+              </div>
+
+              <div class="schema-row">
+                <span>latitude</span>
+                <strong>-7.795610</strong>
+              </div>
+
+              <div class="schema-row">
+                <span>longitude</span>
+                <strong>110.369490</strong>
+              </div>
+
+              <div class="schema-row">
+                <span>altitude</span>
+                <strong>98.4</strong>
+              </div>
+
+              <div class="schema-row">
+                <span>geometry</span>
+                <strong>POINT</strong>
+              </div>
+            </div>
+
+            <button
+              class="wide-button wide-button--primary"
+              id="syncButton"
+              type="button"
+            >
+              <span id="syncButtonLabel">
+                SYNC QUEUE
+              </span>
+
+              <span class="button-arrow">↑</span>
+            </button>
+          </div>
+        </section>
+
+        <!-- =======================================================
+             MORE
+        ======================================================== -->
+        <section
+          class="screen"
+          id="screen-more"
+          data-screen="more"
+        >
+          <div class="screen-head">
+            <div>
+              <div class="eyebrow">SYSTEM</div>
+              <h1>More</h1>
+              <p>
+                Calibration, device and controller settings.
+              </p>
+            </div>
+
+            <div class="screen-head__meta">
+              <span>APP</span>
+              <strong>0.1</strong>
+            </div>
+          </div>
+
+          <div class="more-switcher">
+            <button
+              class="more-tab is-active"
+              data-more-tab="calibration"
+              type="button"
+            >
+              CALIBRATION
+            </button>
+
+            <button
+              class="more-tab"
+              data-more-tab="device"
+              type="button"
+            >
+              DEVICE
+            </button>
+
+            <button
+              class="more-tab"
+              data-more-tab="settings"
+              type="button"
+            >
+              SETTINGS
+            </button>
+          </div>
+
+          <!-- CALIBRATION -->
+          <div
+            class="more-pane is-active"
+            id="more-calibration"
+          >
+            <article class="calibration-head">
+              <div>
+                <span class="micro-label">
+                  REFERENCE WORKFLOW
+                </span>
+
+                <h2>3 PANEL CALIBRATION</h2>
+
+                <p>
+                  Prepare three reference panels, capture
+                  them, then attach measured reflectance
+                  values to the session.
+                </p>
+              </div>
+
+              <div class="calibration-state">
+                <span></span>
+                PROFILE A-03
+              </div>
+            </article>
+
+            <div class="panel-grid">
+              <article class="reference-panel">
+                <div class="reference-panel__top">
+                  <div>
+                    <span class="panel-number">01</span>
+                    <strong>PANEL LOW</strong>
+                  </div>
+
+                  <span class="panel-state">
+                    READY
+                  </span>
+                </div>
+
+                <div class="panel-surface panel-surface--dark"></div>
+
+                <div class="reflectance-fields">
+                  <label>
+                    <span>B</span>
+                    <input value="0.210" />
+                  </label>
+
+                  <label>
+                    <span>G</span>
+                    <input value="0.214" />
+                  </label>
+
+                  <label>
+                    <span>R</span>
+                    <input value="0.206" />
+                  </label>
+
+                  <label>
+                    <span>NIR</span>
+                    <input value="0.218" />
+                  </label>
+                </div>
+
+                <button
+                  class="panel-button"
+                  type="button"
+                >
+                  CAPTURE REFERENCE
+                </button>
+              </article>
+
+              <article class="reference-panel">
+                <div class="reference-panel__top">
+                  <div>
+                    <span class="panel-number">02</span>
+                    <strong>PANEL MID</strong>
+                  </div>
+
+                  <span class="panel-state">
+                    READY
+                  </span>
+                </div>
+
+                <div class="panel-surface panel-surface--mid"></div>
+
+                <div class="reflectance-fields">
+                  <label>
+                    <span>B</span>
+                    <input value="0.482" />
+                  </label>
+
+                  <label>
+                    <span>G</span>
+                    <input value="0.491" />
+                  </label>
+
+                  <label>
+                    <span>R</span>
+                    <input value="0.487" />
+                  </label>
+
+                  <label>
+                    <span>NIR</span>
+                    <input value="0.503" />
+                  </label>
+                </div>
+
+                <button
+                  class="panel-button"
+                  type="button"
+                >
+                  CAPTURE REFERENCE
+                </button>
+              </article>
+
+              <article class="reference-panel">
+                <div class="reference-panel__top">
+                  <div>
+                    <span class="panel-number">03</span>
+                    <strong>PANEL HIGH</strong>
+                  </div>
+
+                  <span class="panel-state">
+                    READY
+                  </span>
+                </div>
+
+                <div class="panel-surface panel-surface--light"></div>
+
+                <div class="reflectance-fields">
+                  <label>
+                    <span>B</span>
+                    <input value="0.742" />
+                  </label>
+
+                  <label>
+                    <span>G</span>
+                    <input value="0.755" />
+                  </label>
+
+                  <label>
+                    <span>R</span>
+                    <input value="0.748" />
+                  </label>
+
+                  <label>
+                    <span>NIR</span>
+                    <input value="0.761" />
+                  </label>
+                </div>
+
+                <button
+                  class="panel-button"
+                  type="button"
+                >
+                  CAPTURE REFERENCE
+                </button>
+              </article>
+            </div>
+
+            <div class="section-label">
+              <span>01 / SPECTROMETER</span>
+              <span class="section-line"></span>
+              <span>REFERENCE</span>
+            </div>
+
+            <article class="spectrometer-card">
+              <div class="spectrometer-card__top">
+                <div>
+                  <span class="micro-label">
+                    REFERENCE INSTRUMENT
+                  </span>
+
+                  <h3>
+                    3-PANEL SPECTROMETER
+                  </h3>
+                </div>
+
+                <span class="connected-tag">
+                  <i></i>
+                  CONNECTED
+                </span>
+              </div>
+
+              <div class="spectrometer-chart">
+                <div class="chart-line chart-line--a"></div>
+                <div class="chart-line chart-line--b"></div>
+                <div class="chart-line chart-line--c"></div>
+
+                <div class="chart-marker chart-marker--1"></div>
+                <div class="chart-marker chart-marker--2"></div>
+                <div class="chart-marker chart-marker--3"></div>
+              </div>
+
+              <div class="spectrometer-values">
+                <div>
+                  <span>PANEL</span>
+                  <strong>03</strong>
+                </div>
+
+                <div>
+                  <span>RANGE</span>
+                  <strong>400–900 NM</strong>
+                </div>
+
+                <div>
+                  <span>REFERENCE</span>
+                  <strong>VALID</strong>
+                </div>
+              </div>
+
+              <button
+                class="wide-button"
+                type="button"
+              >
+                <span>
+                  IMPORT SPECTROMETER DATA
+                </span>
+
+                <span class="button-arrow">↑</span>
+              </button>
+            </article>
+
+            <div class="section-label">
+              <span>02 / VALIDATION SESSION</span>
+              <span class="section-line"></span>
+              <span>TEST 01</span>
+            </div>
+
+            <div class="validation-flow">
+              <div class="flow-node is-done">
+                <span>01</span>
+
+                <strong>REFERENCE</strong>
+                <small>SPECTROMETER</small>
+              </div>
+
+              <div class="flow-line is-done"></div>
+
+              <div class="flow-node is-done">
+                <span>02</span>
+
+                <strong>LANDCAM</strong>
+                <small>RGB-NIR</small>
+              </div>
+
+              <div class="flow-line"></div>
+
+              <div class="flow-node">
+                <span>03</span>
+
+                <strong>DJI REF</strong>
+                <small>COMMON BANDS</small>
+              </div>
+
+              <div class="flow-line"></div>
+
+              <div class="flow-node">
+                <span>04</span>
+
+                <strong>ANALYSIS</strong>
+                <small>NDVI / ERROR</small>
+              </div>
+            </div>
+
+            <div class="validation-disclaimer">
+              <strong>REFERENCE VALUES</strong>
+
+              <p>
+                Panel reflectance values shown here are
+                placeholder UI values. Production calibration
+                must use the actual panel certificate /
+                spectrometer measurement values.
+              </p>
+            </div>
+          </div>
+
+          <!-- DEVICE -->
+          <div
+            class="more-pane"
+            id="more-device"
+          >
+            <article class="device-detail">
+              <div class="device-detail__hero">
+                <div class="device-orb">
+                  <span></span>
+                </div>
+
+                <div>
+                  <span class="micro-label">
+                    ACTIVE DEVICE
+                  </span>
+
+                  <h2 id="deviceDetailName">
+                    LC-4 SPECTRA
+                  </h2>
+
+                  <p id="deviceDetailId">
+                    LANDCAM / DEMO-LC4-001
+                  </p>
+                </div>
+
+                <span class="status-pill status-pill--online">
+                  <span class="status-pill__dot"></span>
+                  ONLINE
+                </span>
+              </div>
+
+              <div class="device-detail__grid">
+                <div>
+                  <span>MODEL</span>
+                  <strong id="deviceDetailModel">LC-4</strong>
+                </div>
+
+                <div>
+                  <span>BANDS</span>
+                  <strong>RGB-NIR</strong>
+                </div>
+
+                <div>
+                  <span>GNSS</span>
+                  <strong>PPK</strong>
+                </div>
+
+                <div>
+                  <span>STORAGE</span>
+                  <strong>64 GB</strong>
+                </div>
+
+                <div>
+                  <span>FIRMWARE</span>
+                  <strong id="deviceDetailFirmware">
+                    1.0.0
+                  </strong>
+                </div>
+
+                <div>
+                  <span>APP</span>
+                  <strong>{appVersion}</strong>
+                </div>
+              </div>
+            </article>
+
+            <div class="section-label">
+              <span>01 / DEVICE CONTROL</span>
+              <span class="section-line"></span>
+              <span>LOCAL</span>
+            </div>
+
+            <button
+              class="device-manage-button"
+              id="deviceManageButton"
+              type="button"
+            >
+              <span>
+                <small>CONNECTED DEVICE</small>
+                <strong id="deviceManageName">
+                  LC-4 SPECTRA
+                </strong>
+              </span>
+
+              <span>
+                CHANGE DEVICE →
+              </span>
+            </button>
+
+            <div class="section-label">
+              <span>02 / CONNECTION</span>
+              <span class="section-line"></span>
+              <span>DEMO</span>
+            </div>
+
+            <div class="settings-list">
+              <div class="settings-row">
+                <div>
+                  <strong>CAMERA CHANNEL</strong>
+                  <small>
+                    Transport layer placeholder
+                  </small>
+                </div>
+
+                <span class="setting-value">
+                  READY
+                </span>
+              </div>
+
+              <div class="settings-row">
+                <div>
+                  <strong>GNSS SOURCE</strong>
+                  <small>RTK / PPK</small>
+                </div>
+
+                <span class="setting-value setting-value--ok">
+                  FIX
+                </span>
+              </div>
+
+              <div class="settings-row">
+                <div>
+                  <strong>TIME SOURCE</strong>
+                  <small>PPS</small>
+                </div>
+
+                <span class="setting-value setting-value--ok">
+                  LOCKED
+                </span>
+              </div>
+
+              <div class="settings-row">
+                <div>
+                  <strong>LOCAL QUEUE</strong>
+                  <small>
+                    Offline-first data collection
+                  </small>
+                </div>
+
+                <span class="setting-value">
+                  18
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- SETTINGS -->
+          <div
+            class="more-pane"
+            id="more-settings"
+          >
+            <div class="section-label section-label--first">
+              <span>01 / APPEARANCE</span>
+              <span class="section-line"></span>
+              <span>UI</span>
+            </div>
+
+            <article class="theme-panel">
+              <div class="theme-panel__head">
+                <div>
+                  <span class="micro-label">THEME</span>
+                  <strong>DISPLAY MODE</strong>
+                </div>
+
+                <span
+                  class="theme-current"
+                  id="themeCurrent"
+                >
+                  DARK
+                </span>
+              </div>
+
+              <div class="theme-switch">
+                <button
+                  class="theme-option is-active"
+                  data-theme-choice="dark"
+                  type="button"
+                >
+                  <span class="theme-option__visual theme-option__visual--dark">
+                    <i></i>
+                    <i></i>
+                    <i></i>
+                  </span>
+
+                  <span class="theme-option__copy">
+                    <strong>DARK</strong>
+                    <small>
+                      LOW-LIGHT FIELD
+                    </small>
+                  </span>
+
+                  <span class="theme-check">✓</span>
+                </button>
+
+                <button
+                  class="theme-option"
+                  data-theme-choice="light"
+                  type="button"
+                >
+                  <span class="theme-option__visual theme-option__visual--light">
+                    <i></i>
+                    <i></i>
+                    <i></i>
+                  </span>
+
+                  <span class="theme-option__copy">
+                    <strong>LIGHT</strong>
+                    <small>
+                      DAYLIGHT FIELD
+                    </small>
+                  </span>
+
+                  <span class="theme-check">✓</span>
+                </button>
+              </div>
+            </article>
+
+            <div class="section-label">
+              <span>02 / ACQUISITION</span>
+              <span class="section-line"></span>
+              <span>LOCAL</span>
+            </div>
+
+            <div class="settings-list">
+              <div class="settings-row">
+                <div>
+                  <strong>AUTO SAVE</strong>
+                  <small>
+                    Save every successful capture locally
+                  </small>
+                </div>
+
+                <button
+                  class="toggle is-on"
+                  data-toggle
+                  type="button"
+                  aria-label="Toggle auto save"
+                >
+                  <span></span>
+                </button>
+              </div>
+
+              <div class="settings-row">
+                <div>
+                  <strong>AUTO SYNC</strong>
+                  <small>
+                    Upload when network is available
+                  </small>
+                </div>
+
+                <button
+                  class="toggle is-on"
+                  data-toggle
+                  type="button"
+                  aria-label="Toggle auto sync"
+                >
+                  <span></span>
+                </button>
+              </div>
+
+              <div class="settings-row">
+                <div>
+                  <strong>GNSS METADATA</strong>
+                  <small>
+                    Attach position to every capture
+                  </small>
+                </div>
+
+                <button
+                  class="toggle is-on"
+                  data-toggle
+                  type="button"
+                  aria-label="Toggle GNSS metadata"
+                >
+                  <span></span>
+                </button>
+              </div>
+
+              <div class="settings-row">
+                <div>
+                  <strong>PPS TIMESTAMP</strong>
+                  <small>
+                    Attach synchronized timestamp
+                  </small>
+                </div>
+
+                <button
+                  class="toggle is-on"
+                  data-toggle
+                  type="button"
+                  aria-label="Toggle PPS timestamp"
+                >
+                  <span></span>
+                </button>
+              </div>
+
+              <div class="settings-row">
+                <div>
+                  <strong>COMPRESSED PREVIEW</strong>
+                  <small>
+                    Use lightweight preview frame
+                  </small>
+                </div>
+
+                <button
+                  class="toggle"
+                  data-toggle
+                  type="button"
+                  aria-label="Toggle compressed preview"
+                >
+                  <span></span>
+                </button>
+              </div>
+            </div>
+
+            <div class="section-label">
+              <span>03 / STORAGE POLICY</span>
+              <span class="section-line"></span>
+              <span>LOCAL</span>
+            </div>
+
+            <article class="policy-card">
+              <div>
+                <span class="micro-label">
+                  CAPTURE RETENTION
+                </span>
+
+                <strong>
+                  UNTIL SYNC CONFIRMED
+                </strong>
+              </div>
+
+              <p>
+                Capture records remain locally queued until
+                the backend confirms synchronization.
+              </p>
+            </article>
+
+            <div class="section-label">
+              <span>04 / ABOUT</span>
+              <span class="section-line"></span>
+              <span>INFO</span>
+            </div>
+
+            <article class="about-card">
+              <strong>
+                {appName} CONTROLLER
+              </strong>
+
+              <p>{appVersion}</p>
+
+              <span>
+                UI prototype / no hardware transport connected
+              </span>
+            </article>
+          </div>
+        </section>
+      </main>
+
+      <!-- =========================================================
+           BOTTOM NAVIGATION
+      ========================================================== -->
+      <nav
+        class="bottom-nav"
+        aria-label="Main navigation"
+      >
+        <button
+          class="bottom-nav__item is-active"
+          data-nav="home"
+          type="button"
+        >
+          <span class="bottom-nav__icon">⌂</span>
+          <span>HOME</span>
+        </button>
+
+        <button
+          class="bottom-nav__item"
+          data-nav="camera"
+          type="button"
+        >
+          <span class="bottom-nav__icon bottom-nav__icon--capture">
+            +
+          </span>
+
+          <span>CAMERA</span>
+        </button>
+
+        <button
+          class="bottom-nav__item"
+          data-nav="mission"
+          type="button"
+        >
+          <span class="bottom-nav__icon">◎</span>
+          <span>MISSION</span>
+        </button>
+
+        <button
+          class="bottom-nav__item"
+          data-nav="data"
+          type="button"
+        >
+          <span class="bottom-nav__icon">▦</span>
+          <span>DATA</span>
+        </button>
+
+        <button
+          class="bottom-nav__item"
+          data-nav="more"
+          type="button"
+        >
+          <span class="bottom-nav__icon">⋯</span>
+          <span>MORE</span>
+        </button>
+      </nav>
+
+      <!-- =========================================================
+           DEVICE PICKER
+      ========================================================== -->
+      <div
+        class="device-modal"
+        id="deviceModal"
+        aria-hidden="true"
+      >
+        <button
+          class="device-modal__backdrop"
+          id="deviceModalBackdrop"
+          type="button"
+          aria-label="Close device list"
+        ></button>
+
+        <div
+          class="device-sheet"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="deviceModalTitle"
+        >
+          <div class="device-sheet__grab"></div>
+
+          <div class="device-sheet__head">
+            <div>
+              <span class="eyebrow">
+                HARDWARE
+              </span>
+
+              <h2 id="deviceModalTitle">
+                Device List
+              </h2>
+
+              <p>
+                Select the LandCam controller target.
+              </p>
+            </div>
+
+            <button
+              class="device-sheet__close"
+              id="deviceModalClose"
+              type="button"
+              aria-label="Close device list"
+            >
+              ×
+            </button>
+          </div>
+
+          <div class="device-scanbar">
+            <div>
+              <span class="device-scanbar__dot"></span>
+              <span id="deviceScanStatus">
+                LAST SCAN 08:41:56
+              </span>
+            </div>
+
+            <button
+              id="scanDevices"
+              type="button"
+            >
+              RESCAN
+            </button>
+          </div>
+
+          <div
+            class="device-list"
+            id="deviceList"
+          >
+            <button
+              class="device-option is-selected"
+              data-device-id="DEMO-LC4-001"
+              type="button"
+            >
+              <span class="device-option__indicator"></span>
+
+              <span class="device-option__main">
+                <strong>LC-4 SPECTRA</strong>
+
+                <small>
+                  DEMO-LC4-001 · PPK
+                </small>
+
+                <em>RGB · GREEN · RED · NIR</em>
+              </span>
+
+              <span class="device-option__meta">
+                <b>CONNECTED</b>
+                <span>87%</span>
+              </span>
+            </button>
+
+            <button
+              class="device-option"
+              data-device-id="DEMO-LC4-002"
+              type="button"
+            >
+              <span class="device-option__indicator"></span>
+
+              <span class="device-option__main">
+                <strong>LC-4 SPECTRA</strong>
+
+                <small>
+                  DEMO-LC4-002 · PPK
+                </small>
+
+                <em>RGB · GREEN · RED · NIR</em>
+              </span>
+
+              <span class="device-option__meta device-option__meta--idle">
+                <b>AVAILABLE</b>
+                <span>91%</span>
+              </span>
+            </button>
+
+            <button
+              class="device-option"
+              data-device-id="DEMO-LC4-003"
+              type="button"
+            >
+              <span class="device-option__indicator"></span>
+
+              <span class="device-option__main">
+                <strong>LC-4 SPECTRA</strong>
+
+                <small>
+                  DEMO-LC4-003 · PPK
+                </small>
+
+                <em>RGB · GREEN · RED · NIR</em>
+              </span>
+
+              <span class="device-option__meta device-option__meta--offline">
+                <b>OFFLINE</b>
+                <span>—</span>
+              </span>
+            </button>
+          </div>
+
+          <div class="device-sheet__footer">
+            <span>
+              3 DEVICES DISCOVERED
+            </span>
+
+            <button
+              class="device-connect-button"
+              id="deviceConnectButton"
+              type="button"
+            >
+              CONNECT SELECTED
+              <span>→</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- =========================================================
+           TOAST
+      ========================================================== -->
+      <div
+        class="toast"
+        id="toast"
+        role="status"
+        aria-live="polite"
+      >
+        <span class="toast__dot"></span>
+        <span id="toastText">
+          Capture saved
+        </span>
+      </div>
+    </div>
+
+    <script is:inline>
+      /* ============================================================
+         STATE
+      ============================================================ */
+      const screens = [
+        ...document.querySelectorAll("[data-screen]"),
+      ];
+
+      const navItems = [
+        ...document.querySelectorAll("[data-nav]"),
+      ];
+
+      const toast = document.getElementById("toast");
+      const toastText = document.getElementById("toastText");
+
+      const deviceModal = document.getElementById(
+        "deviceModal",
+      );
+
+      const deviceModalBackdrop =
+        document.getElementById(
+          "deviceModalBackdrop",
+        );
+
+      const deviceModalClose =
+        document.getElementById(
+          "deviceModalClose",
+        );
+
+      const deviceConnectButton =
+        document.getElementById(
+          "deviceConnectButton",
+        );
+
+      const deviceManageButton =
+        document.getElementById(
+          "deviceManageButton",
+        );
+
+      const topConnect =
+        document.getElementById("topConnect");
+
+      const connectButton =
+        document.getElementById("connectButton");
+
+      const systemLabel =
+        document.getElementById("systemLabel");
+
+      const systemDot =
+        document.getElementById("systemDot");
+
+      const connectLabel =
+        document.getElementById("connectLabel");
+
+      const topDeviceName =
+        document.getElementById("topDeviceName");
+
+      const homeDeviceName =
+        document.getElementById("homeDeviceName");
+
+      const homeDeviceId =
+        document.getElementById("homeDeviceId");
+
+      const homeFirmware =
+        document.getElementById("homeFirmware");
+
+      const homeBattery =
+        document.getElementById("homeBattery");
+
+      const deviceDetailName =
+        document.getElementById(
+          "deviceDetailName",
+        );
+
+      const deviceDetailId =
+        document.getElementById(
+          "deviceDetailId",
+        );
+
+      const deviceDetailFirmware =
+        document.getElementById(
+          "deviceDetailFirmware",
+        );
+
+      const deviceManageName =
+        document.getElementById(
+          "deviceManageName",
+        );
+
+      const deviceList = document.getElementById(
+        "deviceList",
+      );
+
+      const deviceScanStatus =
+        document.getElementById(
+          "deviceScanStatus",
+        );
+
+      const deviceOptions = [
+        ...document.querySelectorAll(
+          ".device-option",
+        ),
+      ];
+
+      const deviceDatabase = {
+        "DEMO-LC4-001": {
+          name: "LC-4 SPECTRA",
+          id: "LANDCAM / DEMO-LC4-001",
+          shortId: "DEMO-LC4-001",
+          firmware: "1.0.0",
+          battery: "87%",
+          model: "LC-4",
+          state: "CONNECTED",
+        },
+
+        "DEMO-LC4-002": {
+          name: "LC-4 SPECTRA",
+          id: "LANDCAM / DEMO-LC4-002",
+          shortId: "DEMO-LC4-002",
+          firmware: "1.0.2",
+          battery: "91%",
+          model: "LC-4",
+          state: "AVAILABLE",
+        },
+
+        "DEMO-LC4-003": {
+          name: "LC-4 SPECTRA",
+          id: "LANDCAM / DEMO-LC4-003",
+          shortId: "DEMO-LC4-003",
+          firmware: "—",
+          battery: "—",
+          model: "LC-4",
+          state: "OFFLINE",
+        },
+      };
+
+      let selectedDeviceId = "DEMO-LC4-001";
+      let captureCount = 1842;
+      let missionRunning = false;
+      let syncPending = 18;
+      let frameNumber = 1842;
+
+      /* ============================================================
+         TOAST
+      ============================================================ */
+      function showToast(message) {
+        toastText.textContent = message;
+        toast.classList.add("is-visible");
+
+        window.clearTimeout(
+          window.__toastTimer,
+        );
+
+        window.__toastTimer = window.setTimeout(
+          () => {
+            toast.classList.remove(
+              "is-visible",
+            );
+          },
+          2300,
+        );
+      }
+
+      /* ============================================================
+         SCREEN NAVIGATION
+      ============================================================ */
+      function showScreen(name) {
+        screens.forEach((screen) => {
+          screen.classList.toggle(
+            "is-active",
+            screen.dataset.screen === name,
+          );
+        });
+
+        navItems.forEach((item) => {
+          item.classList.toggle(
+            "is-active",
+            item.dataset.nav === name,
+          );
+        });
+
+        window.scrollTo({
+          top: 0,
+          behavior: "smooth",
+        });
+      }
+
+      document
+        .querySelectorAll("[data-go]")
+        .forEach((button) => {
+          button.addEventListener(
+            "click",
+            () => {
+              showScreen(
+                button.dataset.go,
+              );
+            },
+          );
+        });
+
+      navItems.forEach((item) => {
+        item.addEventListener(
+          "click",
+          () => {
+            showScreen(
+              item.dataset.nav,
+            );
+          },
+        );
+      });
+
+      /* ============================================================
+         DEVICE MODAL
+      ============================================================ */
+      function openDeviceModal() {
+        deviceModal.classList.add(
+          "is-open",
+        );
+
+        deviceModal.setAttribute(
+          "aria-hidden",
+          "false",
+        );
+
+        topConnect.setAttribute(
+          "aria-expanded",
+          "true",
+        );
+
+        connectButton.setAttribute(
+          "aria-expanded",
+          "true",
+        );
+
+        document.body.classList.add(
+          "modal-open",
+        );
+      }
+
+      function closeDeviceModal() {
+        deviceModal.classList.remove(
+          "is-open",
+        );
+
+        deviceModal.setAttribute(
+          "aria-hidden",
+          "true",
+        );
+
+        topConnect.setAttribute(
+          "aria-expanded",
+          "false",
+        );
+
+        connectButton.setAttribute(
+          "aria-expanded",
+          "false",
+        );
+
+        document.body.classList.remove(
+          "modal-open",
+        );
+      }
+
+      topConnect.addEventListener(
+        "click",
+        openDeviceModal,
+      );
+
+      connectButton.addEventListener(
+        "click",
+        openDeviceModal,
+      );
+
+      deviceManageButton.addEventListener(
+        "click",
+        openDeviceModal,
+      );
+
+      deviceModalBackdrop.addEventListener(
+        "click",
+        closeDeviceModal,
+      );
+
+      deviceModalClose.addEventListener(
+        "click",
+        closeDeviceModal,
+      );
+
+      document.addEventListener(
+        "keydown",
+        (event) => {
+          if (
+            event.key === "Escape" &&
+            deviceModal.classList.contains(
+              "is-open",
+            )
+          ) {
+            closeDeviceModal();
+          }
+        },
+      );
+
+      /* ============================================================
+         DEVICE SELECTION
+      ============================================================ */
+      function updateDeviceUI(device) {
+        const isOnline =
+          device.state !== "OFFLINE";
+
+        topDeviceName.textContent =
+          device.name;
+
+        homeDeviceName.textContent =
+          device.name;
+
+        homeDeviceId.textContent =
+          device.id;
+
+        homeFirmware.textContent =
+          device.firmware;
+
+        homeBattery.textContent =
+          device.battery;
+
+        deviceDetailName.textContent =
+          device.name;
+
+        deviceDetailId.textContent =
+          device.id;
+
+        deviceDetailFirmware.textContent =
+          device.firmware;
+
+        deviceManageName.textContent =
+          device.name;
+
+        connectLabel.textContent =
+          isOnline
+            ? "CONNECTED"
+            : "OFFLINE";
+
+        systemLabel.textContent =
+          isOnline
+            ? "SYSTEM READY"
+            : "DEVICE OFFLINE";
+
+        systemDot.classList.toggle(
+          "is-offline",
+          !isOnline,
+        );
+
+        connectButton.classList.toggle(
+          "status-pill--online",
+          isOnline,
+        );
+      }
+
+      function selectDevice(deviceId) {
+        selectedDeviceId = deviceId;
+
+        deviceOptions.forEach((option) => {
+          option.classList.toggle(
+            "is-selected",
+            option.dataset.deviceId ===
+              deviceId,
+          );
+        });
+      }
+
+      function connectSelectedDevice() {
+        const device =
+          deviceDatabase[
+            selectedDeviceId
+          ];
+
+        if (!device) return;
+
+        if (
+          device.state === "OFFLINE"
+        ) {
+          showToast(
+            "Device is currently offline",
+          );
+
+          return;
+        }
+
+        updateDeviceUI(device);
+        closeDeviceModal();
+
+        showToast(
+          `${device.shortId} connected`,
+        );
+      }
+
+      deviceOptions.forEach((option) => {
+        option.addEventListener(
+          "click",
+          () => {
+            selectDevice(
+              option.dataset.deviceId,
+            );
+          },
+        );
+      });
+
+      deviceConnectButton.addEventListener(
+        "click",
+        connectSelectedDevice,
+      );
+
+      document
+        .getElementById("scanDevices")
+        .addEventListener(
+          "click",
+          (event) => {
+            const button =
+              event.currentTarget;
+
+            button.textContent =
+              "SCANNING...";
+
+            deviceScanStatus.textContent =
+              "SCANNING DEVICE BUS...";
+
+            window.setTimeout(() => {
+              button.textContent =
+                "RESCAN";
+
+              deviceScanStatus.textContent =
+                "LAST SCAN 08:42:04";
+
+              showToast(
+                "3 devices discovered",
+              );
+            }, 900);
+          },
+        );
+
+      /* ============================================================
+         CAPTURE
+      ============================================================ */
+      function pad(
+        number,
+        digits = 6,
+      ) {
+        return String(number).padStart(
+          digits,
+          "0",
+        );
+      }
+
+      function currentClock() {
+        const now = new Date();
+
+        return now.toLocaleTimeString(
+          "en-GB",
+          {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: false,
+          },
+        );
+      }
+
+      function simulateCapture() {
+        const activeDevice =
+          deviceDatabase[
+            selectedDeviceId
+          ];
+
+        if (
+          !activeDevice ||
+          activeDevice.state ===
+            "OFFLINE"
+        ) {
+          showToast(
+            "Connect a device first",
+          );
+
+          return;
+        }
+
+        captureCount += 1;
+        frameNumber += 1;
+        syncPending += 1;
+
+        const now =
+          currentClock();
+
+        document.getElementById(
+          "homeCaptureCount",
+        ).textContent =
+          captureCount
+            .toLocaleString(
+              "en-US",
+            )
+            .padStart(
+              6,
+              "0",
+            );
+
+        document.getElementById(
+          "todayCaptureCount",
+        ).textContent =
+          captureCount.toLocaleString(
+            "en-US",
+          );
+
+        document.getElementById(
+          "dailyCount",
+        ).textContent =
+          captureCount.toLocaleString(
+            "en-US",
+          );
+
+        document.getElementById(
+          "missionCaptureCount",
+        ).textContent =
+          captureCount.toLocaleString(
+            "en-US",
+          );
+
+        document.getElementById(
+          "syncCount",
+        ).textContent =
+          syncPending;
+
+        document.getElementById(
+          "postgisQueue",
+        ).textContent =
+          syncPending;
+
+        document.getElementById(
+          "cameraFrameCounter",
+        ).textContent =
+          pad(frameNumber);
+
+        document.getElementById(
+          "captureTime",
+        ).textContent = now;
+
+        const preview =
+          document.getElementById(
+            "cameraPreview",
+          );
+
+        const flash =
+          document.getElementById(
+            "captureFlash",
+          );
+
+        preview.classList.add(
+          "is-capturing",
+        );
+
+        flash.classList.add(
+          "is-active",
+        );
+
+        window.setTimeout(() => {
+          preview.classList.remove(
+            "is-capturing",
+          );
+
+          flash.classList.remove(
+            "is-active",
+          );
+        }, 420);
+
+        showToast(
+          `Capture #${pad(frameNumber)} saved`,
+        );
+      }
+
+      document
+        .querySelectorAll(
+          '[data-action="capture"]',
+        )
+        .forEach((button) => {
+          button.addEventListener(
+            "click",
+            simulateCapture,
+          );
+        });
+
+      /* ============================================================
+         CAMERA BANDS
+      ============================================================ */
+      document
+        .querySelectorAll(".band-item")
+        .forEach((button) => {
+          button.addEventListener(
+            "click",
+            () => {
+              document
+                .querySelectorAll(
+                  ".band-item",
+                )
+                .forEach(
+                  (item) =>
+                    item.classList.remove(
+                      "is-active",
+                    ),
+                );
+
+              button.classList.add(
+                "is-active",
+              );
+
+              showToast(
+                `${button.dataset.band} band selected`,
+              );
+            },
+          );
+        });
+
+      /* ============================================================
+         CAMERA DISPLAY MODE
+      ============================================================ */
+      const frameModes = [
+        "RGB",
+        "NIR",
+        "FALSE COLOR",
+      ];
+
+      let frameModeIndex = 0;
+
+      document
+        .getElementById(
+          "frameModeButton",
+        )
+        .addEventListener(
+          "click",
+          () => {
+            frameModeIndex =
+              (frameModeIndex + 1) %
+              frameModes.length;
+
+            const mode =
+              frameModes[
+                frameModeIndex
+              ];
+
+            document.getElementById(
+              "frameModeLabel",
+            ).textContent = mode;
+
+            document.getElementById(
+              "previewMode",
+            ).textContent = mode;
+
+            showToast(
+              `Display mode: ${mode}`,
+            );
+          },
+        );
+
+      /* ============================================================
+         TRIGGER MODE
+      ============================================================ */
+      const triggerModes = [
+        "SINGLE",
+        "AUTO",
+      ];
+
+      let triggerModeIndex = 0;
+
+      document
+        .getElementById(
+          "triggerModeButton",
+        )
+        .addEventListener(
+          "click",
+          () => {
+            triggerModeIndex =
+              (triggerModeIndex + 1) %
+              triggerModes.length;
+
+            const mode =
+              triggerModes[
+                triggerModeIndex
+              ];
+
+            document.getElementById(
+              "triggerModeLabel",
+            ).textContent = mode;
+
+            showToast(
+              `Trigger mode: ${mode}`,
+            );
+          },
+        );
+
+      /* ============================================================
+         MISSION
+      ============================================================ */
+      const missionStart =
+        document.getElementById(
+          "missionStart",
+        );
+
+      const missionStop =
+        document.getElementById(
+          "missionStop",
+        );
+
+      const missionStartText =
+        document.getElementById(
+          "missionStartText",
+        );
+
+      const missionBadge =
+        document.getElementById(
+          "missionBadge",
+        );
+
+      const missionStatusTop =
+        document.getElementById(
+          "missionStatusTop",
+        );
+
+      missionStart.addEventListener(
+        "click",
+        () => {
+          missionRunning =
+            !missionRunning;
+
+          if (
+            missionRunning
+          ) {
+            missionStartText.textContent =
+              "MISSION RUNNING";
+
+            missionBadge.textContent =
+              "ACTIVE";
+
+            missionBadge.classList.add(
+              "mission-tag--active",
+            );
+
+            missionStatusTop.textContent =
+              "ACTIVE";
+
+            systemLabel.textContent =
+              "MISSION ACTIVE";
+
+            showToast(
+              "Mission started",
+            );
+          } else {
+            missionStartText.textContent =
+              "START MISSION";
+
+            missionBadge.textContent =
+              "READY";
+
+            missionBadge.classList.remove(
+              "mission-tag--active",
+            );
+
+            missionStatusTop.textContent =
+              "READY";
+
+            systemLabel.textContent =
+              "SYSTEM READY";
+
+            showToast(
+              "Mission paused",
+            );
+          }
+        },
+      );
+
+      missionStop.addEventListener(
+        "click",
+        () => {
+          missionRunning = false;
+
+          missionStartText.textContent =
+            "START MISSION";
+
+          missionBadge.textContent =
+            "STOPPED";
+
+          missionBadge.classList.remove(
+            "mission-tag--active",
+          );
+
+          missionStatusTop.textContent =
+            "STOPPED";
+
+          systemLabel.textContent =
+            "SYSTEM READY";
+
+          showToast(
+            "Mission stopped",
+          );
+        },
+      );
+
+      /* ============================================================
+         DATA TABS
+      ============================================================ */
+      document
+        .querySelectorAll(
+          "[data-data-tab]",
+        )
+        .forEach((tab) => {
+          tab.addEventListener(
+            "click",
+            () => {
+              document
+                .querySelectorAll(
+                  "[data-data-tab]",
+                )
+                .forEach(
+                  (item) =>
+                    item.classList.remove(
+                      "is-active",
+                    ),
+                );
+
+              document
+                .querySelectorAll(
+                  ".data-pane",
+                )
+                .forEach(
+                  (pane) =>
+                    pane.classList.remove(
+                      "is-active",
+                    ),
+                );
+
+              tab.classList.add(
+                "is-active",
+              );
+
+              document
+                .getElementById(
+                  `data-${tab.dataset.dataTab}`,
+                )
+                .classList.add(
+                  "is-active",
+                );
+            },
+          );
+        });
+
+      /* ============================================================
+         MORE TABS
+      ============================================================ */
+      document
+        .querySelectorAll(
+          "[data-more-tab]",
+        )
+        .forEach((tab) => {
+          tab.addEventListener(
+            "click",
+            () => {
+              document
+                .querySelectorAll(
+                  "[data-more-tab]",
+                )
+                .forEach(
+                  (item) =>
+                    item.classList.remove(
+                      "is-active",
+                    ),
+                );
+
+              document
+                .querySelectorAll(
+                  ".more-pane",
+                )
+                .forEach(
+                  (pane) =>
+                    pane.classList.remove(
+                      "is-active",
+                    ),
+                );
+
+              tab.classList.add(
+                "is-active",
+              );
+
+              document
+                .getElementById(
+                  `more-${tab.dataset.moreTab}`,
+                )
+                .classList.add(
+                  "is-active",
+                );
+            },
+          );
+        });
+
+      /* ============================================================
+         TOGGLES
+      ============================================================ */
+      document
+        .querySelectorAll(
+          "[data-toggle]",
+        )
+        .forEach((toggle) => {
+          toggle.addEventListener(
+            "click",
+            () => {
+              toggle.classList.toggle(
+                "is-on",
+              );
+            },
+          );
+        });
+
+      /* ============================================================
+         SYNC
+      ============================================================ */
+      const syncButton =
+        document.getElementById(
+          "syncButton",
+        );
+
+      const syncButtonLabel =
+        document.getElementById(
+          "syncButtonLabel",
+        );
+
+      syncButton.addEventListener(
+        "click",
+        () => {
+          syncPending = 0;
+
+          document.getElementById(
+            "syncCount",
+          ).textContent = "0";
+
+          document.getElementById(
+            "postgisQueue",
+          ).textContent = "0";
+
+          syncButtonLabel.textContent =
+            "QUEUE SYNCHRONIZED";
+
+          showToast(
+            "Local queue synchronized",
+          );
+
+          window.setTimeout(() => {
+            syncButtonLabel.textContent =
+              "SYNC QUEUE";
+          }, 1800);
+        },
+      );
+
+      /* ============================================================
+         LOAD MORE
+      ============================================================ */
+      document
+        .getElementById("loadMore")
+        .addEventListener(
+          "click",
+          (event) => {
+            event.currentTarget.innerHTML =
+              'ALL VISIBLE CAPTURES LOADED <span>✓</span>';
+
+            showToast(
+              "Daily capture list expanded",
+            );
+          },
+        );
+
+      /* ============================================================
+         CALIBRATION
+      ============================================================ */
+      document
+        .querySelectorAll(
+          ".panel-button",
+        )
+        .forEach((button) => {
+          button.addEventListener(
+            "click",
+            () => {
+              button.textContent =
+                "REFERENCE CAPTURED";
+
+              button.classList.add(
+                "is-done",
+              );
+
+              showToast(
+                "Reference panel capture stored",
+              );
+            },
+          );
+        });
+
+      /* ============================================================
+         DATE
+      ============================================================ */
+      document
+        .querySelectorAll(
+          ".date-arrow",
+        )
+        .forEach((button) => {
+          button.addEventListener(
+            "click",
+            () => {
+              showToast(
+                "Date navigation is UI-only in this prototype",
+              );
+            },
+          );
+        });
+
+      /* ============================================================
+         THEME
+      ============================================================ */
+      const themeOptions = [
+        ...document.querySelectorAll(
+          "[data-theme-choice]",
+        ),
+      ];
+
+      const themeCurrent =
+        document.getElementById(
+          "themeCurrent",
+        );
+
+      const themeColor =
+        document.getElementById(
+          "themeColor",
+        );
+
+      function applyTheme(theme) {
+        const normalizedTheme =
+          theme === "light"
+            ? "light"
+            : "dark";
+
+        document.documentElement.dataset.theme =
+          normalizedTheme;
+
+        themeOptions.forEach(
+          (option) => {
+            option.classList.toggle(
+              "is-active",
+              option.dataset.themeChoice ===
+                normalizedTheme,
+            );
+          },
+        );
+
+        themeCurrent.textContent =
+          normalizedTheme.toUpperCase();
+
+        themeColor.setAttribute(
+          "content",
+          normalizedTheme === "light"
+            ? "#f3f4ef"
+            : "#090b0a",
+        );
+
+        try {
+          localStorage.setItem(
+            "landcam-theme",
+            normalizedTheme,
+          );
+        } catch {}
+      }
+
+      let savedTheme = "dark";
+
+      try {
+        savedTheme =
+          localStorage.getItem(
+            "landcam-theme",
+          ) || "dark";
+      } catch {}
+
+      applyTheme(savedTheme);
+
+      themeOptions.forEach(
+        (option) => {
+          option.addEventListener(
+            "click",
+            () => {
+              applyTheme(
+                option.dataset.themeChoice,
+              );
+
+              showToast(
+                `${option.dataset.themeChoice.toUpperCase()} theme selected`,
+              );
+            },
+          );
+        },
+      );
+    </script>
+
+    <style is:global>
+      /* ==========================================================
+         THEME TOKENS
+      =========================================================== */
+      :root {
+        color-scheme: dark;
+
+        --bg: #090b0a;
+        --surface: #0e1110;
+        --surface-2: #131715;
+        --surface-3: #171c19;
+
+        --line: rgba(255, 255, 255, 0.09);
+        --line-strong: rgba(255, 255, 255, 0.15);
+
+        --text: #f3f5f1;
+        --muted: #8b938d;
+        --muted-2: #646c66;
+
+        --green: #c6f56e;
+        --green-2: #9bd94f;
+
+        --amber: #f0bd67;
+        --red: #ff6e69;
+        --blue: #7db7ff;
+
+        --radius: 16px;
+        --radius-small: 11px;
+
+        --nav-h: 74px;
+        --topbar-h: 70px;
+
+        --shadow:
+          0 20px 50px rgba(0, 0, 0, 0.38);
+      }
+
+      :root[data-theme="light"] {
+        color-scheme: light;
+
+        --bg: #f2f3ef;
+        --surface: #ffffff;
+        --surface-2: #f7f8f5;
+        --surface-3: #eceee9;
+
+        --line: rgba(20, 26, 22, 0.11);
+        --line-strong: rgba(20, 26, 22, 0.18);
+
+        --text: #111511;
+        --muted: #69716b;
+        --muted-2: #8a918b;
+
+        --green: #587f1e;
+        --green-2: #6d992a;
+
+        --amber: #99691e;
+        --red: #b3413c;
+        --blue: #3974ad;
+
+        --shadow:
+          0 20px 50px rgba(24, 30, 26, 0.12);
+      }
+
+      /* ==========================================================
+         RESET
+      =========================================================== */
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      html {
+        min-width: 320px;
+        background: var(--bg);
+        scroll-behavior: smooth;
+        transition:
+          background 0.22s ease,
+          color 0.22s ease;
+      }
+
+      body {
+        min-width: 320px;
+        min-height: 100vh;
+        overflow-x: hidden;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+        transition:
+          background 0.22s ease,
+          color 0.22s ease;
+      }
+
+      body.modal-open {
+        overflow: hidden;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      button {
+        border: 0;
+        color: inherit;
+        background: none;
+        cursor: pointer;
+      }
+
+      button:focus-visible,
+      input:focus-visible {
+        outline: 2px solid var(--green);
+        outline-offset: 3px;
+      }
+
+      ::selection {
+        background: var(--green);
+        color: #081008;
+      }
+
+      /* ==========================================================
+         APP
+      =========================================================== */
+      .app {
+        min-height: 100vh;
+        padding-bottom: calc(
+          var(--nav-h) + 20px
+        );
+      }
+
+      .main {
+        width: min(1180px, 100%);
+        margin: 0 auto;
+        padding: 28px 18px 30px;
+      }
+
+      /* ==========================================================
+         TOPBAR
+      =========================================================== */
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        min-height: var(--topbar-h);
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        align-items: center;
+        padding: 0 18px;
+        border-bottom: 1px solid var(--line);
+        background: color-mix(
+          in srgb,
+          var(--bg) 94%,
+          transparent
+        );
+        backdrop-filter: blur(18px);
+        transition:
+          background 0.22s ease,
+          border-color 0.22s ease;
+      }
+
+      .topbar__brand {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+      }
+
+      .brand-mark {
+        position: relative;
+        width: 26px;
+        height: 26px;
+        display: block;
+        border: 1px solid var(--green);
+        background:
+          linear-gradient(
+            90deg,
+            transparent 46%,
+            var(--green) 46%,
+            var(--green) 54%,
+            transparent 54%
+          ),
+          linear-gradient(
+            0deg,
+            transparent 46%,
+            var(--green) 46%,
+            var(--green) 54%,
+            transparent 54%
+          );
+        box-shadow:
+          5px 5px 0
+          color-mix(
+            in srgb,
+            var(--green) 12%,
+            transparent
+          );
+      }
+
+      .brand-name {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 13px;
+        font-weight: 900;
+        letter-spacing: 0.1em;
+      }
+
+      .brand-sub {
+        margin-top: 2px;
+        color: var(--muted);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 8px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+      }
+
+      .topbar__center {
+        justify-self: center;
+      }
+
+      .system-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 7px 10px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--muted);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 8px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+      }
+
+      .system-dot,
+      .status-pill__dot,
+      .device-trigger__status {
+        width: 6px;
+        height: 6px;
+        flex: 0 0 auto;
+        border-radius: 999px;
+        background: var(--green);
+        box-shadow:
+          0 0 12px
+          color-mix(
+            in srgb,
+            var(--green) 72%,
+            transparent
+          );
+      }
+
+      .system-dot.is-offline,
+      .status-pill:not(.status-pill--online)
+        .status-pill__dot {
+        background: var(--red);
+        box-shadow:
+          0 0 12px
+          color-mix(
+            in srgb,
+            var(--red) 55%,
+            transparent
+          );
+      }
+
+      /* DEVICE TRIGGER */
+      .topbar__right {
+        justify-self: end;
+      }
+
+      .device-trigger {
+        min-height: 42px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 10px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface);
+        text-align: left;
+      }
+
+      .device-trigger__copy {
+        display: grid;
+        gap: 2px;
+      }
+
+      .device-trigger__copy small,
+      .device-trigger__copy strong {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+      }
+
+      .device-trigger__copy small {
+        color: var(--muted);
+        font-size: 6px;
+        letter-spacing: 0.08em;
+      }
+
+      .device-trigger__copy strong {
+        max-width: 126px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 7px;
+        letter-spacing: 0.08em;
+      }
+
+      .device-trigger__chevron {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1;
+      }
+
+      /* ==========================================================
+         SCREEN
+      =========================================================== */
+      .screen {
+        display: none;
+      }
+
+      .screen.is-active {
+        display: block;
+        animation: screenIn 0.25s ease both;
+      }
+
+      @keyframes screenIn {
+        from {
+          opacity: 0;
+          transform: translateY(5px);
+        }
+
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .screen-head {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 18px;
+        margin-bottom: 26px;
+      }
+
+      .screen-head h1 {
+        margin-top: 5px;
+        font-size: clamp(29px, 7vw, 50px);
+        line-height: 0.95;
+        letter-spacing: -0.045em;
+        font-weight: 800;
+      }
+
+      .screen-head p {
+        max-width: 510px;
+        margin-top: 9px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .eyebrow,
+      .micro-label {
+        color: var(--green);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 8px;
+        font-weight: 900;
+        letter-spacing: 0.14em;
+      }
+
+      .screen-head__meta {
+        flex-shrink: 0;
+        display: grid;
+        gap: 4px;
+        text-align: right;
+      }
+
+      .screen-head__meta span,
+      .screen-head__meta strong {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+      }
+
+      .screen-head__meta span {
+        color: var(--muted);
+        font-size: 8px;
+        letter-spacing: 0.1em;
+      }
+
+      .screen-head__meta strong {
+        font-size: 10px;
+        letter-spacing: 0.08em;
+      }
+
+      /* ==========================================================
+         DEVICE CARD
+      =========================================================== */
+      .device-card {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background:
+          linear-gradient(
+            135deg,
+            color-mix(
+              in srgb,
+              var(--text) 2.4%,
+              transparent
+            ),
+            transparent 55%
+          ),
+          var(--surface);
+      }
+
+      .device-card__top,
+      .device-card__bottom {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+      }
+
+      .device-card__top {
+        padding: 22px;
+      }
+
+      .device-card__bottom {
+        padding: 14px 22px;
+        border-top: 1px solid var(--line);
+        background: color-mix(
+          in srgb,
+          var(--surface) 92%,
+          var(--text)
+        );
+      }
+
+      .device-name {
+        margin-top: 6px;
+        font-size: 18px;
+        font-weight: 800;
+        letter-spacing: -0.03em;
+      }
+
+      .device-id {
+        margin-top: 5px;
+        color: var(--muted-2);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 8px;
+        letter-spacing: 0.08em;
+      }
+
+      .device-card__bottom > div {
+        display: grid;
+        gap: 5px;
+      }
+
+      .device-card__bottom strong {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 10px;
+        letter-spacing: 0.05em;
+      }
+
+      /* ==========================================================
+         STATUS
+      =========================================================== */
+      .status-pill {
+        min-width: 92px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--muted);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 8px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+      }
+
+      .status-pill--online {
+        color: var(--green);
+        border-color:
+          color-mix(
+            in srgb,
+            var(--green) 20%,
+            transparent
+          );
+        background:
+          color-mix(
+            in srgb,
+            var(--green) 5%,
+            transparent
+          );
+      }
+
+      /* ==========================================================
+         SECTION LABEL
+      =========================================================== */
+      .section-label {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 10px;
+        margin: 28px 0 12px;
+        color: var(--muted);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 8px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+      }
+
+      .section-label--first {
+        margin-top: 6px;
+      }
+
+      .section-line {
+        height: 1px;
+        background: var(--line);
+      }
+
+      /* ==========================================================
+         TELEMETRY
+      =========================================================== */
+      .telemetry-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 9px;
+      }
+
+      .telemetry-card {
+        min-height: 115px;
+        display: grid;
+        align-content: space-between;
+        padding: 15px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-small);
+        background: var(--surface);
+      }
+
+      .telemetry-card__label,
+      .telemetry-card__meta {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 8px;
+        letter-spacing: 0.1em;
+      }
+
+      .telemetry-card__label {
+        color: var(--muted);
+      }
+
+      .telemetry-card__value {
+        margin-top: 5px;
+        font-size: 19px;
+        font-weight: 800;
+        letter-spacing: -0.035em;
+      }
+
+      .telemetry-card__meta {
+        color: var(--muted-2);
+      }
+
+      .value-ok {
+        color: var(--green);
+      }
+
+      /* ==========================================================
+         CAMERA SUMMARY
+      =========================================================== */
+      .camera-summary {
+        display: grid;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        overflow: hidden;
+        background: var(--surface);
+      }
+
+      .camera-summary__info {
+        display: grid;
+        gap: 17px;
+        padding: 18px;
+      }
+
+      .camera-summary__head {
+        display: flex;
+        justify-content: space-between;
+        gap: 15px;
+      }
+
+      .camera-summary__head > div {
+        display: grid;
+        gap: 5px;
+      }
+
+      .camera-summary__head strong {
+        font-size: 20px;
+        letter-spacing: -0.035em;
+      }
+
+      .mini-badge,
+      .validation-badge,
+      .mission-tag,
+      .connected-tag {
+        align-self: start;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 8px;
+        border:
+          1px solid
+          color-mix(
+            in srgb,
+            var(--green) 16%,
+            transparent
+          );
+        border-radius: 999px;
+        color: var(--green);
+        background:
+          color-mix(
+            in srgb,
+            var(--green) 5%,
+            transparent
+          );
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 7px;
+        font-weight: 900;
+        letter-spacing: 0.1em;
+      }
+
+      .camera-summary__stats {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+      }
+
+      .camera-summary__stats > div {
+        display: grid;
+        gap: 5px;
+        padding-top: 11px;
+        border-top: 1px solid var(--line);
+      }
+
+      .camera-summary__stats span,
+      .camera-summary__stats strong {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+      }
+
+      .camera-summary__stats span {
+        color: var(--muted);
+        font-size: 7px;
+      }
+
+      .camera-summary__stats strong {
+        font-size: 10px;
+      }
+
+      /* ==========================================================
+         CAMERA PREVIEW
+      =========================================================== */
+      .camera-preview {
+        position: relative;
+        overflow: hidden;
+        isolation: isolate;
+        background:
+          linear-gradient(
+            155deg,
+            color-mix(
+              in srgb,
+              var(--green) 10%,
+              transparent
+            ) 0%,
+            rgba(65, 84, 59, 0.28) 35%,
+            rgba(20, 27, 24, 0.96) 72%
+          ),
+          #111;
+      }
+
+      :root[data-theme="light"]
+        .camera-preview {
+        background:
+          linear-gradient(
+            155deg,
+            rgba(91, 125, 61, 0.32),
+            rgba(173, 180, 163, 0.4) 50%,
+            rgba(226, 228, 220, 0.95)
+          ),
+          #dde0d7;
+      }
+
+      .camera-preview--small {
+        min-height: 225px;
+      }
+
+      .camera-preview--large {
+        min-height: min(69vw, 620px);
+      }
+
+      .camera-preview::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: 8;
+        pointer-events: none;
+        background:
+          linear-gradient(
+            transparent 0%,
+            rgba(255, 255, 255, 0.018) 48%,
+            transparent 50%
+          );
+        background-size: 100% 5px;
+        mix-blend-mode: screen;
+        opacity: 0.28;
+      }
+
+      .preview-grid {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        opacity: 0.28;
+        background-image:
+          linear-gradient(
+            rgba(255, 255, 255, 0.05) 1px,
+            transparent 1px
+          ),
+          linear-gradient(
+            90deg,
+            rgba(255, 255, 255, 0.05) 1px,
+            transparent 1px
+          );
+        background-size: 40px 40px;
+      }
+
+      .preview-grid::before,
+      .preview-grid::after {
+        content: "";
+        position: absolute;
+        background:
+          color-mix(
+            in srgb,
+            var(--green) 22%,
+            transparent
+          );
+      }
+
+      .preview-grid::before {
+        left: 50%;
+        top: 0;
+        width: 1px;
+        height: 100%;
+      }
+
+      .preview-grid::after {
+        left: 0;
+        top: 50%;
+        width: 100%;
+        height: 1px;
+      }
+
+      .preview-scan {
+        position: absolute;
+        inset: 0;
+        z-index: 7;
+        background:
+          linear-gradient(
+            to bottom,
+            transparent 0%,
+            color-mix(
+              in srgb,
+              var(--green) 0%,
+              transparent
+            ) 46%,
+            color-mix(
+              in srgb,
+              var(--green) 12%,
+              transparent
+            ) 50%,
+            color-mix(
+              in srgb,
+              var(--green) 0%,
+              transparent
+            ) 54%,
+            transparent 100%
+          );
+        animation:
+          scan 4.2s linear infinite;
+        pointer-events: none;
+      }
+
+      @keyframes scan {
+        from {
+          transform: translateY(-55%);
+        }
+
+        to {
+          transform: translateY(55%);
+        }
+      }
+
+      .preview-horizon {
+        position: absolute;
+        z-index: 2;
+        top: 31%;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background:
+          color-mix(
+            in srgb,
+            var(--green) 36%,
+            transparent
+          );
+      }
+
+      .preview-field {
+        position: absolute;
+        inset: 38% -15% -15%;
+        transform:
+          perspective(400px)
+          rotateX(54deg);
+
+        background:
+          repeating-linear-gradient(
+            90deg,
+            color-mix(
+              in srgb,
+              var(--green) 6%,
+              transparent
+            )
+            0 16px,
+            transparent 16px 35px
+          );
+      }
+
+      .preview-field--large {
+        inset: 41% -14% -17%;
+      }
+
+      .field-block {
+        position: absolute;
+        border:
+          1px solid
+          color-mix(
+            in srgb,
+            var(--green) 16%,
+            transparent
+          );
+        background:
+          color-mix(
+            in srgb,
+            var(--green) 7%,
+            transparent
+          );
+      }
+
+      .field-block--a {
+        left: 4%;
+        right: 57%;
+        top: 16%;
+        bottom: 18%;
+      }
+
+      .field-block--b {
+        left: 48%;
+        right: 7%;
+        top: 3%;
+        bottom: 36%;
+      }
+
+      .field-block--c {
+        left: 26%;
+        right: 19%;
+        top: 34%;
+        bottom: 7%;
+      }
+
+      .field-track {
+        position: absolute;
+        left: 35%;
+        top: -8%;
+        width: 2px;
+        height: 125%;
+        background: rgba(255, 255, 255, 0.2);
+        transform: rotate(-5deg);
+        box-shadow:
+          12px 0 0 rgba(255, 255, 255, 0.02);
+      }
+
+      .field-track--two {
+        left: 51%;
+        transform: rotate(3deg);
+      }
+
+      .preview-crosshair {
+        position: absolute;
+        z-index: 9;
+        top: 50%;
+        left: 50%;
+        width: 46px;
+        height: 46px;
+        transform: translate(-50%, -50%);
+      }
+
+      .preview-crosshair span,
+      .preview-crosshair::before,
+      .preview-crosshair::after {
+        position: absolute;
+        content: "";
+      }
+
+      .preview-crosshair span {
+        left: 50%;
+        top: 50%;
+        width: 4px;
+        height: 4px;
+        transform:
+          translate(-50%, -50%);
+        border-radius: 50%;
+        background: var(--green);
+        box-shadow:
+          0 0 16px var(--green);
+      }
+
+      .preview-crosshair::before {
+        left: 50%;
+        top: 0;
+        width: 1px;
+        height: 100%;
+        background:
+          color-mix(
+            in srgb,
+            var(--green) 80%,
+            transparent
+          );
+      }
+
+      .preview-crosshair::after {
+        left: 0;
+        top: 50%;
+        width: 100%;
+        height: 1px;
+        background:
+          color-mix(
+            in srgb,
+            var(--green) 80%,
+            transparent
+          );
+      }
+
+      .preview-crosshair i {
+        position: absolute;
+        inset: 9px;
+        border:
+          1px solid
+          color-mix(
+            in srgb,
+            var(--green) 80%,
+            transparent
+          );
+        border-radius: 50%;
+      }
+
+      .preview-crosshair--large {
+        width: 76px;
+        height: 76px;
+      }
+
+      .preview-readout,
+      .preview-label,
+      .preview-tag {
+        position: absolute;
+        z-index: 10;
+        padding: 6px 7px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(5, 7, 6, 0.45);
+        backdrop-filter: blur(8px);
+        color: rgba(255, 255, 255, 0.82);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 7px;
+        letter-spacing: 0.08em;
+      }
+
+      .preview-label {
+        left: 12px;
+        top: 12px;
+      }
+
+      .preview-tag {
+        right: 12px;
+        top: 12px;
+        color: var(--green);
+      }
+
+      .preview-readout {
+        display: grid;
+        gap: 3px;
+      }
+
+      .preview-readout span {
+        color: rgba(255, 255, 255, 0.55);
+      }
+
+      .preview-readout strong {
+        color: rgba(255, 255, 255, 0.96);
+      }
+
+      .preview-readout--top {
+        top: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        text-align: center;
+      }
+
+      .preview-readout--bottom {
+        left: 12px;
+        bottom: 12px;
+      }
+
+      .capture-flash {
+        position: absolute;
+        inset: 0;
+        z-index: 20;
+        pointer-events: none;
+        background: white;
+        opacity: 0;
+      }
+
+      .capture-flash.is-active {
+        animation:
+          captureFlash 0.42s ease;
+      }
+
+      @keyframes captureFlash {
+        0% {
+          opacity: 0;
+        }
+
+        18% {
+          opacity: 0.8;
+        }
+
+        100% {
+          opacity: 0;
+        }
+      }
+
+      /* ==========================================================
+         BUTTONS
+      =========================================================== */
+      .wide-button {
+        width: 100%;
+        min-height: 46px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 15px;
+        padding: 0 14px;
+        border: 1px solid var(--line-strong);
+        border-radius: 10px;
+        background: var(--surface-2);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 9px;
+        font-weight: 900;
+        letter-spacing: 0.1em;
+        transition:
+          transform 0.18s ease,
+          border-color 0.18s ease,
+          background 0.18s ease;
+      }
+
+      .wide-button:hover {
+        transform: translateY(-1px);
+        border-color: var(--line-strong);
+      }
+
+      .wide-button--primary {
+        color:
+          color-mix(
+            in srgb,
+            var(--bg) 95%,
+            #000 5%
+          );
+        border-color: var(--green);
+        background: var(--green);
+      }
+
+      .button-arrow {
+        font-size: 14px;
+      }
+
+      /* ==========================================================
+         QUICK ACTIONS
+      =========================================================== */
+      .quick-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 9px;
+      }
+
+      .quick-card {
+        min-height: 104px;
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: end;
+        gap: 10px;
+        padding: 13px;
+        text-align: left;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-small);
+        background: var(--surface);
+        transition:
+          border-color 0.18s ease,
+          transform 0.18s ease;
+      }
+
+      .quick-card:hover {
+        border-color: var(--line-strong);
+        transform: translateY(-1px);
+      }
+
+      .quick-card--primary {
+        border-color:
+          color-mix(
+            in srgb,
+            var(--green) 22%,
+            transparent
+          );
+        background:
+          linear-gradient(
+            135deg,
+            color-mix(
+              in srgb,
+              var(--green) 13%,
+              transparent
+            ),
+            transparent 65%
+          ),
+          var(--surface);
+      }
+
+      .quick-card__icon {
+        align-self: start;
+        width: 30px;
+        height: 30px;
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--line);
+        color: var(--green);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 15px;
+      }
+
+      .quick-card__main {
+        display: grid;
+        gap: 4px;
+      }
+
+      .quick-card__main strong {
+        font-size: 10px;
+      }
+
+      .quick-card__main small,
+      .quick-card__arrow {
+        color: var(--muted);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 7px;
+        letter-spacing: 0.08em;
+      }
+
+      /* ==========================================================
+         TODAY
+      =========================================================== */
+      .today-card {
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+
+      .today-card__top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 15px;
+      }
+
+      .today-card__top > div {
+        display: grid;
+        gap: 5px;
+      }
+
+      .today-card__top strong {
+        font-size: 15px;
+        letter-spacing: -0.025em;
+      }
+
+      .session-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--green);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 7px;
+        font-weight: 900;
+      }
+
+      .session-status span,
+      .camera-status span {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--green);
+        box-shadow:
+          0 0 10px
+          color-mix(
+            in srgb,
+            var(--green) 80%,
+            transparent
+          );
+      }
+
+      .today-stats {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+        margin: 20px 0 16px;
+      }
+
+      .today-stats div {
+        display: grid;
+        gap: 4px;
+      }
+
+      .today-stats span,
+      .today-stats strong {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+      }
+
+      .today-stats span {
+        color: var(--muted);
+        font-size: 7px;
+      }
+
+      .today-stats strong {
+        font-size: 13px;
+      }
+
+      .progress-track,
+      .storage-progress {
+        position: relative;
+        height: 5px;
+        overflow: hidden;
+        border-radius: 999px;
+        background:
+          color-mix(
+            in srgb,
+            var(--text) 8%,
+            transparent
+          );
+      }
+
+      .progress-track span,
+      .storage-progress span {
+        position: absolute;
+        inset: 0 auto 0 0;
+        background: var(--green);
+        box-shadow:
+          0 0 14px
+          color-mix(
+            in srgb,
+            var(--green) 34%,
+            transparent
+          );
+      }
+
+      .today-card__footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 9px;
+        color: var(--muted);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 7px;
+      }
+
+      .today-card__footer strong {
+        color: var(--green);
+      }
+
+      /* ==========================================================
+         CHECK LIST
+      =========================================================== */
+      .check-list {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+
+      .check-row {
+        min-height: 66px;
+        display: grid;
+        grid-template-columns: 25px 1fr auto;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .check-row:last-child {
+        border-bottom: 0;
+      }
+
+      .check-row > div {
+        display: grid;
+        gap: 4px;
+      }
+
+      .check-row strong {
+        font-size: 9px;
+      }
+
+      .check-row small,
+      .check-row b {
+        color: var(--muted);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 7px;
+      }
+
+      .check-row b {
+        color: var(--green);
+      }
+
+      .check-icon {
+        width: 21px;
+        height: 21px;
+        display: grid;
+        place-items: center;
+        border-radius: 7px;
+        background:
+          color-mix(
+            in srgb,
+            var(--green) 8%,
+            transparent
+          );
+        color: var(--green);
+        font-size: 11px;
+      }
+
+      /* ==========================================================
+         CAMERA PAGE
+      =========================================================== */
+      .capture-panel {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+
+      .capture-panel__bar {
+        min-height: 48px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 0 12px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .camera-status,
+      .frame-counter {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        color: var(--muted);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 7px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+      }
+
+      .camera-status {
+        color: var(--green);
+      }
+
+      .frame-counter strong {
+        color: var(--text);
+      }
+
+      .band-strip {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        border-top: 1px solid var(--line);
+      }
+
+      .band-item {
+        min-height: 76px;
+        display: grid;
+        align-content: center;
+        gap: 4px;
+        padding: 9px;
+        border-right: 1px solid var(--line);
+        text-align: left;
+        background:
+          color-mix(
+            in srgb,
+            var(--surface) 98%,
+            var(--text)
+          );
+      }
+
+      .band-item:last-child {
+        border-right: 0;
+      }
+
+      .band-item.is-active {
+        color: var(--green);
+        background:
+          color-mix(
+            in srgb,
+            var(--green) 6%,
+            transparent
+          );
+      }
+
+      .band-item__index,
+      .band-item small {
+        color: var(--muted);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 7px;
+      }
+
+      .band-item.is-active .band-item__index,
+      .band-item.is-active small {
+        color:
+          color-mix(
+            in srgb,
+            var(--green) 70%,
+            transparent
+          );
+      }
+
+      .band-item strong {
+        font-size: 9px;
+      }
+
+      .capture-actions {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        align-items: center;
+        gap: 12px;
+        padding: 20px 15px;
+        border-top: 1px solid var(--line);
+      }
+
+      .capture-secondary {
+        min-height: 58px;
+        display: grid;
+        align-content: center;
+        gap: 5px;
+        padding: 0 10px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface-2);
+        text-align: center;
+      }
+
+      .capture-secondary span,
+      .capture-secondary strong {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+      }
+
+      .capture-secondary span {
+        color: var(--muted);
+        font-size: 7px;
+      }
+
+      .capture-secondary strong {
+        color: var(--green);
+        font-size: 8px;
+      }
+
+      .shutter-button {
+        width: 92px;
+        height: 92px;
+        display: grid;
+        place-items: center;
+        gap: 5px;
+        border-radius: 50%;
+        background: var(--green);
+        color:
+          color-mix(
+            in srgb,
+            var(--bg) 95%,
+            black
+          );
+        box-shadow:
+          0 0 0 6px
+          color-mix(
+            in srgb,
+            var(--green) 8%,
+            transparent
+          ),
+          var(--shadow);
+      }
+
+      .shutter-ring {
+        width: 50px;
+        height: 50px;
+        display: grid;
+        place-items: center;
+        border: 1px solid
+          color-mix(
+            in srgb,
+            var(--bg) 50%,
+            transparent
+          );
+        border-radius: 50%;
+      }
+
+      .shutter-ring i {
+        width: 28px;
+        height: 28px;
+        display: block;
+        border-radius: 50%;
+        background: var(--bg);
+      }
+
+      .shutter-button strong {
+        margin-top: -25px;
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 7px;
+        letter-spacing: 0.08em;
+      }
+
+      .metadata-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+      }
+
+      .meta-tile {
+        display: grid;
+        gap: 7px;
+        min-height: 75px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface);
+      }
+
+      .meta-tile span,
+      .meta-tile strong {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+      }
+
+      .meta-tile span {
+        color: var(--muted);
+        font-size: 7px;
+      }
+
+      .meta-tile strong {
+        font-size: 9px;
+      }
+
+      .band-overview {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+
+      .band-overview__row {
+        min-height: 57px;
+        display: grid;
+        grid-template-columns: 92px 50px 1fr 28px;
+        align-items: center;
+        gap: 10px;
+        padding: 0 12px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .band-overview__row:last-child {
+        border-bottom: 0;
+      }
+
+      .band-name,
+      .band-value,
+      .band-unit {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 8px;
+      }
+
+      .band-name {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+
+      .band-value {
+        color: var(--text);
+        font-weight: 800;
+      }
+
+      .band-unit {
+        color: var(--muted-2);
+        text-align: right;
+      }
+
+      .band-dot {
+        width: 6px;
+        height: 6px;
+        display: inline-block;
+        border-radius: 50%;
+      }
+
+      .band-dot--b {
+        background: var(--blue);
+      }
+
+      .band-dot--g {
+        background: #7ca854;
+      }
+
+      .band-dot--r {
+        background: #d65450;
+      }
+
+      .band-dot--nir {
+        background: #b99342;
+      }
+
+      .band-bar {
+        position: relative;
+        height: 5px;
+        overflow: hidden;
+        border-radius: 999px;
+        background:
+          color-mix(
+            in srgb,
+            var(--text) 8%,
+            transparent
+          );
+      }
+
+      .band-bar span {
+        position: absolute;
+        inset: 0 auto 0 0;
+        border-radius: inherit;
+        background: var(--green);
+      }
+
+      .notice-card {
+        display: grid;
+        grid-template-columns: 27px 1fr;
+        gap: 10px;
+        margin-top: 12px;
+        padding: 13px;
+        border:
+          1px solid
+          color-mix(
+            in srgb,
+            var(--amber) 17%,
+            transparent
+          );
+        border-radius: var(--radius-small);
+        background:
+          color-mix(
+            in srgb,
+            var(--amber) 4.5%,
+            transparent
+          );
+      }
+
+      .notice-mark {
+        width: 24px;
+        height: 24px;
+        display: grid;
+        place-items: center;
+        border:
+          1px solid
+          color-mix(
+            in srgb,
+            var(--amber) 24%,
+            transparent
+          );
+        border-radius: 7px;
+        color: var(--amber);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-weight: 900;
+      }
+
+      .notice-card strong,
+      .notice-card p {
+        font-size: 9px;
+      }
+
+      .notice-card p {
+        margin-top: 4px;
+        color: var(--muted);
+        line-height: 1.55;
+      }
+
+      /* ==========================================================
+         MISSION
+      =========================================================== */
+      .mission-hero {
+        padding: 19px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background:
+          linear-gradient(
+            130deg,
+            color-mix(
+              in srgb,
+              var(--green) 5.5%,
+              transparent
+            ),
+            transparent 60%
+          ),
+          var(--surface);
+      }
+
+      .mission-hero__head {
+        display: flex;
+        justify-content: space-between;
+        gap: 15px;
+      }
+
+      .mission-hero__head > div {
+        display: grid;
+        gap: 5px;
+      }
+
+      .mission-hero__head h2 {
+        font-size: 18px;
+        letter-spacing: -0.035em;
+      }
+
+      .mission-hero__head p {
+        color: var(--muted);
+        font-size: 10px;
+      }
+
+      .mission-tag--active {
+        border-color:
+          color-mix(
+            in srgb,
+            var(--green) 30%,
+            transparent
+          );
+        background:
+          color-mix(
+            in srgb,
+            var(--green) 12%,
+            transparent
+          );
+      }
+
+      .mission-hero__stats {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+        margin-top: 24px;
+      }
+
+      .mission-hero__stats > div {
+        display: grid;
+        gap: 5px;
+      }
+
+      .mission-hero__stats span,
+      .mission-hero__stats strong {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+      }
+
+      .mission-hero__stats span {
+        color: var(--muted);
+        font-size: 7px;
+      }
+
+      .mission-hero__stats strong {
+        font-size: 10px;
+      }
+
+      .map-card {
+        position: relative;
+        height: 330px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background:
+          radial-gradient(
+            circle at center,
+            color-mix(
+              in srgb,
+              var(--green) 5%,
+              transparent
+            ),
+            transparent 40%
+          ),
+          var(--surface);
+      }
+
+      .map-grid {
+        position: absolute;
+        inset: 0;
+        opacity: 0.38;
+        background-image:
+          linear-gradient(
+            color-mix(
+              in srgb,
+              var(--text) 4%,
+              transparent
+            )
+            1px,
+            transparent 1px
+          ),
+          linear-gradient(
+            90deg,
+            color-mix(
+              in srgb,
+              var(--text) 4%,
+              transparent
+            )
+            1px,
+            transparent 1px
+          );
+        background-size: 31px 31px;
+      }
+
+      .map-route {
+        position: absolute;
+        inset: 20px;
+      }
+
+      .map-route svg {
+        width: 100%;
+        height: 100%;
+        overflow: visible;
+      }
+
+      .map-route path {
+        fill: none;
+        stroke: var(--green);
+        stroke-width: 3;
+        vector-effect: non-scaling-stroke;
+        stroke-linecap: round;
+        filter:
+          drop-shadow(
+            0 0 8px
+            color-mix(
+              in srgb,
+              var(--green) 18%,
+              transparent
+            )
+          );
+      }
+
+      .map-point {
+        position: absolute;
+        z-index: 4;
+        width: 11px;
+        height: 11px;
+        border: 2px solid var(--bg);
+        border-radius: 50%;
+        background: var(--green);
+        box-shadow:
+          0 0 0 5px
+          color-mix(
+            in srgb,
+            var(--green) 11%,
+            transparent
+          );
+      }
+
+      .map-point--start {
+        left: 12%;
+        bottom: 14%;
+      }
+
+      .map-point--end {
+        right: 8%;
+        top: 35%;
+      }
+
+      .map-overlay {
+        position: absolute;
+        z-index: 5;
+        display: grid;
+        gap: 4px;
+        padding: 8px;
+        border: 1px solid var(--line);
+        background:
+          color-mix(
+            in srgb,
+            var(--surface) 72%,
+            transparent
+          );
+        backdrop-filter: blur(10px);
+      }
+
+      .map-overlay span,
+      .map-overlay strong {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+      }
+
+      .map-overlay span {
+        color: var(--muted);
+        font-size: 7px;
+      }
+
+      .map-overlay strong {
+        font-size: 9px;
+      }
+
+      .map-overlay--top {
+        left: 12px;
+        top: 12px;
+      }
+
+      .map-overlay--bottom {
+        left: 12px;
+        bottom: 12px;
+      }
+
+      .map-center {
+        position: absolute;
+        left: 66%;
+        top: 38%;
+        width: 36px;
+        height: 36px;
+        transform: translate(-50%, -50%);
+        border:
+          1px dashed
+          color-mix(
+            in srgb,
+            var(--green) 45%,
+            transparent
+          );
+        border-radius: 50%;
+      }
+
+      .map-center span {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 5px;
+        height: 5px;
+        transform: translate(-50%, -50%);
+        border-radius: 50%;
+        background: var(--green);
+      }
+
+      .preflight-list {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+
+      .preflight-row {
+        min-height: 70px;
+        display: grid;
+        grid-template-columns: 20px 1fr auto;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 13px;
+        border-bottom: 1px solid var(--line);
+        cursor: pointer;
+      }
+
+      .preflight-row:last-child {
+        border-bottom: 0;
+      }
+
+      .preflight-row input {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .custom-check {
+        width: 18px;
+        height: 18px;
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--green);
+        border-radius: 5px;
+        color: var(--green);
+        background:
+          color-mix(
+            in srgb,
+            var(--green) 7%,
+            transparent
+          );
+      }
+
+      .preflight-row input:checked + .custom-check::after {
+        content: "✓";
+        font-size: 10px;
+        font-weight: 900;
+      }
+
+      .preflight-copy {
+        display: grid;
+        gap: 4px;
+      }
+
+      .preflight-row strong {
+        font-size: 9px;
+      }
+
+      .preflight-row small,
+      .preflight-row b {
+        color: var(--muted);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 7px;
+      }
+
+      .preflight-row b {
+        color: var(--green);
+      }
+
+      .mission-config-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 9px;
+      }
+
+      .config-card {
+        min-height: 105px;
+        display: grid;
+        align-content: space-between;
+        padding: 13px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-small);
+        background: var(--surface);
+      }
+
+      .config-card span,
+      .config-card strong,
+      .config-card small {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+      }
+
+      .config-card span,
+      .config-card small {
+        color: var(--muted);
+        font-size: 7px;
+      }
+
+      .config-card strong {
+        font-size: 14px;
+      }
+
+      .config-card small {
+        color: var(--muted-2);
+      }
+
+      .mission-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 9px;
+        margin-top: 12px;
+      }
+
+      /* ==========================================================
+         DATA
+      =========================================================== */
+      .date-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+
+      .date-bar > div {
+        display: grid;
+        gap: 5px;
+        text-align: center;
+      }
+
+      .date-bar strong {
+        font-size: 11px;
+      }
+
+      .date-arrow {
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        color: var(--muted);
+      }
+
+      .daily-summary {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 9px;
+        margin-top: 9px;
+      }
+
+      .daily-summary > div {
+        min-height: 88px;
+        display: grid;
+        align-content: space-between;
+        padding: 13px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-small);
+        background: var(--surface);
+      }
+
+      .daily-summary span,
+      .daily-summary strong {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+      }
+
+      .daily-summary span {
+        color: var(--muted);
+        font-size: 7px;
+      }
+
+      .daily-summary strong {
+        font-size: 19px;
+        letter-spacing: -0.04em;
+      }
+
+      .data-tabs,
+      .more-switcher {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 5px;
+        margin-top: 18px;
+        padding: 4px;
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        background: var(--surface);
+      }
+
+      .data-tab,
+      .more-tab {
+        min-height: 36px;
+        border-radius: 7px;
+        color: var(--muted);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 7px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+      }
+
+      .data-tab.is-active,
+      .more-tab.is-active {
+        color:
+          color-mix(
+            in srgb,
+            var(--bg) 96%,
+            black
+          );
+        background: var(--green);
+      }
+
+      .data-pane,
+      .more-pane {
+        display: none;
+        margin-top: 12px;
+      }
+
+      .data-pane.is-active,
+      .more-pane.is-active {
+        display: block;
+        animation: screenIn 0.24s ease both;
+      }
+
+      .timeline-head {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1.15fr 0.7fr;
+        gap: 10px;
+        padding: 0 10px 8px;
+        color: var(--muted);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 6px;
+        letter-spacing: 0.1em;
+      }
+
+      .timeline {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+
+      .capture-row {
+        min-height: 72px;
+        display: grid;
+        grid-template-columns: 1fr 1fr 1.15fr 0.7fr;
+        align-items: center;
+        gap: 10px;
+        padding: 10px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .capture-row:last-child {
+        border-bottom: 0;
+      }
+
+      .capture-row__time,
+      .capture-row__id,
+      .capture-row__position,
+      .capture-row__status {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+      }
+
+      .capture-row strong,
+      .capture-row small,
+      .capture-row span {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+      }
+
+      .capture-row strong {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 8px;
+      }
+
+      .capture-row small,
+      .capture-row span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--muted);
+        font-size: 6px;
+      }
+
+      .capture-row__status span {
+        justify-self: start;
+        padding: 5px 6px;
+        border:
+          1px solid
+          color-mix(
+            in srgb,
+            var(--green) 13%,
+            transparent
+          );
+        border-radius: 5px;
+        color: var(--green);
+        background:
+          color-mix(
+            in srgb,
+            var(--green) 4%,
+            transparent
+          );
+      }
+
+      .load-more {
+        width: 100%;
+        margin-top: 9px;
+        min-height: 46px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        color: var(--muted);
+        background: var(--surface);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 8px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+      }
+
+      .load-more span {
+        margin-left: 7px;
+        color: var(--green);
+      }
+
+      .validation-hero,
+      .storage-hero,
+      .calibration-head,
+      .device-detail {
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background:
+          linear-gradient(
+            130deg,
+            color-mix(
+              in srgb,
+              var(--green) 5%,
+              transparent
+            ),
+            transparent 65%
+          ),
+          var(--surface);
+      }
+
+      .validation-hero,
+      .storage-hero {
+        display: flex;
+        justify-content: space-between;
+        gap: 15px;
+      }
+
+      .validation-hero > div,
+      .storage-info {
+        display: grid;
+        gap: 6px;
+      }
+
+      .validation-hero h2,
+      .storage-info h2,
+      .calibration-head h2,
+      .device-detail h2 {
+        font-size: 16px;
+        letter-spacing: -0.03em;
+      }
+
+      .validation-hero p,
+      .storage-info p,
+      .calibration-head p,
+      .device-detail p {
+        color: var(--muted);
+        font-size: 9px;
+        line-height: 1.55;
+      }
+
+      .comparison-table {
+        overflow: hidden;
+        margin-top: 9px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+
+      .comparison-row {
+        min-height: 52px;
+        display: grid;
+        grid-template-columns: 1.35fr repeat(3, 1fr);
+        align-items: center;
+        gap: 10px;
+        padding: 0 13px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .comparison-row:last-child {
+        border-bottom: 0;
+      }
+
+      .comparison-row--head {
+        min-height: 39px;
+        color: var(--muted);
+        background:
+          color-mix(
+            in srgb,
+            var(--surface) 98%,
+            var(--text)
+          );
+      }
+
+      .comparison-row span,
+      .comparison-row strong,
+      .comparison-row b {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 7px;
+      }
+
+      .comparison-row strong {
+        font-size: 8px;
+      }
+
+      .delta-good {
+        color: var(--green);
+      }
+
+      .delta-warn {
+        color: var(--amber);
+      }
+
+      .index-grid,
+      .postgis-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 9px;
+        margin-top: 9px;
+      }
+
+      .index-card,
+      .postgis-card {
+        min-height: 110px;
+        display: grid;
+        align-content: space-between;
+        padding: 13px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-small);
+        background: var(--surface);
+      }
+
+      .index-card span,
+      .index-card small,
+      .postgis-card span,
+      .postgis-card small {
+        color: var(--muted);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 7px;
+      }
+
+      .index-card strong,
+      .postgis-card strong {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 20px;
+      }
+
+      .index-card strong {
+        color: var(--green);
+      }
+
+      .validation-note {
+        display: grid;
+        grid-template-columns: 23px 1fr;
+        gap: 10px;
+        margin-top: 9px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-small);
+      }
+
+      .validation-note > span {
+        width: 22px;
+        height: 22px;
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        color: var(--muted);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 8px;
+      }
+
+      .validation-note p {
+        color: var(--muted);
+        font-size: 8px;
+        line-height: 1.55;
+      }
+
+      .storage-visual {
+        display: grid;
+        place-items: center;
+      }
+
+      .storage-ring {
+        width: 90px;
+        height: 90px;
+        display: grid;
+        place-items: center;
+        border:
+          8px solid
+          color-mix(
+            in srgb,
+            var(--text) 6%,
+            transparent
+          );
+        border-top-color: var(--green);
+        border-right-color: var(--green);
+        border-radius: 50%;
+      }
+
+      .storage-ring span {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .storage-progress {
+        margin-top: 8px;
+      }
+
+      .storage-meta {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        color: var(--muted);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 7px;
+      }
+
+      .storage-meta strong {
+        color: var(--green);
+      }
+
+      .data-schema {
+        margin-top: 9px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+
+      .data-schema__head,
+      .schema-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 11px 13px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .schema-row:last-child {
+        border-bottom: 0;
+      }
+
+      .data-schema__head span,
+      .schema-row span,
+      .schema-row strong {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 7px;
+      }
+
+      .data-schema__head span {
+        color: var(--muted);
+      }
+
+      .schema-row span {
+        color: var(--muted-2);
+      }
+
+      .schema-row strong {
+        max-width: 65%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      /* ==========================================================
+         MORE / DEVICE / SETTINGS
+      =========================================================== */
+      .more-switcher {
+        margin-top: -3px;
+        margin-bottom: 12px;
+      }
+
+      .calibration-head,
+      .device-detail {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 15px;
+      }
+
+      .calibration-state {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-shrink: 0;
+        color: var(--green);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 7px;
+        font-weight: 900;
+      }
+
+      .calibration-state span {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--green);
+        box-shadow:
+          0 0 10px
+          color-mix(
+            in srgb,
+            var(--green) 70%,
+            transparent
+          );
+      }
+
+      .panel-grid {
+        display: grid;
+        gap: 9px;
+        margin-top: 9px;
+      }
+
+      .reference-panel {
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+
+      .reference-panel__top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .reference-panel__top > div {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+      }
+
+      .panel-number {
+        width: 24px;
+        height: 24px;
+        display: grid;
+        place-items: center;
+        border-radius: 7px;
+        background: var(--surface-3);
+        color: var(--green);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 8px;
+        font-weight: 900;
+      }
+
+      .reference-panel strong {
+        font-size: 10px;
+      }
+
+      .panel-state {
+        color: var(--green);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 7px;
+      }
+
+      .panel-surface {
+        height: 74px;
+        margin: 12px 0;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+
+      .panel-surface--dark {
+        background:
+          linear-gradient(
+            135deg,
+            #1b1e1c,
+            #292e2a
+          );
+      }
+
+      .panel-surface--mid {
+        background:
+          linear-gradient(
+            135deg,
+            #666b64,
+            #8a9188
+          );
+      }
+
+      .panel-surface--light {
+        background:
+          linear-gradient(
+            135deg,
+            #c6c6bd,
+            #ecebe0
+          );
+      }
+
+      .reflectance-fields {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 6px;
+      }
+
+      .reflectance-fields label {
+        display: grid;
+        gap: 5px;
+      }
+
+      .reflectance-fields label > span {
+        color: var(--muted);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 7px;
+      }
+
+      .reflectance-fields input {
+        width: 100%;
+        min-height: 32px;
+        padding: 0 6px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--surface-2);
+        color: var(--text);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 8px;
+      }
+
+      .panel-button {
+        width: 100%;
+        min-height: 37px;
+        margin-top: 10px;
+        border: 1px solid var(--line-strong);
+        border-radius: 8px;
+        color: var(--muted);
+        background: var(--surface-2);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 7px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+      }
+
+      .panel-button.is-done {
+        border-color:
+          color-mix(
+            in srgb,
+            var(--green) 25%,
+            transparent
+          );
+        color: var(--green);
+        background:
+          color-mix(
+            in srgb,
+            var(--green) 5%,
+            transparent
+          );
+      }
+
+      .spectrometer-card {
+        padding: 15px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+
+      .spectrometer-card__top {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .spectrometer-card__top > div {
+        display: grid;
+        gap: 5px;
+      }
+
+      .spectrometer-card h3 {
+        font-size: 13px;
+      }
+
+      .connected-tag {
+        align-self: start;
+      }
+
+      .connected-tag i {
+        width: 5px;
+        height: 5px;
+        display: inline-block;
+        border-radius: 50%;
+        background: var(--green);
+      }
+
+      .spectrometer-chart {
+        position: relative;
+        height: 130px;
+        overflow: hidden;
+        margin: 15px 0;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background:
+          linear-gradient(
+            color-mix(
+              in srgb,
+              var(--text) 4%,
+              transparent
+            )
+            1px,
+            transparent 1px
+          ),
+          linear-gradient(
+            90deg,
+            color-mix(
+              in srgb,
+              var(--text) 4%,
+              transparent
+            )
+            1px,
+            transparent 1px
+          );
+        background-size: 25px 25px;
+      }
+
+      .chart-line {
+        position: absolute;
+        left: 0;
+        width: 150%;
+        height: 2px;
+        border-radius: 999px;
+        transform-origin: left center;
+        background: var(--green);
+        box-shadow:
+          0 0 10px
+          color-mix(
+            in srgb,
+            var(--green) 16%,
+            transparent
+          );
+      }
+
+      .chart-line--a {
+        top: 64%;
+        transform: rotate(-9deg);
+      }
+
+      .chart-line--b {
+        top: 44%;
+        opacity: 0.65;
+        transform: rotate(7deg);
+      }
+
+      .chart-line--c {
+        top: 70%;
+        opacity: 0.35;
+        transform: rotate(16deg);
+      }
+
+      .chart-marker {
+        position: absolute;
+        top: 12px;
+        bottom: 12px;
+        width: 1px;
+        border-left:
+          1px dashed
+          color-mix(
+            in srgb,
+            var(--green) 22%,
+            transparent
+          );
+      }
+
+      .chart-marker--1 {
+        left: 24%;
+      }
+
+      .chart-marker--2 {
+        left: 52%;
+      }
+
+      .chart-marker--3 {
+        left: 78%;
+      }
+
+      .spectrometer-values {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+
+      .spectrometer-values > div {
+        display: grid;
+        gap: 5px;
+      }
+
+      .spectrometer-values span,
+      .spectrometer-values strong {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 7px;
+      }
+
+      .spectrometer-values span {
+        color: var(--muted);
+      }
+
+      .validation-flow {
+        display: grid;
+        gap: 0;
+        align-items: center;
+        overflow: auto hidden;
+        padding-bottom: 3px;
+      }
+
+      .flow-node {
+        min-width: 100%;
+        display: grid;
+        grid-template-columns: 28px 1fr;
+        gap: 10px;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface);
+      }
+
+      .flow-node > span {
+        width: 24px;
+        height: 24px;
+        display: grid;
+        place-items: center;
+        border-radius: 6px;
+        background: var(--surface-3);
+        color: var(--muted);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 7px;
+      }
+
+      .flow-node strong,
+      .flow-node small {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+      }
+
+      .flow-node strong {
+        font-size: 8px;
+      }
+
+      .flow-node small {
+        color: var(--muted);
+        font-size: 6px;
+      }
+
+      .flow-node.is-done > span {
+        background:
+          color-mix(
+            in srgb,
+            var(--green) 9%,
+            transparent
+          );
+        color: var(--green);
+      }
+
+      .flow-line {
+        width: 1px;
+        height: 15px;
+        margin-left: 24px;
+        background: var(--line-strong);
+      }
+
+      .flow-line.is-done {
+        background:
+          color-mix(
+            in srgb,
+            var(--green) 35%,
+            transparent
+          );
+      }
+
+      .validation-disclaimer {
+        margin-top: 10px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-small);
+        background:
+          color-mix(
+            in srgb,
+            var(--surface) 98%,
+            var(--text)
+          );
+      }
+
+      .validation-disclaimer strong {
+        color: var(--muted);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 7px;
+      }
+
+      .validation-disclaimer p {
+        margin-top: 5px;
+        color: var(--muted);
+        font-size: 8px;
+        line-height: 1.55;
+      }
+
+      /* DEVICE DETAIL */
+      .device-detail__hero {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 13px;
+      }
+
+      .device-orb {
+        width: 48px;
+        height: 48px;
+        display: grid;
+        place-items: center;
+        border:
+          1px solid
+          color-mix(
+            in srgb,
+            var(--green) 20%,
+            transparent
+          );
+        border-radius: 14px;
+        background:
+          color-mix(
+            in srgb,
+            var(--green) 6%,
+            transparent
+          );
+      }
+
+      .device-orb span {
+        width: 19px;
+        height: 19px;
+        display: block;
+        border: 1px solid var(--green);
+        border-radius: 50%;
+        box-shadow:
+          0 0 20px
+          color-mix(
+            in srgb,
+            var(--green) 17%,
+            transparent
+          );
+      }
+
+      .device-detail__grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+        margin-top: 9px;
+      }
+
+      .device-detail__grid > div {
+        display: grid;
+        gap: 5px;
+        min-height: 68px;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background:
+          color-mix(
+            in srgb,
+            var(--surface) 98%,
+            var(--text)
+          );
+      }
+
+      .device-detail__grid span,
+      .device-detail__grid strong {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 7px;
+      }
+
+      .device-detail__grid span {
+        color: var(--muted);
+      }
+
+      .device-manage-button {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-small);
+        background: var(--surface);
+        text-align: left;
+      }
+
+      .device-manage-button > span:first-child {
+        display: grid;
+        gap: 4px;
+      }
+
+      .device-manage-button small,
+      .device-manage-button strong,
+      .device-manage-button > span:last-child {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+      }
+
+      .device-manage-button small {
+        color: var(--muted);
+        font-size: 7px;
+      }
+
+      .device-manage-button strong {
+        font-size: 10px;
+      }
+
+      .device-manage-button > span:last-child {
+        color: var(--green);
+        font-size: 7px;
+        font-weight: 800;
+      }
+
+      /* SETTINGS */
+      .settings-list {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+
+      .settings-row {
+        min-height: 69px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 15px;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .settings-row:last-child {
+        border-bottom: 0;
+      }
+
+      .settings-row > div {
+        display: grid;
+        gap: 4px;
+      }
+
+      .settings-row strong,
+      .settings-row small {
+        font-size: 8px;
+      }
+
+      .settings-row small {
+        color: var(--muted);
+      }
+
+      .setting-value {
+        color: var(--muted);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 7px;
+        font-weight: 900;
+      }
+
+      .setting-value--ok {
+        color: var(--green);
+      }
+
+      .toggle {
+        position: relative;
+        width: 39px;
+        height: 23px;
+        flex-shrink: 0;
+        border: 1px solid var(--line-strong);
+        border-radius: 999px;
+        background: var(--surface-3);
+      }
+
+      .toggle span {
+        position: absolute;
+        left: 3px;
+        top: 3px;
+        width: 15px;
+        height: 15px;
+        border-radius: 50%;
+        background: var(--muted);
+        transition:
+          transform 0.2s ease,
+          background 0.2s ease;
+      }
+
+      .toggle.is-on {
+        border-color:
+          color-mix(
+            in srgb,
+            var(--green) 25%,
+            transparent
+          );
+        background:
+          color-mix(
+            in srgb,
+            var(--green) 8%,
+            transparent
+          );
+      }
+
+      .toggle.is-on span {
+        transform: translateX(16px);
+        background: var(--green);
+      }
+
+      .policy-card,
+      .about-card {
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+
+      .policy-card {
+        display: grid;
+        gap: 10px;
+      }
+
+      .policy-card > div {
+        display: grid;
+        gap: 5px;
+      }
+
+      .policy-card strong {
+        font-size: 10px;
+      }
+
+      .policy-card p,
+      .about-card p,
+      .about-card span {
+        color: var(--muted);
+        font-size: 8px;
+        line-height: 1.55;
+      }
+
+      .about-card {
+        display: grid;
+        gap: 5px;
+      }
+
+      .about-card strong {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 9px;
+      }
+
+      /* THEME */
+      .theme-panel {
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+
+      .theme-panel__head {
+        display: flex;
+        justify-content: space-between;
+        gap: 15px;
+        align-items: center;
+      }
+
+      .theme-panel__head > div {
+        display: grid;
+        gap: 5px;
+      }
+
+      .theme-panel__head strong,
+      .theme-current {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 8px;
+      }
+
+      .theme-current {
+        color: var(--green);
+        font-weight: 900;
+      }
+
+      .theme-switch {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+        margin-top: 13px;
+      }
+
+      .theme-option {
+        position: relative;
+        min-height: 92px;
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 10px;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface-2);
+        text-align: left;
+        transition:
+          border-color 0.18s ease,
+          background 0.18s ease;
+      }
+
+      .theme-option.is-active {
+        border-color:
+          color-mix(
+            in srgb,
+            var(--green) 32%,
+            transparent
+          );
+        background:
+          color-mix(
+            in srgb,
+            var(--green) 6%,
+            transparent
+          );
+      }
+
+      .theme-option__visual {
+        width: 48px;
+        height: 58px;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 4px;
+        padding: 7px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+      }
+
+      .theme-option__visual i {
+        display: block;
+        border-radius: 3px;
+      }
+
+      .theme-option__visual--dark {
+        background: #111512;
+      }
+
+      .theme-option__visual--dark i:nth-child(1) {
+        background: #242a26;
+      }
+
+      .theme-option__visual--dark i:nth-child(2) {
+        background: #20251f;
+      }
+
+      .theme-option__visual--dark i:nth-child(3) {
+        background: #c6f56e;
+      }
+
+      .theme-option__visual--light {
+        background: #eff1eb;
+      }
+
+      .theme-option__visual--light i:nth-child(1) {
+        background: #d5d9d0;
+      }
+
+      .theme-option__visual--light i:nth-child(2) {
+        background: #ffffff;
+      }
+
+      .theme-option__visual--light i:nth-child(3) {
+        background: #587f1e;
+      }
+
+      .theme-option__copy {
+        display: grid;
+        gap: 5px;
+      }
+
+      .theme-option__copy strong,
+      .theme-option__copy small {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+      }
+
+      .theme-option__copy strong {
+        font-size: 9px;
+      }
+
+      .theme-option__copy small {
+        color: var(--muted);
+        font-size: 6px;
+      }
+
+      .theme-check {
+        width: 19px;
+        height: 19px;
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        color: transparent;
+        font-size: 8px;
+      }
+
+      .theme-option.is-active .theme-check {
+        border-color: var(--green);
+        color:
+          color-mix(
+            in srgb,
+            var(--bg) 96%,
+            black
+          );
+        background: var(--green);
+      }
+
+      /* ==========================================================
+         BOTTOM NAV
+      =========================================================== */
+      .bottom-nav {
+        position: fixed;
+        left: 50%;
+        bottom: 0;
+        z-index: 200;
+        width: min(740px, calc(100% - 18px));
+        height: var(--nav-h);
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        align-items: stretch;
+        transform: translateX(-50%);
+        margin-bottom: 9px;
+        overflow: hidden;
+        border: 1px solid var(--line-strong);
+        border-radius: 17px;
+        background:
+          color-mix(
+            in srgb,
+            var(--surface) 93%,
+            transparent
+          );
+        backdrop-filter: blur(20px);
+        box-shadow: var(--shadow);
+      }
+
+      .bottom-nav__item {
+        position: relative;
+        display: grid;
+        place-items: center;
+        align-content: center;
+        gap: 5px;
+        color: var(--muted-2);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 7px;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+      }
+
+      .bottom-nav__item.is-active {
+        color: var(--green);
+      }
+
+      .bottom-nav__item.is-active::before {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 0;
+        width: 24px;
+        height: 2px;
+        transform: translateX(-50%);
+        background: var(--green);
+        box-shadow:
+          0 0 12px
+          color-mix(
+            in srgb,
+            var(--green) 50%,
+            transparent
+          );
+      }
+
+      .bottom-nav__icon {
+        font-size: 15px;
+        line-height: 1;
+      }
+
+      .bottom-nav__icon--capture {
+        width: 29px;
+        height: 29px;
+        display: grid;
+        place-items: center;
+        border: 1px solid currentColor;
+        border-radius: 50%;
+        font-size: 16px;
+      }
+
+      /* ==========================================================
+         DEVICE MODAL
+      =========================================================== */
+      .device-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 500;
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        pointer-events: none;
+        visibility: hidden;
+      }
+
+      .device-modal.is-open {
+        pointer-events: auto;
+        visibility: visible;
+      }
+
+      .device-modal__backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.58);
+        opacity: 0;
+        transition: opacity 0.22s ease;
+      }
+
+      .device-modal.is-open
+        .device-modal__backdrop {
+        opacity: 1;
+      }
+
+      .device-sheet {
+        position: relative;
+        width: min(680px, 100%);
+        max-height: min(86vh, 760px);
+        overflow: auto;
+        padding: 9px 14px
+          max(14px, env(safe-area-inset-bottom))
+          16px;
+        border:
+          1px solid
+          var(--line-strong);
+        border-bottom: 0;
+        border-radius: 20px 20px 0 0;
+        background: var(--surface);
+        box-shadow:
+          0 -20px 60px rgba(0, 0, 0, 0.35);
+        transform: translateY(105%);
+        transition: transform 0.26s cubic-bezier(
+          0.22,
+          1,
+          0.36,
+          1
+        );
+      }
+
+      .device-modal.is-open
+        .device-sheet {
+        transform: translateY(0);
+      }
+
+      .device-sheet__grab {
+        width: 36px;
+        height: 3px;
+        margin: 0 auto 16px;
+        border-radius: 999px;
+        background: var(--line-strong);
+      }
+
+      .device-sheet__head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 15px;
+      }
+
+      .device-sheet__head > div {
+        display: grid;
+        gap: 5px;
+      }
+
+      .device-sheet__head h2 {
+        margin-top: 2px;
+        font-size: 24px;
+        letter-spacing: -0.035em;
+      }
+
+      .device-sheet__head p {
+        color: var(--muted);
+        font-size: 9px;
+      }
+
+      .device-sheet__close {
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        color: var(--muted);
+        font-size: 18px;
+      }
+
+      .device-scanbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 18px;
+        padding: 9px 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface-2);
+      }
+
+      .device-scanbar > div {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+
+      .device-scanbar__dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--green);
+        box-shadow:
+          0 0 9px
+          color-mix(
+            in srgb,
+            var(--green) 75%,
+            transparent
+          );
+      }
+
+      .device-scanbar span,
+      .device-scanbar button {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 7px;
+      }
+
+      .device-scanbar span {
+        color: var(--muted);
+      }
+
+      .device-scanbar button {
+        color: var(--green);
+        font-weight: 900;
+      }
+
+      .device-list {
+        display: grid;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .device-option {
+        position: relative;
+        display: grid;
+        grid-template-columns: 8px 1fr auto;
+        align-items: center;
+        gap: 10px;
+        min-height: 91px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--surface);
+        text-align: left;
+        transition:
+          border-color 0.18s ease,
+          background 0.18s ease,
+          transform 0.18s ease;
+      }
+
+      .device-option:hover {
+        transform: translateY(-1px);
+        border-color: var(--line-strong);
+      }
+
+      .device-option.is-selected {
+        border-color:
+          color-mix(
+            in srgb,
+            var(--green) 32%,
+            transparent
+          );
+        background:
+          color-mix(
+            in srgb,
+            var(--green) 5.5%,
+            transparent
+          );
+      }
+
+      .device-option__indicator {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--muted-2);
+      }
+
+      .device-option.is-selected
+        .device-option__indicator {
+        background: var(--green);
+        box-shadow:
+          0 0 10px
+          color-mix(
+            in srgb,
+            var(--green) 70%,
+            transparent
+          );
+      }
+
+      .device-option__main {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+      }
+
+      .device-option__main strong,
+      .device-option__main small,
+      .device-option__main em {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+      }
+
+      .device-option__main strong {
+        font-size: 9px;
+      }
+
+      .device-option__main small {
+        color: var(--muted);
+        font-size: 7px;
+      }
+
+      .device-option__main em {
+        color: var(--muted-2);
+        font-size: 6px;
+        font-style: normal;
+        letter-spacing: 0.04em;
+      }
+
+      .device-option__meta {
+        display: grid;
+        justify-items: end;
+        gap: 5px;
+      }
+
+      .device-option__meta b,
+      .device-option__meta span {
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+      }
+
+      .device-option__meta b {
+        color: var(--green);
+        font-size: 6px;
+      }
+
+      .device-option__meta span {
+        color: var(--muted);
+        font-size: 7px;
+      }
+
+      .device-option__meta--idle b {
+        color: var(--amber);
+      }
+
+      .device-option__meta--offline b {
+        color: var(--red);
+      }
+
+      .device-sheet__footer {
+        display: grid;
+        gap: 10px;
+        margin-top: 12px;
+        padding-top: 12px;
+        border-top: 1px solid var(--line);
+      }
+
+      .device-sheet__footer > span {
+        color: var(--muted);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 6px;
+        text-align: center;
+        letter-spacing: 0.08em;
+      }
+
+      .device-connect-button {
+        width: 100%;
+        min-height: 48px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 14px;
+        border: 1px solid var(--green);
+        border-radius: 9px;
+        background: var(--green);
+        color:
+          color-mix(
+            in srgb,
+            var(--bg) 95%,
+            black
+          );
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 8px;
+        font-weight: 900;
+        letter-spacing: 0.1em;
+      }
+
+      .device-connect-button span {
+        font-size: 14px;
+      }
+
+      /* ==========================================================
+         TOAST
+      =========================================================== */
+      .toast {
+        position: fixed;
+        left: 50%;
+        bottom: calc(
+          var(--nav-h) + 24px
+        );
+        z-index: 700;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        max-width: calc(100% - 28px);
+        padding: 9px 12px;
+        border: 1px solid var(--line-strong);
+        border-radius: 999px;
+        background:
+          color-mix(
+            in srgb,
+            var(--surface) 95%,
+            transparent
+          );
+        box-shadow: var(--shadow);
+        transform:
+          translate(-50%, 12px);
+        opacity: 0;
+        pointer-events: none;
+        transition:
+          opacity 0.22s ease,
+          transform 0.22s ease;
+      }
+
+      .toast.is-visible {
+        opacity: 1;
+        transform:
+          translate(-50%, 0);
+      }
+
+      .toast__dot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--green);
+        box-shadow:
+          0 0 10px
+          color-mix(
+            in srgb,
+            var(--green) 70%,
+            transparent
+          );
+      }
+
+      .toast #toastText {
+        color: var(--text);
+        font-family:
+          ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Monaco,
+          Consolas,
+          monospace;
+        font-size: 7px;
+        font-weight: 800;
+      }
+
+      /* ==========================================================
+         RESPONSIVE
+      =========================================================== */
+      @media (min-width: 700px) {
+        .main {
+          padding: 38px 24px 50px;
+        }
+
+        .telemetry-grid {
+          grid-template-columns: repeat(4, 1fr);
+        }
+
+        .camera-summary {
+          grid-template-columns: 1.25fr 0.75fr;
+        }
+
+        .camera-preview--small {
+          min-height: 290px;
+        }
+
+        .quick-grid {
+          grid-template-columns: repeat(4, 1fr);
+        }
+
+        .today-card {
+          padding: 22px;
+        }
+
+        .panel-grid {
+          grid-template-columns: repeat(3, 1fr);
+        }
+
+        .validation-flow {
+          grid-template-columns:
+            auto 30px
+            auto 30px
+            auto 30px
+            auto;
+          overflow: visible;
+        }
+
+        .flow-node {
+          min-width: 0;
+        }
+
+        .flow-line {
+          width: 100%;
+          height: 1px;
+          margin: 0;
+        }
+
+        .device-sheet {
+          margin-bottom: 14px;
+          border-bottom: 1px solid var(--line-strong);
+          border-radius: 20px;
+        }
+      }
+
+      @media (min-width: 1000px) {
+        :root {
+          --topbar-h: 76px;
+        }
+
+        .topbar {
+          padding-inline: 26px;
+        }
+
+        .main {
+          padding-inline: 30px;
+        }
+
+        .screen-head {
+          margin-bottom: 32px;
+        }
+
+        .camera-preview--large {
+          min-height: 610px;
+        }
+
+        .capture-actions {
+          padding: 24px;
+        }
+
+        .metadata-grid {
+          grid-template-columns: repeat(3, 1fr);
+        }
+
+        .mission-config-grid {
+          grid-template-columns: repeat(4, 1fr);
+        }
+
+        .daily-summary {
+          grid-template-columns: repeat(4, 1fr);
+        }
+
+        .index-grid,
+        .postgis-grid {
+          grid-template-columns: repeat(4, 1fr);
+        }
+
+        .device-detail__grid {
+          grid-template-columns: repeat(3, 1fr);
+        }
+
+        .bottom-nav {
+          bottom: 14px;
+          height: 68px;
+        }
+
+        .toast {
+          bottom: 96px;
+        }
+      }
+
+      @media (max-width: 520px) {
+        .device-trigger__copy {
+          display: none;
+        }
+
+        .device-trigger {
+          width: 38px;
+          justify-content: center;
+          padding: 0;
+        }
+
+        .device-trigger__chevron {
+          display: none;
+        }
+      }
+
+      @media (max-width: 410px) {
+        .topbar__center {
+          display: none;
+        }
+
+        .screen-head {
+          align-items: flex-start;
+        }
+
+        .screen-head__meta {
+          display: none;
+        }
+
+        .mission-hero__stats {
+          grid-template-columns: repeat(2, 1fr);
+        }
+
+        .capture-actions {
+          gap: 7px;
+        }
+
+        .shutter-button {
+          width: 82px;
+          height: 82px;
+        }
+
+        .capture-secondary {
+          padding-inline: 5px;
+        }
+
+        .band-overview__row {
+          grid-template-columns: 78px 45px 1fr 25px;
+          gap: 7px;
+        }
+
+        .comparison-row {
+          grid-template-columns: 1.2fr repeat(3, 1fr);
+          gap: 5px;
+        }
+
+        .theme-switch {
+          grid-template-columns: 1fr;
+        }
+
+        .device-detail__hero {
+          grid-template-columns: auto 1fr;
+        }
+
+        .device-detail__hero
+          .status-pill {
+          grid-column: 2;
+          justify-self: start;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+    </style>
+  </body>
+</html>

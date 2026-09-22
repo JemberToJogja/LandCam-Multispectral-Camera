@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# Astro
+.astro/
+dist/
+
+# Build / cache
+.cache/
+.temp/
+.tmp/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+bun-debug.log*
+
+# Local editor settings
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local development
+*.local
+
+# Testing / coverage
+coverage/
+
+# Generated files
+*.log
