@@ -1,0 +1,1121 @@
+<!DOCTYPE html><html lang="en" data-astro-cid-lcdefpme><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="description" content="LandCam Multispectral Camera Controller UI Prototype"><meta name="theme-color" content="#090b0a" id="themeColor"><title>LANDCAM — Controller</title><link rel="stylesheet" href="/LandCam-Multispectral-Camera/_astro/index.BpcIQEYQ.css"></head><body data-astro-cid-lcdefpme><div class="app" data-app data-astro-cid-lcdefpme><!-- =========================================================
+           HEADER
+      ========================================================== --><header class="topbar" data-astro-cid-lcdefpme><div class="topbar__brand" data-astro-cid-lcdefpme><span class="brand-mark" aria-hidden="true" data-astro-cid-lcdefpme></span><div data-astro-cid-lcdefpme><div class="brand-name" data-astro-cid-lcdefpme>LANDCAM</div><div class="brand-sub" data-astro-cid-lcdefpme>MULTISPECTRAL CONTROLLER</div></div></div><div class="topbar__center" data-astro-cid-lcdefpme><div class="system-chip" data-astro-cid-lcdefpme><span class="system-dot" id="systemDot" data-astro-cid-lcdefpme></span><span id="systemLabel" data-astro-cid-lcdefpme>SYSTEM READY</span></div></div><div class="topbar__right" data-astro-cid-lcdefpme><button class="device-trigger" id="topConnect" type="button" aria-label="Open device list" aria-haspopup="dialog" aria-expanded="false" data-astro-cid-lcdefpme><span class="device-trigger__status" data-astro-cid-lcdefpme></span><span class="device-trigger__copy" data-astro-cid-lcdefpme><small data-astro-cid-lcdefpme>DEVICE</small><strong id="topDeviceName" data-astro-cid-lcdefpme>LC-4 SPECTRA</strong></span><span class="device-trigger__chevron" data-astro-cid-lcdefpme>⌄</span></button></div></header><!-- =========================================================
+           MAIN
+      ========================================================== --><main class="main" data-astro-cid-lcdefpme><!-- =======================================================
+             HOME
+        ======================================================== --><section class="screen is-active" id="screen-home" data-screen="home" data-astro-cid-lcdefpme><div class="screen-head" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><div class="eyebrow" data-astro-cid-lcdefpme>DEVICE OVERVIEW</div><h1 data-astro-cid-lcdefpme>Controller</h1><p data-astro-cid-lcdefpme>Field acquisition console for LC-4 Spectra.</p></div><div class="screen-head__meta" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>22 SEP 2026</span><strong data-astro-cid-lcdefpme>FIELD 01</strong></div></div><!-- DEVICE --><article class="device-card" data-astro-cid-lcdefpme><div class="device-card__top" data-astro-cid-lcdefpme><div class="device-card__identity" data-astro-cid-lcdefpme><div class="micro-label" data-astro-cid-lcdefpme>SELECTED DEVICE</div><div class="device-name" id="homeDeviceName" data-astro-cid-lcdefpme>LC-4 SPECTRA</div><div class="device-id" id="homeDeviceId" data-astro-cid-lcdefpme>LANDCAM / DEMO-LC4-001</div></div><button class="status-pill status-pill--online" id="connectButton" type="button" aria-haspopup="dialog" aria-expanded="false" data-astro-cid-lcdefpme><span class="status-pill__dot" data-astro-cid-lcdefpme></span><span id="connectLabel" data-astro-cid-lcdefpme>CONNECTED</span></button></div><div class="device-card__bottom" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><span class="micro-label" data-astro-cid-lcdefpme>CAPTURE</span><strong id="homeCaptureCount" data-astro-cid-lcdefpme>01,842</strong></div><div data-astro-cid-lcdefpme><span class="micro-label" data-astro-cid-lcdefpme>STORAGE</span><strong data-astro-cid-lcdefpme>42.8 / 64 GB</strong></div><div data-astro-cid-lcdefpme><span class="micro-label" data-astro-cid-lcdefpme>FIRMWARE</span><strong id="homeFirmware" data-astro-cid-lcdefpme>1.0.0</strong></div></div></article><!-- TELEMETRY --><div class="section-label" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>01 / TELEMETRY</span><span class="section-line" data-astro-cid-lcdefpme></span><span data-astro-cid-lcdefpme>LIVE</span></div><div class="telemetry-grid" data-astro-cid-lcdefpme><article class="telemetry-card" data-astro-cid-lcdefpme><span class="telemetry-card__label" data-astro-cid-lcdefpme>GNSS</span><strong class="telemetry-card__value value-ok" data-astro-cid-lcdefpme>FIX</strong><span class="telemetry-card__meta" data-astro-cid-lcdefpme>12 SAT · ±0.03 M</span></article><article class="telemetry-card" data-astro-cid-lcdefpme><span class="telemetry-card__label" data-astro-cid-lcdefpme>PPS</span><strong class="telemetry-card__value value-ok" data-astro-cid-lcdefpme>LOCKED</strong><span class="telemetry-card__meta" data-astro-cid-lcdefpme>TIME SYNC READY</span></article><article class="telemetry-card" data-astro-cid-lcdefpme><span class="telemetry-card__label" data-astro-cid-lcdefpme>BATTERY</span><strong class="telemetry-card__value" id="homeBattery" data-astro-cid-lcdefpme>87%</strong><span class="telemetry-card__meta" data-astro-cid-lcdefpme>EXTERNAL POWER</span></article><article class="telemetry-card" data-astro-cid-lcdefpme><span class="telemetry-card__label" data-astro-cid-lcdefpme>TEMP</span><strong class="telemetry-card__value" data-astro-cid-lcdefpme>31.4°C</strong><span class="telemetry-card__meta" data-astro-cid-lcdefpme>NORMAL RANGE</span></article></div><!-- CAMERA SUMMARY --><div class="section-label" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>02 / CAMERA</span><span class="section-line" data-astro-cid-lcdefpme></span><span data-astro-cid-lcdefpme>RGB + NIR</span></div><article class="camera-summary" data-astro-cid-lcdefpme><div class="camera-preview camera-preview--small" data-astro-cid-lcdefpme><div class="preview-grid" data-astro-cid-lcdefpme></div><div class="preview-horizon" data-astro-cid-lcdefpme></div><div class="preview-field" data-astro-cid-lcdefpme><div class="field-block field-block--a" data-astro-cid-lcdefpme></div><div class="field-block field-block--b" data-astro-cid-lcdefpme></div><div class="field-track" data-astro-cid-lcdefpme></div></div><div class="preview-crosshair" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme></span><i data-astro-cid-lcdefpme></i></div><div class="preview-label" data-astro-cid-lcdefpme>FRAME PREVIEW</div><div class="preview-tag" data-astro-cid-lcdefpme>RGB-NIR</div></div><div class="camera-summary__info" data-astro-cid-lcdefpme><div class="camera-summary__head" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><span class="micro-label" data-astro-cid-lcdefpme>LAST CAPTURE</span><strong data-astro-cid-lcdefpme>08:42:31</strong></div><span class="mini-badge" data-astro-cid-lcdefpme>SAVED</span></div><div class="camera-summary__stats" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>BAND</span><strong data-astro-cid-lcdefpme>04</strong></div><div data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>ALT</span><strong data-astro-cid-lcdefpme>98.4 M</strong></div><div data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>GSD</span><strong data-astro-cid-lcdefpme>—</strong></div></div><button class="wide-button wide-button--primary" data-go="camera" type="button" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>OPEN CAMERA</span><span class="button-arrow" data-astro-cid-lcdefpme>↗</span></button></div></article><!-- QUICK ACTION --><div class="section-label" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>03 / QUICK ACTION</span><span class="section-line" data-astro-cid-lcdefpme></span><span data-astro-cid-lcdefpme>FIELD</span></div><div class="quick-grid" data-astro-cid-lcdefpme><button class="quick-card quick-card--primary" data-action="capture" type="button" data-astro-cid-lcdefpme><span class="quick-card__icon" data-astro-cid-lcdefpme>+</span><span class="quick-card__main" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>CAPTURE</strong><small data-astro-cid-lcdefpme>TAKE FRAME</small></span><span class="quick-card__arrow" data-astro-cid-lcdefpme>↗</span></button><button class="quick-card" data-go="mission" type="button" data-astro-cid-lcdefpme><span class="quick-card__icon" data-astro-cid-lcdefpme>◎</span><span class="quick-card__main" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>MISSION</strong><small data-astro-cid-lcdefpme>FLIGHT SESSION</small></span><span class="quick-card__arrow" data-astro-cid-lcdefpme>↗</span></button><button class="quick-card" data-go="data" type="button" data-astro-cid-lcdefpme><span class="quick-card__icon" data-astro-cid-lcdefpme>▦</span><span class="quick-card__main" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>DAILY DATA</strong><small data-astro-cid-lcdefpme>22 SEP 2026</small></span><span class="quick-card__arrow" data-astro-cid-lcdefpme>↗</span></button><button class="quick-card" data-go="more" type="button" data-astro-cid-lcdefpme><span class="quick-card__icon" data-astro-cid-lcdefpme>◇</span><span class="quick-card__main" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>CALIBRATE</strong><small data-astro-cid-lcdefpme>3 PANEL REFERENCE</small></span><span class="quick-card__arrow" data-astro-cid-lcdefpme>↗</span></button></div><!-- TODAY --><div class="section-label" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>04 / TODAY</span><span class="section-line" data-astro-cid-lcdefpme></span><span data-astro-cid-lcdefpme>22 SEP</span></div><article class="today-card" data-astro-cid-lcdefpme><div class="today-card__top" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><span class="micro-label" data-astro-cid-lcdefpme>ACTIVE SESSION</span><strong data-astro-cid-lcdefpme>FIELD 01 / MORNING PASS</strong></div><span class="session-status" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme></span>READY</span></div><div class="today-stats" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>CAPTURES</span><strong id="todayCaptureCount" data-astro-cid-lcdefpme>1,842</strong></div><div data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>TRACK</span><strong data-astro-cid-lcdefpme>12.6 KM</strong></div><div data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>AREA</span><strong data-astro-cid-lcdefpme>84.7 HA</strong></div></div><div class="progress-track" data-astro-cid-lcdefpme><span style="width:68%" data-astro-cid-lcdefpme></span></div><div class="today-card__footer" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>MISSION COMPLETION</span><strong data-astro-cid-lcdefpme>68%</strong></div></article><!-- SYSTEM CHECK --><div class="section-label" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>05 / SYSTEM CHECK</span><span class="section-line" data-astro-cid-lcdefpme></span><span data-astro-cid-lcdefpme>READY</span></div><div class="check-list" data-astro-cid-lcdefpme><div class="check-row" data-astro-cid-lcdefpme><span class="check-icon" data-astro-cid-lcdefpme>✓</span><div data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>CAMERA LINK</strong><small data-astro-cid-lcdefpme>DEVICE CHANNEL AVAILABLE</small></div><b data-astro-cid-lcdefpme>OK</b></div><div class="check-row" data-astro-cid-lcdefpme><span class="check-icon" data-astro-cid-lcdefpme>✓</span><div data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>GNSS PPK</strong><small data-astro-cid-lcdefpme>FIXED POSITION</small></div><b data-astro-cid-lcdefpme>OK</b></div><div class="check-row" data-astro-cid-lcdefpme><span class="check-icon" data-astro-cid-lcdefpme>✓</span><div data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>STORAGE</strong><small data-astro-cid-lcdefpme>21.2 GB REMAINING</small></div><b data-astro-cid-lcdefpme>OK</b></div><div class="check-row" data-astro-cid-lcdefpme><span class="check-icon" data-astro-cid-lcdefpme>✓</span><div data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>SYNC QUEUE</strong><small data-astro-cid-lcdefpme>18 RECORDS WAITING</small></div><b data-astro-cid-lcdefpme>READY</b></div></div></section><!-- =======================================================
+             CAMERA
+        ======================================================== --><section class="screen" id="screen-camera" data-screen="camera" data-astro-cid-lcdefpme><div class="screen-head" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><div class="eyebrow" data-astro-cid-lcdefpme>ACQUISITION</div><h1 data-astro-cid-lcdefpme>Camera</h1><p data-astro-cid-lcdefpme>Capture and monitor the current LandCam frame.</p></div><div class="screen-head__meta" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>LC-4</span><strong data-astro-cid-lcdefpme>04 BANDS</strong></div></div><article class="capture-panel" data-astro-cid-lcdefpme><div class="capture-panel__bar" data-astro-cid-lcdefpme><div class="camera-status" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme></span>DEVICE READY</div><div class="frame-counter" data-astro-cid-lcdefpme>FRAME<strong id="cameraFrameCounter" data-astro-cid-lcdefpme>001842</strong></div></div><div class="camera-preview camera-preview--large" id="cameraPreview" data-astro-cid-lcdefpme><div class="preview-grid" data-astro-cid-lcdefpme></div><div class="preview-scan" data-astro-cid-lcdefpme></div><div class="preview-horizon" data-astro-cid-lcdefpme></div><div class="preview-field preview-field--large" data-astro-cid-lcdefpme><div class="field-block field-block--a" data-astro-cid-lcdefpme></div><div class="field-block field-block--b" data-astro-cid-lcdefpme></div><div class="field-block field-block--c" data-astro-cid-lcdefpme></div><div class="field-track" data-astro-cid-lcdefpme></div><div class="field-track field-track--two" data-astro-cid-lcdefpme></div></div><div class="preview-crosshair preview-crosshair--large" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme></span><i data-astro-cid-lcdefpme></i></div><div class="preview-readout preview-readout--top" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>MODE</span><strong id="previewMode" data-astro-cid-lcdefpme>RGB</strong></div><div class="preview-readout preview-readout--bottom" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>FRAME CHANNEL</span><strong data-astro-cid-lcdefpme>RGB-NIR</strong></div><div class="capture-flash" id="captureFlash" data-astro-cid-lcdefpme></div></div><div class="band-strip" data-astro-cid-lcdefpme><button class="band-item is-active" data-band="B" type="button" data-astro-cid-lcdefpme><span class="band-item__index" data-astro-cid-lcdefpme>01</span><strong data-astro-cid-lcdefpme>BLUE</strong><small data-astro-cid-lcdefpme>B</small></button><button class="band-item" data-band="G" type="button" data-astro-cid-lcdefpme><span class="band-item__index" data-astro-cid-lcdefpme>02</span><strong data-astro-cid-lcdefpme>GREEN</strong><small data-astro-cid-lcdefpme>G</small></button><button class="band-item" data-band="R" type="button" data-astro-cid-lcdefpme><span class="band-item__index" data-astro-cid-lcdefpme>03</span><strong data-astro-cid-lcdefpme>RED</strong><small data-astro-cid-lcdefpme>R</small></button><button class="band-item" data-band="NIR" type="button" data-astro-cid-lcdefpme><span class="band-item__index" data-astro-cid-lcdefpme>04</span><strong data-astro-cid-lcdefpme>NIR</strong><small data-astro-cid-lcdefpme>NIR</small></button></div><div class="capture-actions" data-astro-cid-lcdefpme><button class="capture-secondary" id="frameModeButton" type="button" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>DISPLAY</span><strong id="frameModeLabel" data-astro-cid-lcdefpme>RGB</strong></button><button class="shutter-button" data-action="capture" type="button" data-astro-cid-lcdefpme><span class="shutter-ring" data-astro-cid-lcdefpme><i data-astro-cid-lcdefpme></i></span><strong data-astro-cid-lcdefpme>CAPTURE</strong></button><button class="capture-secondary" id="triggerModeButton" type="button" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>TRIGGER</span><strong id="triggerModeLabel" data-astro-cid-lcdefpme>SINGLE</strong></button></div></article><div class="section-label" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>01 / CAPTURE METADATA</span><span class="section-line" data-astro-cid-lcdefpme></span><span data-astro-cid-lcdefpme>AUTO</span></div><div class="metadata-grid" data-astro-cid-lcdefpme><div class="meta-tile" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>TIME</span><strong id="captureTime" data-astro-cid-lcdefpme>08:42:31</strong></div><div class="meta-tile" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>LAT</span><strong data-astro-cid-lcdefpme>-7.79561</strong></div><div class="meta-tile" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>LON</span><strong data-astro-cid-lcdefpme>110.36949</strong></div><div class="meta-tile" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>ALT</span><strong data-astro-cid-lcdefpme>98.4 M</strong></div><div class="meta-tile" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>GNSS</span><strong class="value-ok" data-astro-cid-lcdefpme>FIX</strong></div><div class="meta-tile" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>PPS</span><strong class="value-ok" data-astro-cid-lcdefpme>LOCKED</strong></div></div><div class="section-label" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>02 / BAND OVERVIEW</span><span class="section-line" data-astro-cid-lcdefpme></span><span data-astro-cid-lcdefpme>4 / 4</span></div><div class="band-overview" data-astro-cid-lcdefpme><div class="band-overview__row" data-astro-cid-lcdefpme><div class="band-name" data-astro-cid-lcdefpme><span class="band-dot band-dot--b" data-astro-cid-lcdefpme></span>BLUE</div><div class="band-value" data-astro-cid-lcdefpme>0.214</div><div class="band-bar" data-astro-cid-lcdefpme><span style="width:24%" data-astro-cid-lcdefpme></span></div><div class="band-unit" data-astro-cid-lcdefpme>DN</div></div><div class="band-overview__row" data-astro-cid-lcdefpme><div class="band-name" data-astro-cid-lcdefpme><span class="band-dot band-dot--g" data-astro-cid-lcdefpme></span>GREEN</div><div class="band-value" data-astro-cid-lcdefpme>0.462</div><div class="band-bar" data-astro-cid-lcdefpme><span style="width:48%" data-astro-cid-lcdefpme></span></div><div class="band-unit" data-astro-cid-lcdefpme>DN</div></div><div class="band-overview__row" data-astro-cid-lcdefpme><div class="band-name" data-astro-cid-lcdefpme><span class="band-dot band-dot--r" data-astro-cid-lcdefpme></span>RED</div><div class="band-value" data-astro-cid-lcdefpme>0.183</div><div class="band-bar" data-astro-cid-lcdefpme><span style="width:20%" data-astro-cid-lcdefpme></span></div><div class="band-unit" data-astro-cid-lcdefpme>DN</div></div><div class="band-overview__row" data-astro-cid-lcdefpme><div class="band-name" data-astro-cid-lcdefpme><span class="band-dot band-dot--nir" data-astro-cid-lcdefpme></span>NIR</div><div class="band-value" data-astro-cid-lcdefpme>0.731</div><div class="band-bar" data-astro-cid-lcdefpme><span style="width:76%" data-astro-cid-lcdefpme></span></div><div class="band-unit" data-astro-cid-lcdefpme>DN</div></div></div><div class="notice-card" data-astro-cid-lcdefpme><span class="notice-mark" data-astro-cid-lcdefpme>!</span><div data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>PREVIEW CHANNEL</strong><p data-astro-cid-lcdefpme>UI-only display. The actual LC-4 transport, live frame protocol, trigger protocol, and image transfer layer will be connected later.</p></div></div></section><!-- =======================================================
+             MISSION
+        ======================================================== --><section class="screen" id="screen-mission" data-screen="mission" data-astro-cid-lcdefpme><div class="screen-head" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><div class="eyebrow" data-astro-cid-lcdefpme>FIELD OPERATION</div><h1 data-astro-cid-lcdefpme>Mission</h1><p data-astro-cid-lcdefpme>Prepare and run one acquisition session.</p></div><div class="screen-head__meta" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>SESSION 01</span><strong id="missionStatusTop" data-astro-cid-lcdefpme>READY</strong></div></div><article class="mission-hero" data-astro-cid-lcdefpme><div class="mission-hero__head" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><span class="micro-label" data-astro-cid-lcdefpme>CURRENT MISSION</span><h2 data-astro-cid-lcdefpme>FIELD 01 / MORNING PASS</h2><p data-astro-cid-lcdefpme>Kebun Trial Site — Block A</p></div><span class="mission-tag" id="missionBadge" data-astro-cid-lcdefpme>READY</span></div><div class="mission-hero__stats" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>START</span><strong data-astro-cid-lcdefpme>08:10</strong></div><div data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>CAPTURE</span><strong id="missionCaptureCount" data-astro-cid-lcdefpme>1,842</strong></div><div data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>ALTITUDE</span><strong data-astro-cid-lcdefpme>100 M</strong></div><div data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>RATE</span><strong data-astro-cid-lcdefpme>1.0 S</strong></div></div></article><div class="section-label" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>01 / FLIGHT TRACK</span><span class="section-line" data-astro-cid-lcdefpme></span><span data-astro-cid-lcdefpme>GPS</span></div><article class="map-card" data-astro-cid-lcdefpme><div class="map-grid" data-astro-cid-lcdefpme></div><div class="map-route" data-astro-cid-lcdefpme><span class="map-point map-point--start" data-astro-cid-lcdefpme></span><span class="map-point map-point--end" data-astro-cid-lcdefpme></span><svg viewBox="0 0 600 300" preserveAspectRatio="none" aria-hidden="true" data-astro-cid-lcdefpme><path d="M80,250 C120,205 115,100 220,125 C325,150 278,50 388,72 C492,94 440,190 530,120" data-astro-cid-lcdefpme></path></svg></div><div class="map-overlay map-overlay--top" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>TRACK</span><strong data-astro-cid-lcdefpme>12.6 KM</strong></div><div class="map-overlay map-overlay--bottom" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>POSITION</span><strong data-astro-cid-lcdefpme>-7.79561 / 110.36949</strong></div><div class="map-center" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme></span></div></article><div class="section-label" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>02 / PRE-FLIGHT</span><span class="section-line" data-astro-cid-lcdefpme></span><span id="preflightStatus" data-astro-cid-lcdefpme>05 / 05</span></div><div class="preflight-list" data-astro-cid-lcdefpme><label class="preflight-row" data-astro-cid-lcdefpme><input type="checkbox" checked data-astro-cid-lcdefpme><span class="custom-check" data-astro-cid-lcdefpme></span><span class="preflight-copy" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>CAMERA CONNECTED</strong><small data-astro-cid-lcdefpme>LC-4 communication channel</small></span><b data-astro-cid-lcdefpme>READY</b></label><label class="preflight-row" data-astro-cid-lcdefpme><input type="checkbox" checked data-astro-cid-lcdefpme><span class="custom-check" data-astro-cid-lcdefpme></span><span class="preflight-copy" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>GNSS FIXED</strong><small data-astro-cid-lcdefpme>RTK / PPK position source</small></span><b data-astro-cid-lcdefpme>READY</b></label><label class="preflight-row" data-astro-cid-lcdefpme><input type="checkbox" checked data-astro-cid-lcdefpme><span class="custom-check" data-astro-cid-lcdefpme></span><span class="preflight-copy" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>PPS LOCKED</strong><small data-astro-cid-lcdefpme>Time synchronization</small></span><b data-astro-cid-lcdefpme>READY</b></label><label class="preflight-row" data-astro-cid-lcdefpme><input type="checkbox" checked data-astro-cid-lcdefpme><span class="custom-check" data-astro-cid-lcdefpme></span><span class="preflight-copy" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>STORAGE AVAILABLE</strong><small data-astro-cid-lcdefpme>21.2 GB free</small></span><b data-astro-cid-lcdefpme>READY</b></label><label class="preflight-row" data-astro-cid-lcdefpme><input type="checkbox" checked data-astro-cid-lcdefpme><span class="custom-check" data-astro-cid-lcdefpme></span><span class="preflight-copy" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>CALIBRATION LOADED</strong><small data-astro-cid-lcdefpme>Reference profile A-03</small></span><b data-astro-cid-lcdefpme>READY</b></label></div><div class="section-label" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>03 / MISSION PLAN</span><span class="section-line" data-astro-cid-lcdefpme></span><span data-astro-cid-lcdefpme>ACTIVE CONFIG</span></div><div class="mission-config-grid" data-astro-cid-lcdefpme><div class="config-card" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>TRIGGER</span><strong data-astro-cid-lcdefpme>AUTO</strong><small data-astro-cid-lcdefpme>1.0 SEC INTERVAL</small></div><div class="config-card" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>CAPTURE</span><strong data-astro-cid-lcdefpme>RGB-NIR</strong><small data-astro-cid-lcdefpme>4 SPECTRAL BANDS</small></div><div class="config-card" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>POSITION</span><strong data-astro-cid-lcdefpme>PPK</strong><small data-astro-cid-lcdefpme>GNSS TIMESTAMPED</small></div><div class="config-card" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>OUTPUT</span><strong data-astro-cid-lcdefpme>LOCAL</strong><small data-astro-cid-lcdefpme>SYNC QUEUE ENABLED</small></div></div><div class="mission-actions" data-astro-cid-lcdefpme><button class="wide-button wide-button--primary" id="missionStart" type="button" data-astro-cid-lcdefpme><span id="missionStartText" data-astro-cid-lcdefpme>START MISSION</span><span class="button-arrow" data-astro-cid-lcdefpme>→</span></button><button class="wide-button" id="missionStop" type="button" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>STOP SESSION</span><span class="button-arrow" data-astro-cid-lcdefpme>■</span></button></div></section><!-- =======================================================
+             DATA
+        ======================================================== --><section class="screen" id="screen-data" data-screen="data" data-astro-cid-lcdefpme><div class="screen-head" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><div class="eyebrow" data-astro-cid-lcdefpme>DATA MANAGEMENT</div><h1 data-astro-cid-lcdefpme>Daily Data</h1><p data-astro-cid-lcdefpme>One-day acquisition, validation and sync overview.</p></div><div class="screen-head__meta" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>DAY</span><strong data-astro-cid-lcdefpme>22 SEP</strong></div></div><div class="date-bar" data-astro-cid-lcdefpme><button class="date-arrow" type="button" aria-label="Previous day" data-astro-cid-lcdefpme>←</button><div data-astro-cid-lcdefpme><span class="micro-label" data-astro-cid-lcdefpme>SELECTED DAY</span><strong data-astro-cid-lcdefpme>22 SEP 2026</strong></div><button class="date-arrow" type="button" aria-label="Next day" data-astro-cid-lcdefpme>→</button></div><div class="daily-summary" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>CAPTURES</span><strong id="dailyCount" data-astro-cid-lcdefpme>1,842</strong></div><div data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>SESSIONS</span><strong data-astro-cid-lcdefpme>03</strong></div><div data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>FILES</span><strong data-astro-cid-lcdefpme>7,368</strong></div><div data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>SYNC</span><strong id="syncCount" data-astro-cid-lcdefpme>18</strong></div></div><div class="data-tabs" role="tablist" data-astro-cid-lcdefpme><button class="data-tab is-active" data-data-tab="captures" type="button" data-astro-cid-lcdefpme>CAPTURES</button><button class="data-tab" data-data-tab="validation" type="button" data-astro-cid-lcdefpme>VALIDATION</button><button class="data-tab" data-data-tab="postgis" type="button" data-astro-cid-lcdefpme>POSTGIS</button></div><!-- CAPTURES --><div class="data-pane is-active" id="data-captures" data-astro-cid-lcdefpme><div class="timeline-head" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>TIME</span><span data-astro-cid-lcdefpme>CAPTURE</span><span data-astro-cid-lcdefpme>POSITION</span><span data-astro-cid-lcdefpme>STATE</span></div><div class="timeline" id="captureList" data-astro-cid-lcdefpme><article class="capture-row" data-astro-cid-lcdefpme><div class="capture-row__time" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>08:42:31</strong><small data-astro-cid-lcdefpme>98.4 m</small></div><div class="capture-row__id" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>#001842</strong><small data-astro-cid-lcdefpme>RGB-NIR</small></div><div class="capture-row__position" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>-7.79561</strong><small data-astro-cid-lcdefpme>110.36949</small></div><div class="capture-row__status" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>SAVED</span></div></article><article class="capture-row" data-astro-cid-lcdefpme><div class="capture-row__time" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>08:42:30</strong><small data-astro-cid-lcdefpme>98.5 m</small></div><div class="capture-row__id" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>#001841</strong><small data-astro-cid-lcdefpme>RGB-NIR</small></div><div class="capture-row__position" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>-7.79558</strong><small data-astro-cid-lcdefpme>110.36944</small></div><div class="capture-row__status" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>SAVED</span></div></article><article class="capture-row" data-astro-cid-lcdefpme><div class="capture-row__time" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>08:42:29</strong><small data-astro-cid-lcdefpme>98.7 m</small></div><div class="capture-row__id" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>#001840</strong><small data-astro-cid-lcdefpme>RGB-NIR</small></div><div class="capture-row__position" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>-7.79552</strong><small data-astro-cid-lcdefpme>110.36938</small></div><div class="capture-row__status" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>SAVED</span></div></article><article class="capture-row" data-astro-cid-lcdefpme><div class="capture-row__time" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>08:42:28</strong><small data-astro-cid-lcdefpme>99.0 m</small></div><div class="capture-row__id" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>#001839</strong><small data-astro-cid-lcdefpme>RGB-NIR</small></div><div class="capture-row__position" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>-7.79547</strong><small data-astro-cid-lcdefpme>110.36932</small></div><div class="capture-row__status" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>SAVED</span></div></article><article class="capture-row" data-astro-cid-lcdefpme><div class="capture-row__time" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>08:42:27</strong><small data-astro-cid-lcdefpme>99.2 m</small></div><div class="capture-row__id" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>#001838</strong><small data-astro-cid-lcdefpme>RGB-NIR</small></div><div class="capture-row__position" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>-7.79541</strong><small data-astro-cid-lcdefpme>110.36926</small></div><div class="capture-row__status" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>SAVED</span></div></article><article class="capture-row" data-astro-cid-lcdefpme><div class="capture-row__time" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>08:42:26</strong><small data-astro-cid-lcdefpme>99.5 m</small></div><div class="capture-row__id" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>#001837</strong><small data-astro-cid-lcdefpme>RGB-NIR</small></div><div class="capture-row__position" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>-7.79535</strong><small data-astro-cid-lcdefpme>110.36921</small></div><div class="capture-row__status" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>SAVED</span></div></article></div><button class="load-more" id="loadMore" type="button" data-astro-cid-lcdefpme>LOAD MORE CAPTURES<span data-astro-cid-lcdefpme>↓</span></button></div><!-- VALIDATION --><div class="data-pane" id="data-validation" data-astro-cid-lcdefpme><article class="validation-hero" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><span class="micro-label" data-astro-cid-lcdefpme>CROSS-INSTRUMENT TEST</span><h2 data-astro-cid-lcdefpme>LANDCAM ↔ DJI MULTISPECTRAL</h2><p data-astro-cid-lcdefpme>Common-band comparison view for Blue, Green, Red and NIR. Red Edge is kept outside the common-band comparison.</p></div><span class="validation-badge" data-astro-cid-lcdefpme>TEST 01</span></article><div class="comparison-table" data-astro-cid-lcdefpme><div class="comparison-row comparison-row--head" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>BAND</span><span data-astro-cid-lcdefpme>LANDCAM</span><span data-astro-cid-lcdefpme>DJI REF</span><span data-astro-cid-lcdefpme>Δ</span></div><div class="comparison-row" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>B / BLUE</span><strong data-astro-cid-lcdefpme>0.214</strong><strong data-astro-cid-lcdefpme>0.219</strong><b class="delta-good" data-astro-cid-lcdefpme>-0.005</b></div><div class="comparison-row" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>G / GREEN</span><strong data-astro-cid-lcdefpme>0.462</strong><strong data-astro-cid-lcdefpme>0.455</strong><b class="delta-good" data-astro-cid-lcdefpme>+0.007</b></div><div class="comparison-row" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>R / RED</span><strong data-astro-cid-lcdefpme>0.183</strong><strong data-astro-cid-lcdefpme>0.190</strong><b class="delta-warn" data-astro-cid-lcdefpme>-0.007</b></div><div class="comparison-row" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>NIR</span><strong data-astro-cid-lcdefpme>0.731</strong><strong data-astro-cid-lcdefpme>0.724</strong><b class="delta-good" data-astro-cid-lcdefpme>+0.007</b></div></div><div class="index-grid" data-astro-cid-lcdefpme><article class="index-card" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>NDVI / LANDCAM</span><strong data-astro-cid-lcdefpme>0.599</strong><small data-astro-cid-lcdefpme>DEMO VALUE</small></article><article class="index-card" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>NDVI / DJI REF</span><strong data-astro-cid-lcdefpme>0.585</strong><small data-astro-cid-lcdefpme>DEMO VALUE</small></article><article class="index-card" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>MAE</span><strong data-astro-cid-lcdefpme>0.0065</strong><small data-astro-cid-lcdefpme>4 COMMON BANDS</small></article><article class="index-card" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>RMSE</span><strong data-astro-cid-lcdefpme>0.0071</strong><small data-astro-cid-lcdefpme>4 COMMON BANDS</small></article></div><div class="validation-note" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>i</span><p data-astro-cid-lcdefpme>Comparison values are placeholder UI data only. Final validation must use calibrated reflectance and measured reference data.</p></div></div><!-- POSTGIS --><div class="data-pane" id="data-postgis" data-astro-cid-lcdefpme><article class="storage-hero" data-astro-cid-lcdefpme><div class="storage-visual" data-astro-cid-lcdefpme><div class="storage-ring" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>67%</span></div></div><div class="storage-info" data-astro-cid-lcdefpme><span class="micro-label" data-astro-cid-lcdefpme>LOCAL DATASET</span><h2 data-astro-cid-lcdefpme>FIELD 01 / 22 SEP</h2><p data-astro-cid-lcdefpme>Local capture queue prepared for API synchronization.</p><div class="storage-progress" data-astro-cid-lcdefpme><span style="width:67%" data-astro-cid-lcdefpme></span></div><div class="storage-meta" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>42.8 GB USED</span><strong data-astro-cid-lcdefpme>21.2 GB FREE</strong></div></div></article><div class="postgis-grid" data-astro-cid-lcdefpme><article class="postgis-card" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>CAPTURE RECORDS</span><strong data-astro-cid-lcdefpme>1,842</strong><small data-astro-cid-lcdefpme>READY</small></article><article class="postgis-card" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>GEOMETRIES</span><strong data-astro-cid-lcdefpme>1,842</strong><small data-astro-cid-lcdefpme>POINTS</small></article><article class="postgis-card" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>SYNC QUEUE</span><strong id="postgisQueue" data-astro-cid-lcdefpme>18</strong><small data-astro-cid-lcdefpme>WAITING</small></article><article class="postgis-card" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>SCHEMA</span><strong data-astro-cid-lcdefpme>CAPTURE</strong><small data-astro-cid-lcdefpme>READY</small></article></div><div class="data-schema" data-astro-cid-lcdefpme><div class="data-schema__head" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>01 / CAPTURE RECORD</span><span data-astro-cid-lcdefpme>LOCAL</span></div><div class="schema-row" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>capture_id</span><strong data-astro-cid-lcdefpme>LC4-20260922-001842</strong></div><div class="schema-row" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>timestamp_utc</span><strong data-astro-cid-lcdefpme>2026-09-22T01:42:31Z</strong></div><div class="schema-row" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>latitude</span><strong data-astro-cid-lcdefpme>-7.795610</strong></div><div class="schema-row" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>longitude</span><strong data-astro-cid-lcdefpme>110.369490</strong></div><div class="schema-row" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>altitude</span><strong data-astro-cid-lcdefpme>98.4</strong></div><div class="schema-row" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>geometry</span><strong data-astro-cid-lcdefpme>POINT</strong></div></div><button class="wide-button wide-button--primary" id="syncButton" type="button" data-astro-cid-lcdefpme><span id="syncButtonLabel" data-astro-cid-lcdefpme>SYNC QUEUE</span><span class="button-arrow" data-astro-cid-lcdefpme>↑</span></button></div></section><!-- =======================================================
+             MORE
+        ======================================================== --><section class="screen" id="screen-more" data-screen="more" data-astro-cid-lcdefpme><div class="screen-head" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><div class="eyebrow" data-astro-cid-lcdefpme>SYSTEM</div><h1 data-astro-cid-lcdefpme>More</h1><p data-astro-cid-lcdefpme>Calibration, device and controller settings.</p></div><div class="screen-head__meta" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>APP</span><strong data-astro-cid-lcdefpme>0.1</strong></div></div><div class="more-switcher" data-astro-cid-lcdefpme><button class="more-tab is-active" data-more-tab="calibration" type="button" data-astro-cid-lcdefpme>CALIBRATION</button><button class="more-tab" data-more-tab="device" type="button" data-astro-cid-lcdefpme>DEVICE</button><button class="more-tab" data-more-tab="settings" type="button" data-astro-cid-lcdefpme>SETTINGS</button></div><!-- CALIBRATION --><div class="more-pane is-active" id="more-calibration" data-astro-cid-lcdefpme><article class="calibration-head" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><span class="micro-label" data-astro-cid-lcdefpme>REFERENCE WORKFLOW</span><h2 data-astro-cid-lcdefpme>3 PANEL CALIBRATION</h2><p data-astro-cid-lcdefpme>Prepare three reference panels, capture them, then attach measured reflectance values to the session.</p></div><div class="calibration-state" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme></span>PROFILE A-03</div></article><div class="panel-grid" data-astro-cid-lcdefpme><article class="reference-panel" data-astro-cid-lcdefpme><div class="reference-panel__top" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><span class="panel-number" data-astro-cid-lcdefpme>01</span><strong data-astro-cid-lcdefpme>PANEL LOW</strong></div><span class="panel-state" data-astro-cid-lcdefpme>READY</span></div><div class="panel-surface panel-surface--dark" data-astro-cid-lcdefpme></div><div class="reflectance-fields" data-astro-cid-lcdefpme><label data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>B</span><input value="0.210" data-astro-cid-lcdefpme></label><label data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>G</span><input value="0.214" data-astro-cid-lcdefpme></label><label data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>R</span><input value="0.206" data-astro-cid-lcdefpme></label><label data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>NIR</span><input value="0.218" data-astro-cid-lcdefpme></label></div><button class="panel-button" type="button" data-astro-cid-lcdefpme>CAPTURE REFERENCE</button></article><article class="reference-panel" data-astro-cid-lcdefpme><div class="reference-panel__top" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><span class="panel-number" data-astro-cid-lcdefpme>02</span><strong data-astro-cid-lcdefpme>PANEL MID</strong></div><span class="panel-state" data-astro-cid-lcdefpme>READY</span></div><div class="panel-surface panel-surface--mid" data-astro-cid-lcdefpme></div><div class="reflectance-fields" data-astro-cid-lcdefpme><label data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>B</span><input value="0.482" data-astro-cid-lcdefpme></label><label data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>G</span><input value="0.491" data-astro-cid-lcdefpme></label><label data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>R</span><input value="0.487" data-astro-cid-lcdefpme></label><label data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>NIR</span><input value="0.503" data-astro-cid-lcdefpme></label></div><button class="panel-button" type="button" data-astro-cid-lcdefpme>CAPTURE REFERENCE</button></article><article class="reference-panel" data-astro-cid-lcdefpme><div class="reference-panel__top" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><span class="panel-number" data-astro-cid-lcdefpme>03</span><strong data-astro-cid-lcdefpme>PANEL HIGH</strong></div><span class="panel-state" data-astro-cid-lcdefpme>READY</span></div><div class="panel-surface panel-surface--light" data-astro-cid-lcdefpme></div><div class="reflectance-fields" data-astro-cid-lcdefpme><label data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>B</span><input value="0.742" data-astro-cid-lcdefpme></label><label data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>G</span><input value="0.755" data-astro-cid-lcdefpme></label><label data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>R</span><input value="0.748" data-astro-cid-lcdefpme></label><label data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>NIR</span><input value="0.761" data-astro-cid-lcdefpme></label></div><button class="panel-button" type="button" data-astro-cid-lcdefpme>CAPTURE REFERENCE</button></article></div><div class="section-label" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>01 / SPECTROMETER</span><span class="section-line" data-astro-cid-lcdefpme></span><span data-astro-cid-lcdefpme>REFERENCE</span></div><article class="spectrometer-card" data-astro-cid-lcdefpme><div class="spectrometer-card__top" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><span class="micro-label" data-astro-cid-lcdefpme>REFERENCE INSTRUMENT</span><h3 data-astro-cid-lcdefpme>3-PANEL SPECTROMETER</h3></div><span class="connected-tag" data-astro-cid-lcdefpme><i data-astro-cid-lcdefpme></i>CONNECTED</span></div><div class="spectrometer-chart" data-astro-cid-lcdefpme><div class="chart-line chart-line--a" data-astro-cid-lcdefpme></div><div class="chart-line chart-line--b" data-astro-cid-lcdefpme></div><div class="chart-line chart-line--c" data-astro-cid-lcdefpme></div><div class="chart-marker chart-marker--1" data-astro-cid-lcdefpme></div><div class="chart-marker chart-marker--2" data-astro-cid-lcdefpme></div><div class="chart-marker chart-marker--3" data-astro-cid-lcdefpme></div></div><div class="spectrometer-values" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>PANEL</span><strong data-astro-cid-lcdefpme>03</strong></div><div data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>RANGE</span><strong data-astro-cid-lcdefpme>400–900 NM</strong></div><div data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>REFERENCE</span><strong data-astro-cid-lcdefpme>VALID</strong></div></div><button class="wide-button" type="button" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>IMPORT SPECTROMETER DATA</span><span class="button-arrow" data-astro-cid-lcdefpme>↑</span></button></article><div class="section-label" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>02 / VALIDATION SESSION</span><span class="section-line" data-astro-cid-lcdefpme></span><span data-astro-cid-lcdefpme>TEST 01</span></div><div class="validation-flow" data-astro-cid-lcdefpme><div class="flow-node is-done" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>01</span><strong data-astro-cid-lcdefpme>REFERENCE</strong><small data-astro-cid-lcdefpme>SPECTROMETER</small></div><div class="flow-line is-done" data-astro-cid-lcdefpme></div><div class="flow-node is-done" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>02</span><strong data-astro-cid-lcdefpme>LANDCAM</strong><small data-astro-cid-lcdefpme>RGB-NIR</small></div><div class="flow-line" data-astro-cid-lcdefpme></div><div class="flow-node" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>03</span><strong data-astro-cid-lcdefpme>DJI REF</strong><small data-astro-cid-lcdefpme>COMMON BANDS</small></div><div class="flow-line" data-astro-cid-lcdefpme></div><div class="flow-node" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>04</span><strong data-astro-cid-lcdefpme>ANALYSIS</strong><small data-astro-cid-lcdefpme>NDVI / ERROR</small></div></div><div class="validation-disclaimer" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>REFERENCE VALUES</strong><p data-astro-cid-lcdefpme>Panel reflectance values shown here are placeholder UI values. Production calibration must use the actual panel certificate / spectrometer measurement values.</p></div></div><!-- DEVICE --><div class="more-pane" id="more-device" data-astro-cid-lcdefpme><article class="device-detail" data-astro-cid-lcdefpme><div class="device-detail__hero" data-astro-cid-lcdefpme><div class="device-orb" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme></span></div><div data-astro-cid-lcdefpme><span class="micro-label" data-astro-cid-lcdefpme>ACTIVE DEVICE</span><h2 id="deviceDetailName" data-astro-cid-lcdefpme>LC-4 SPECTRA</h2><p id="deviceDetailId" data-astro-cid-lcdefpme>LANDCAM / DEMO-LC4-001</p></div><span class="status-pill status-pill--online" data-astro-cid-lcdefpme><span class="status-pill__dot" data-astro-cid-lcdefpme></span>ONLINE</span></div><div class="device-detail__grid" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>MODEL</span><strong id="deviceDetailModel" data-astro-cid-lcdefpme>LC-4</strong></div><div data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>BANDS</span><strong data-astro-cid-lcdefpme>RGB-NIR</strong></div><div data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>GNSS</span><strong data-astro-cid-lcdefpme>PPK</strong></div><div data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>STORAGE</span><strong data-astro-cid-lcdefpme>64 GB</strong></div><div data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>FIRMWARE</span><strong id="deviceDetailFirmware" data-astro-cid-lcdefpme>1.0.0</strong></div><div data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>APP</span><strong data-astro-cid-lcdefpme>UI PROTOTYPE 0.1</strong></div></div></article><div class="section-label" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>01 / DEVICE CONTROL</span><span class="section-line" data-astro-cid-lcdefpme></span><span data-astro-cid-lcdefpme>LOCAL</span></div><button class="device-manage-button" id="deviceManageButton" type="button" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme><small data-astro-cid-lcdefpme>CONNECTED DEVICE</small><strong id="deviceManageName" data-astro-cid-lcdefpme>LC-4 SPECTRA</strong></span><span data-astro-cid-lcdefpme>CHANGE DEVICE →</span></button><div class="section-label" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>02 / CONNECTION</span><span class="section-line" data-astro-cid-lcdefpme></span><span data-astro-cid-lcdefpme>DEMO</span></div><div class="settings-list" data-astro-cid-lcdefpme><div class="settings-row" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>CAMERA CHANNEL</strong><small data-astro-cid-lcdefpme>Transport layer placeholder</small></div><span class="setting-value" data-astro-cid-lcdefpme>READY</span></div><div class="settings-row" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>GNSS SOURCE</strong><small data-astro-cid-lcdefpme>RTK / PPK</small></div><span class="setting-value setting-value--ok" data-astro-cid-lcdefpme>FIX</span></div><div class="settings-row" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>TIME SOURCE</strong><small data-astro-cid-lcdefpme>PPS</small></div><span class="setting-value setting-value--ok" data-astro-cid-lcdefpme>LOCKED</span></div><div class="settings-row" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>LOCAL QUEUE</strong><small data-astro-cid-lcdefpme>Offline-first data collection</small></div><span class="setting-value" data-astro-cid-lcdefpme>18</span></div></div></div><!-- SETTINGS --><div class="more-pane" id="more-settings" data-astro-cid-lcdefpme><div class="section-label section-label--first" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>01 / APPEARANCE</span><span class="section-line" data-astro-cid-lcdefpme></span><span data-astro-cid-lcdefpme>UI</span></div><article class="theme-panel" data-astro-cid-lcdefpme><div class="theme-panel__head" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><span class="micro-label" data-astro-cid-lcdefpme>THEME</span><strong data-astro-cid-lcdefpme>DISPLAY MODE</strong></div><span class="theme-current" id="themeCurrent" data-astro-cid-lcdefpme>DARK</span></div><div class="theme-switch" data-astro-cid-lcdefpme><button class="theme-option is-active" data-theme-choice="dark" type="button" data-astro-cid-lcdefpme><span class="theme-option__visual theme-option__visual--dark" data-astro-cid-lcdefpme><i data-astro-cid-lcdefpme></i><i data-astro-cid-lcdefpme></i><i data-astro-cid-lcdefpme></i></span><span class="theme-option__copy" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>DARK</strong><small data-astro-cid-lcdefpme>LOW-LIGHT FIELD</small></span><span class="theme-check" data-astro-cid-lcdefpme>✓</span></button><button class="theme-option" data-theme-choice="light" type="button" data-astro-cid-lcdefpme><span class="theme-option__visual theme-option__visual--light" data-astro-cid-lcdefpme><i data-astro-cid-lcdefpme></i><i data-astro-cid-lcdefpme></i><i data-astro-cid-lcdefpme></i></span><span class="theme-option__copy" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>LIGHT</strong><small data-astro-cid-lcdefpme>DAYLIGHT FIELD</small></span><span class="theme-check" data-astro-cid-lcdefpme>✓</span></button></div></article><div class="section-label" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>02 / ACQUISITION</span><span class="section-line" data-astro-cid-lcdefpme></span><span data-astro-cid-lcdefpme>LOCAL</span></div><div class="settings-list" data-astro-cid-lcdefpme><div class="settings-row" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>AUTO SAVE</strong><small data-astro-cid-lcdefpme>Save every successful capture locally</small></div><button class="toggle is-on" data-toggle type="button" aria-label="Toggle auto save" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme></span></button></div><div class="settings-row" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>AUTO SYNC</strong><small data-astro-cid-lcdefpme>Upload when network is available</small></div><button class="toggle is-on" data-toggle type="button" aria-label="Toggle auto sync" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme></span></button></div><div class="settings-row" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>GNSS METADATA</strong><small data-astro-cid-lcdefpme>Attach position to every capture</small></div><button class="toggle is-on" data-toggle type="button" aria-label="Toggle GNSS metadata" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme></span></button></div><div class="settings-row" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>PPS TIMESTAMP</strong><small data-astro-cid-lcdefpme>Attach synchronized timestamp</small></div><button class="toggle is-on" data-toggle type="button" aria-label="Toggle PPS timestamp" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme></span></button></div><div class="settings-row" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>COMPRESSED PREVIEW</strong><small data-astro-cid-lcdefpme>Use lightweight preview frame</small></div><button class="toggle" data-toggle type="button" aria-label="Toggle compressed preview" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme></span></button></div></div><div class="section-label" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>03 / STORAGE POLICY</span><span class="section-line" data-astro-cid-lcdefpme></span><span data-astro-cid-lcdefpme>LOCAL</span></div><article class="policy-card" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><span class="micro-label" data-astro-cid-lcdefpme>CAPTURE RETENTION</span><strong data-astro-cid-lcdefpme>UNTIL SYNC CONFIRMED</strong></div><p data-astro-cid-lcdefpme>Capture records remain locally queued until the backend confirms synchronization.</p></article><div class="section-label" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>04 / ABOUT</span><span class="section-line" data-astro-cid-lcdefpme></span><span data-astro-cid-lcdefpme>INFO</span></div><article class="about-card" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>LANDCAM CONTROLLER</strong><p data-astro-cid-lcdefpme>UI PROTOTYPE 0.1</p><span data-astro-cid-lcdefpme>UI prototype / no hardware transport connected</span></article></div></section></main><!-- =========================================================
+           BOTTOM NAVIGATION
+      ========================================================== --><nav class="bottom-nav" aria-label="Main navigation" data-astro-cid-lcdefpme><button class="bottom-nav__item is-active" data-nav="home" type="button" data-astro-cid-lcdefpme><span class="bottom-nav__icon" data-astro-cid-lcdefpme>⌂</span><span data-astro-cid-lcdefpme>HOME</span></button><button class="bottom-nav__item" data-nav="camera" type="button" data-astro-cid-lcdefpme><span class="bottom-nav__icon bottom-nav__icon--capture" data-astro-cid-lcdefpme>+</span><span data-astro-cid-lcdefpme>CAMERA</span></button><button class="bottom-nav__item" data-nav="mission" type="button" data-astro-cid-lcdefpme><span class="bottom-nav__icon" data-astro-cid-lcdefpme>◎</span><span data-astro-cid-lcdefpme>MISSION</span></button><button class="bottom-nav__item" data-nav="data" type="button" data-astro-cid-lcdefpme><span class="bottom-nav__icon" data-astro-cid-lcdefpme>▦</span><span data-astro-cid-lcdefpme>DATA</span></button><button class="bottom-nav__item" data-nav="more" type="button" data-astro-cid-lcdefpme><span class="bottom-nav__icon" data-astro-cid-lcdefpme>⋯</span><span data-astro-cid-lcdefpme>MORE</span></button></nav><!-- =========================================================
+           DEVICE PICKER
+      ========================================================== --><div class="device-modal" id="deviceModal" aria-hidden="true" data-astro-cid-lcdefpme><button class="device-modal__backdrop" id="deviceModalBackdrop" type="button" aria-label="Close device list" data-astro-cid-lcdefpme></button><div class="device-sheet" role="dialog" aria-modal="true" aria-labelledby="deviceModalTitle" data-astro-cid-lcdefpme><div class="device-sheet__grab" data-astro-cid-lcdefpme></div><div class="device-sheet__head" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><span class="eyebrow" data-astro-cid-lcdefpme>HARDWARE</span><h2 id="deviceModalTitle" data-astro-cid-lcdefpme>Device List</h2><p data-astro-cid-lcdefpme>Select the LandCam controller target.</p></div><button class="device-sheet__close" id="deviceModalClose" type="button" aria-label="Close device list" data-astro-cid-lcdefpme>×</button></div><div class="device-scanbar" data-astro-cid-lcdefpme><div data-astro-cid-lcdefpme><span class="device-scanbar__dot" data-astro-cid-lcdefpme></span><span id="deviceScanStatus" data-astro-cid-lcdefpme>LAST SCAN 08:41:56</span></div><button id="scanDevices" type="button" data-astro-cid-lcdefpme>RESCAN</button></div><div class="device-list" id="deviceList" data-astro-cid-lcdefpme><button class="device-option is-selected" data-device-id="DEMO-LC4-001" type="button" data-astro-cid-lcdefpme><span class="device-option__indicator" data-astro-cid-lcdefpme></span><span class="device-option__main" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>LC-4 SPECTRA</strong><small data-astro-cid-lcdefpme>DEMO-LC4-001 · PPK</small><em data-astro-cid-lcdefpme>RGB · GREEN · RED · NIR</em></span><span class="device-option__meta" data-astro-cid-lcdefpme><b data-astro-cid-lcdefpme>CONNECTED</b><span data-astro-cid-lcdefpme>87%</span></span></button><button class="device-option" data-device-id="DEMO-LC4-002" type="button" data-astro-cid-lcdefpme><span class="device-option__indicator" data-astro-cid-lcdefpme></span><span class="device-option__main" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>LC-4 SPECTRA</strong><small data-astro-cid-lcdefpme>DEMO-LC4-002 · PPK</small><em data-astro-cid-lcdefpme>RGB · GREEN · RED · NIR</em></span><span class="device-option__meta device-option__meta--idle" data-astro-cid-lcdefpme><b data-astro-cid-lcdefpme>AVAILABLE</b><span data-astro-cid-lcdefpme>91%</span></span></button><button class="device-option" data-device-id="DEMO-LC4-003" type="button" data-astro-cid-lcdefpme><span class="device-option__indicator" data-astro-cid-lcdefpme></span><span class="device-option__main" data-astro-cid-lcdefpme><strong data-astro-cid-lcdefpme>LC-4 SPECTRA</strong><small data-astro-cid-lcdefpme>DEMO-LC4-003 · PPK</small><em data-astro-cid-lcdefpme>RGB · GREEN · RED · NIR</em></span><span class="device-option__meta device-option__meta--offline" data-astro-cid-lcdefpme><b data-astro-cid-lcdefpme>OFFLINE</b><span data-astro-cid-lcdefpme>—</span></span></button></div><div class="device-sheet__footer" data-astro-cid-lcdefpme><span data-astro-cid-lcdefpme>3 DEVICES DISCOVERED</span><button class="device-connect-button" id="deviceConnectButton" type="button" data-astro-cid-lcdefpme>CONNECT SELECTED<span data-astro-cid-lcdefpme>→</span></button></div></div></div><!-- =========================================================
+           TOAST
+      ========================================================== --><div class="toast" id="toast" role="status" aria-live="polite" data-astro-cid-lcdefpme><span class="toast__dot" data-astro-cid-lcdefpme></span><span id="toastText" data-astro-cid-lcdefpme>Capture saved</span></div></div><script>
+      /* ============================================================
+         STATE
+      ============================================================ */
+      const screens = [
+        ...document.querySelectorAll("[data-screen]"),
+      ];
+
+      const navItems = [
+        ...document.querySelectorAll("[data-nav]"),
+      ];
+
+      const toast = document.getElementById("toast");
+      const toastText = document.getElementById("toastText");
+
+      const deviceModal = document.getElementById(
+        "deviceModal",
+      );
+
+      const deviceModalBackdrop =
+        document.getElementById(
+          "deviceModalBackdrop",
+        );
+
+      const deviceModalClose =
+        document.getElementById(
+          "deviceModalClose",
+        );
+
+      const deviceConnectButton =
+        document.getElementById(
+          "deviceConnectButton",
+        );
+
+      const deviceManageButton =
+        document.getElementById(
+          "deviceManageButton",
+        );
+
+      const topConnect =
+        document.getElementById("topConnect");
+
+      const connectButton =
+        document.getElementById("connectButton");
+
+      const systemLabel =
+        document.getElementById("systemLabel");
+
+      const systemDot =
+        document.getElementById("systemDot");
+
+      const connectLabel =
+        document.getElementById("connectLabel");
+
+      const topDeviceName =
+        document.getElementById("topDeviceName");
+
+      const homeDeviceName =
+        document.getElementById("homeDeviceName");
+
+      const homeDeviceId =
+        document.getElementById("homeDeviceId");
+
+      const homeFirmware =
+        document.getElementById("homeFirmware");
+
+      const homeBattery =
+        document.getElementById("homeBattery");
+
+      const deviceDetailName =
+        document.getElementById(
+          "deviceDetailName",
+        );
+
+      const deviceDetailId =
+        document.getElementById(
+          "deviceDetailId",
+        );
+
+      const deviceDetailFirmware =
+        document.getElementById(
+          "deviceDetailFirmware",
+        );
+
+      const deviceManageName =
+        document.getElementById(
+          "deviceManageName",
+        );
+
+      const deviceList = document.getElementById(
+        "deviceList",
+      );
+
+      const deviceScanStatus =
+        document.getElementById(
+          "deviceScanStatus",
+        );
+
+      const deviceOptions = [
+        ...document.querySelectorAll(
+          ".device-option",
+        ),
+      ];
+
+      const deviceDatabase = {
+        "DEMO-LC4-001": {
+          name: "LC-4 SPECTRA",
+          id: "LANDCAM / DEMO-LC4-001",
+          shortId: "DEMO-LC4-001",
+          firmware: "1.0.0",
+          battery: "87%",
+          model: "LC-4",
+          state: "CONNECTED",
+        },
+
+        "DEMO-LC4-002": {
+          name: "LC-4 SPECTRA",
+          id: "LANDCAM / DEMO-LC4-002",
+          shortId: "DEMO-LC4-002",
+          firmware: "1.0.2",
+          battery: "91%",
+          model: "LC-4",
+          state: "AVAILABLE",
+        },
+
+        "DEMO-LC4-003": {
+          name: "LC-4 SPECTRA",
+          id: "LANDCAM / DEMO-LC4-003",
+          shortId: "DEMO-LC4-003",
+          firmware: "—",
+          battery: "—",
+          model: "LC-4",
+          state: "OFFLINE",
+        },
+      };
+
+      let selectedDeviceId = "DEMO-LC4-001";
+      let captureCount = 1842;
+      let missionRunning = false;
+      let syncPending = 18;
+      let frameNumber = 1842;
+
+      /* ============================================================
+         TOAST
+      ============================================================ */
+      function showToast(message) {
+        toastText.textContent = message;
+        toast.classList.add("is-visible");
+
+        window.clearTimeout(
+          window.__toastTimer,
+        );
+
+        window.__toastTimer = window.setTimeout(
+          () => {
+            toast.classList.remove(
+              "is-visible",
+            );
+          },
+          2300,
+        );
+      }
+
+      /* ============================================================
+         SCREEN NAVIGATION
+      ============================================================ */
+      function showScreen(name) {
+        screens.forEach((screen) => {
+          screen.classList.toggle(
+            "is-active",
+            screen.dataset.screen === name,
+          );
+        });
+
+        navItems.forEach((item) => {
+          item.classList.toggle(
+            "is-active",
+            item.dataset.nav === name,
+          );
+        });
+
+        window.scrollTo({
+          top: 0,
+          behavior: "smooth",
+        });
+      }
+
+      document
+        .querySelectorAll("[data-go]")
+        .forEach((button) => {
+          button.addEventListener(
+            "click",
+            () => {
+              showScreen(
+                button.dataset.go,
+              );
+            },
+          );
+        });
+
+      navItems.forEach((item) => {
+        item.addEventListener(
+          "click",
+          () => {
+            showScreen(
+              item.dataset.nav,
+            );
+          },
+        );
+      });
+
+      /* ============================================================
+         DEVICE MODAL
+      ============================================================ */
+      function openDeviceModal() {
+        deviceModal.classList.add(
+          "is-open",
+        );
+
+        deviceModal.setAttribute(
+          "aria-hidden",
+          "false",
+        );
+
+        topConnect.setAttribute(
+          "aria-expanded",
+          "true",
+        );
+
+        connectButton.setAttribute(
+          "aria-expanded",
+          "true",
+        );
+
+        document.body.classList.add(
+          "modal-open",
+        );
+      }
+
+      function closeDeviceModal() {
+        deviceModal.classList.remove(
+          "is-open",
+        );
+
+        deviceModal.setAttribute(
+          "aria-hidden",
+          "true",
+        );
+
+        topConnect.setAttribute(
+          "aria-expanded",
+          "false",
+        );
+
+        connectButton.setAttribute(
+          "aria-expanded",
+          "false",
+        );
+
+        document.body.classList.remove(
+          "modal-open",
+        );
+      }
+
+      topConnect.addEventListener(
+        "click",
+        openDeviceModal,
+      );
+
+      connectButton.addEventListener(
+        "click",
+        openDeviceModal,
+      );
+
+      deviceManageButton.addEventListener(
+        "click",
+        openDeviceModal,
+      );
+
+      deviceModalBackdrop.addEventListener(
+        "click",
+        closeDeviceModal,
+      );
+
+      deviceModalClose.addEventListener(
+        "click",
+        closeDeviceModal,
+      );
+
+      document.addEventListener(
+        "keydown",
+        (event) => {
+          if (
+            event.key === "Escape" &&
+            deviceModal.classList.contains(
+              "is-open",
+            )
+          ) {
+            closeDeviceModal();
+          }
+        },
+      );
+
+      /* ============================================================
+         DEVICE SELECTION
+      ============================================================ */
+      function updateDeviceUI(device) {
+        const isOnline =
+          device.state !== "OFFLINE";
+
+        topDeviceName.textContent =
+          device.name;
+
+        homeDeviceName.textContent =
+          device.name;
+
+        homeDeviceId.textContent =
+          device.id;
+
+        homeFirmware.textContent =
+          device.firmware;
+
+        homeBattery.textContent =
+          device.battery;
+
+        deviceDetailName.textContent =
+          device.name;
+
+        deviceDetailId.textContent =
+          device.id;
+
+        deviceDetailFirmware.textContent =
+          device.firmware;
+
+        deviceManageName.textContent =
+          device.name;
+
+        connectLabel.textContent =
+          isOnline
+            ? "CONNECTED"
+            : "OFFLINE";
+
+        systemLabel.textContent =
+          isOnline
+            ? "SYSTEM READY"
+            : "DEVICE OFFLINE";
+
+        systemDot.classList.toggle(
+          "is-offline",
+          !isOnline,
+        );
+
+        connectButton.classList.toggle(
+          "status-pill--online",
+          isOnline,
+        );
+      }
+
+      function selectDevice(deviceId) {
+        selectedDeviceId = deviceId;
+
+        deviceOptions.forEach((option) => {
+          option.classList.toggle(
+            "is-selected",
+            option.dataset.deviceId ===
+              deviceId,
+          );
+        });
+      }
+
+      function connectSelectedDevice() {
+        const device =
+          deviceDatabase[
+            selectedDeviceId
+          ];
+
+        if (!device) return;
+
+        if (
+          device.state === "OFFLINE"
+        ) {
+          showToast(
+            "Device is currently offline",
+          );
+
+          return;
+        }
+
+        updateDeviceUI(device);
+        closeDeviceModal();
+
+        showToast(
+          `${device.shortId} connected`,
+        );
+      }
+
+      deviceOptions.forEach((option) => {
+        option.addEventListener(
+          "click",
+          () => {
+            selectDevice(
+              option.dataset.deviceId,
+            );
+          },
+        );
+      });
+
+      deviceConnectButton.addEventListener(
+        "click",
+        connectSelectedDevice,
+      );
+
+      document
+        .getElementById("scanDevices")
+        .addEventListener(
+          "click",
+          (event) => {
+            const button =
+              event.currentTarget;
+
+            button.textContent =
+              "SCANNING...";
+
+            deviceScanStatus.textContent =
+              "SCANNING DEVICE BUS...";
+
+            window.setTimeout(() => {
+              button.textContent =
+                "RESCAN";
+
+              deviceScanStatus.textContent =
+                "LAST SCAN 08:42:04";
+
+              showToast(
+                "3 devices discovered",
+              );
+            }, 900);
+          },
+        );
+
+      /* ============================================================
+         CAPTURE
+      ============================================================ */
+      function pad(
+        number,
+        digits = 6,
+      ) {
+        return String(number).padStart(
+          digits,
+          "0",
+        );
+      }
+
+      function currentClock() {
+        const now = new Date();
+
+        return now.toLocaleTimeString(
+          "en-GB",
+          {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: false,
+          },
+        );
+      }
+
+      function simulateCapture() {
+        const activeDevice =
+          deviceDatabase[
+            selectedDeviceId
+          ];
+
+        if (
+          !activeDevice ||
+          activeDevice.state ===
+            "OFFLINE"
+        ) {
+          showToast(
+            "Connect a device first",
+          );
+
+          return;
+        }
+
+        captureCount += 1;
+        frameNumber += 1;
+        syncPending += 1;
+
+        const now =
+          currentClock();
+
+        document.getElementById(
+          "homeCaptureCount",
+        ).textContent =
+          captureCount
+            .toLocaleString(
+              "en-US",
+            )
+            .padStart(
+              6,
+              "0",
+            );
+
+        document.getElementById(
+          "todayCaptureCount",
+        ).textContent =
+          captureCount.toLocaleString(
+            "en-US",
+          );
+
+        document.getElementById(
+          "dailyCount",
+        ).textContent =
+          captureCount.toLocaleString(
+            "en-US",
+          );
+
+        document.getElementById(
+          "missionCaptureCount",
+        ).textContent =
+          captureCount.toLocaleString(
+            "en-US",
+          );
+
+        document.getElementById(
+          "syncCount",
+        ).textContent =
+          syncPending;
+
+        document.getElementById(
+          "postgisQueue",
+        ).textContent =
+          syncPending;
+
+        document.getElementById(
+          "cameraFrameCounter",
+        ).textContent =
+          pad(frameNumber);
+
+        document.getElementById(
+          "captureTime",
+        ).textContent = now;
+
+        const preview =
+          document.getElementById(
+            "cameraPreview",
+          );
+
+        const flash =
+          document.getElementById(
+            "captureFlash",
+          );
+
+        preview.classList.add(
+          "is-capturing",
+        );
+
+        flash.classList.add(
+          "is-active",
+        );
+
+        window.setTimeout(() => {
+          preview.classList.remove(
+            "is-capturing",
+          );
+
+          flash.classList.remove(
+            "is-active",
+          );
+        }, 420);
+
+        showToast(
+          `Capture #${pad(frameNumber)} saved`,
+        );
+      }
+
+      document
+        .querySelectorAll(
+          '[data-action="capture"]',
+        )
+        .forEach((button) => {
+          button.addEventListener(
+            "click",
+            simulateCapture,
+          );
+        });
+
+      /* ============================================================
+         CAMERA BANDS
+      ============================================================ */
+      document
+        .querySelectorAll(".band-item")
+        .forEach((button) => {
+          button.addEventListener(
+            "click",
+            () => {
+              document
+                .querySelectorAll(
+                  ".band-item",
+                )
+                .forEach(
+                  (item) =>
+                    item.classList.remove(
+                      "is-active",
+                    ),
+                );
+
+              button.classList.add(
+                "is-active",
+              );
+
+              showToast(
+                `${button.dataset.band} band selected`,
+              );
+            },
+          );
+        });
+
+      /* ============================================================
+         CAMERA DISPLAY MODE
+      ============================================================ */
+      const frameModes = [
+        "RGB",
+        "NIR",
+        "FALSE COLOR",
+      ];
+
+      let frameModeIndex = 0;
+
+      document
+        .getElementById(
+          "frameModeButton",
+        )
+        .addEventListener(
+          "click",
+          () => {
+            frameModeIndex =
+              (frameModeIndex + 1) %
+              frameModes.length;
+
+            const mode =
+              frameModes[
+                frameModeIndex
+              ];
+
+            document.getElementById(
+              "frameModeLabel",
+            ).textContent = mode;
+
+            document.getElementById(
+              "previewMode",
+            ).textContent = mode;
+
+            showToast(
+              `Display mode: ${mode}`,
+            );
+          },
+        );
+
+      /* ============================================================
+         TRIGGER MODE
+      ============================================================ */
+      const triggerModes = [
+        "SINGLE",
+        "AUTO",
+      ];
+
+      let triggerModeIndex = 0;
+
+      document
+        .getElementById(
+          "triggerModeButton",
+        )
+        .addEventListener(
+          "click",
+          () => {
+            triggerModeIndex =
+              (triggerModeIndex + 1) %
+              triggerModes.length;
+
+            const mode =
+              triggerModes[
+                triggerModeIndex
+              ];
+
+            document.getElementById(
+              "triggerModeLabel",
+            ).textContent = mode;
+
+            showToast(
+              `Trigger mode: ${mode}`,
+            );
+          },
+        );
+
+      /* ============================================================
+         MISSION
+      ============================================================ */
+      const missionStart =
+        document.getElementById(
+          "missionStart",
+        );
+
+      const missionStop =
+        document.getElementById(
+          "missionStop",
+        );
+
+      const missionStartText =
+        document.getElementById(
+          "missionStartText",
+        );
+
+      const missionBadge =
+        document.getElementById(
+          "missionBadge",
+        );
+
+      const missionStatusTop =
+        document.getElementById(
+          "missionStatusTop",
+        );
+
+      missionStart.addEventListener(
+        "click",
+        () => {
+          missionRunning =
+            !missionRunning;
+
+          if (
+            missionRunning
+          ) {
+            missionStartText.textContent =
+              "MISSION RUNNING";
+
+            missionBadge.textContent =
+              "ACTIVE";
+
+            missionBadge.classList.add(
+              "mission-tag--active",
+            );
+
+            missionStatusTop.textContent =
+              "ACTIVE";
+
+            systemLabel.textContent =
+              "MISSION ACTIVE";
+
+            showToast(
+              "Mission started",
+            );
+          } else {
+            missionStartText.textContent =
+              "START MISSION";
+
+            missionBadge.textContent =
+              "READY";
+
+            missionBadge.classList.remove(
+              "mission-tag--active",
+            );
+
+            missionStatusTop.textContent =
+              "READY";
+
+            systemLabel.textContent =
+              "SYSTEM READY";
+
+            showToast(
+              "Mission paused",
+            );
+          }
+        },
+      );
+
+      missionStop.addEventListener(
+        "click",
+        () => {
+          missionRunning = false;
+
+          missionStartText.textContent =
+            "START MISSION";
+
+          missionBadge.textContent =
+            "STOPPED";
+
+          missionBadge.classList.remove(
+            "mission-tag--active",
+          );
+
+          missionStatusTop.textContent =
+            "STOPPED";
+
+          systemLabel.textContent =
+            "SYSTEM READY";
+
+          showToast(
+            "Mission stopped",
+          );
+        },
+      );
+
+      /* ============================================================
+         DATA TABS
+      ============================================================ */
+      document
+        .querySelectorAll(
+          "[data-data-tab]",
+        )
+        .forEach((tab) => {
+          tab.addEventListener(
+            "click",
+            () => {
+              document
+                .querySelectorAll(
+                  "[data-data-tab]",
+                )
+                .forEach(
+                  (item) =>
+                    item.classList.remove(
+                      "is-active",
+                    ),
+                );
+
+              document
+                .querySelectorAll(
+                  ".data-pane",
+                )
+                .forEach(
+                  (pane) =>
+                    pane.classList.remove(
+                      "is-active",
+                    ),
+                );
+
+              tab.classList.add(
+                "is-active",
+              );
+
+              document
+                .getElementById(
+                  `data-${tab.dataset.dataTab}`,
+                )
+                .classList.add(
+                  "is-active",
+                );
+            },
+          );
+        });
+
+      /* ============================================================
+         MORE TABS
+      ============================================================ */
+      document
+        .querySelectorAll(
+          "[data-more-tab]",
+        )
+        .forEach((tab) => {
+          tab.addEventListener(
+            "click",
+            () => {
+              document
+                .querySelectorAll(
+                  "[data-more-tab]",
+                )
+                .forEach(
+                  (item) =>
+                    item.classList.remove(
+                      "is-active",
+                    ),
+                );
+
+              document
+                .querySelectorAll(
+                  ".more-pane",
+                )
+                .forEach(
+                  (pane) =>
+                    pane.classList.remove(
+                      "is-active",
+                    ),
+                );
+
+              tab.classList.add(
+                "is-active",
+              );
+
+              document
+                .getElementById(
+                  `more-${tab.dataset.moreTab}`,
+                )
+                .classList.add(
+                  "is-active",
+                );
+            },
+          );
+        });
+
+      /* ============================================================
+         TOGGLES
+      ============================================================ */
+      document
+        .querySelectorAll(
+          "[data-toggle]",
+        )
+        .forEach((toggle) => {
+          toggle.addEventListener(
+            "click",
+            () => {
+              toggle.classList.toggle(
+                "is-on",
+              );
+            },
+          );
+        });
+
+      /* ============================================================
+         SYNC
+      ============================================================ */
+      const syncButton =
+        document.getElementById(
+          "syncButton",
+        );
+
+      const syncButtonLabel =
+        document.getElementById(
+          "syncButtonLabel",
+        );
+
+      syncButton.addEventListener(
+        "click",
+        () => {
+          syncPending = 0;
+
+          document.getElementById(
+            "syncCount",
+          ).textContent = "0";
+
+          document.getElementById(
+            "postgisQueue",
+          ).textContent = "0";
+
+          syncButtonLabel.textContent =
+            "QUEUE SYNCHRONIZED";
+
+          showToast(
+            "Local queue synchronized",
+          );
+
+          window.setTimeout(() => {
+            syncButtonLabel.textContent =
+              "SYNC QUEUE";
+          }, 1800);
+        },
+      );
+
+      /* ============================================================
+         LOAD MORE
+      ============================================================ */
+      document
+        .getElementById("loadMore")
+        .addEventListener(
+          "click",
+          (event) => {
+            event.currentTarget.innerHTML =
+              'ALL VISIBLE CAPTURES LOADED <span>✓</span>';
+
+            showToast(
+              "Daily capture list expanded",
+            );
+          },
+        );
+
+      /* ============================================================
+         CALIBRATION
+      ============================================================ */
+      document
+        .querySelectorAll(
+          ".panel-button",
+        )
+        .forEach((button) => {
+          button.addEventListener(
+            "click",
+            () => {
+              button.textContent =
+                "REFERENCE CAPTURED";
+
+              button.classList.add(
+                "is-done",
+              );
+
+              showToast(
+                "Reference panel capture stored",
+              );
+            },
+          );
+        });
+
+      /* ============================================================
+         DATE
+      ============================================================ */
+      document
+        .querySelectorAll(
+          ".date-arrow",
+        )
+        .forEach((button) => {
+          button.addEventListener(
+            "click",
+            () => {
+              showToast(
+                "Date navigation is UI-only in this prototype",
+              );
+            },
+          );
+        });
+
+      /* ============================================================
+         THEME
+      ============================================================ */
+      const themeOptions = [
+        ...document.querySelectorAll(
+          "[data-theme-choice]",
+        ),
+      ];
+
+      const themeCurrent =
+        document.getElementById(
+          "themeCurrent",
+        );
+
+      const themeColor =
+        document.getElementById(
+          "themeColor",
+        );
+
+      function applyTheme(theme) {
+        const normalizedTheme =
+          theme === "light"
+            ? "light"
+            : "dark";
+
+        document.documentElement.dataset.theme =
+          normalizedTheme;
+
+        themeOptions.forEach(
+          (option) => {
+            option.classList.toggle(
+              "is-active",
+              option.dataset.themeChoice ===
+                normalizedTheme,
+            );
+          },
+        );
+
+        themeCurrent.textContent =
+          normalizedTheme.toUpperCase();
+
+        themeColor.setAttribute(
+          "content",
+          normalizedTheme === "light"
+            ? "#f3f4ef"
+            : "#090b0a",
+        );
+
+        try {
+          localStorage.setItem(
+            "landcam-theme",
+            normalizedTheme,
+          );
+        } catch {}
+      }
+
+      let savedTheme = "dark";
+
+      try {
+        savedTheme =
+          localStorage.getItem(
+            "landcam-theme",
+          ) || "dark";
+      } catch {}
+
+      applyTheme(savedTheme);
+
+      themeOptions.forEach(
+        (option) => {
+          option.addEventListener(
+            "click",
+            () => {
+              applyTheme(
+                option.dataset.themeChoice,
+              );
+
+              showToast(
+                `${option.dataset.themeChoice.toUpperCase()} theme selected`,
+              );
+            },
+          );
+        },
+      );
+    </script></body></html>
