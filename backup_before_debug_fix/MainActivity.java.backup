@@ -1,0 +1,842 @@
+package com.example.landcam;
+
+import android.Manifest;
+import android.app.PendingIntent;
+import android.content.ContentResolver;
+import android.content.ContentValues;
+import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.graphics.BitmapFactory;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
+import android.net.Uri;
+import android.net.wifi.WifiNetworkSpecifier;
+import android.nfc.NdefMessage;
+import android.nfc.NdefRecord;
+import android.nfc.NfcAdapter;
+import android.os.Build;
+import android.os.Bundle;
+import android.os.Parcelable;
+import android.provider.MediaStore;
+import android.util.Log;
+
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import io.flutter.embedding.android.FlutterActivity;
+import io.flutter.embedding.engine.FlutterEngine;
+import io.flutter.plugin.common.EventChannel;
+import io.flutter.plugin.common.MethodCall;
+import io.flutter.plugin.common.MethodChannel;
+
+/**
+ * LANDCAM native transport.
+ *
+ * NFC foreground dispatch -> Sony NDEF -> DIRECT SSID/password
+ * -> WifiNetworkSpecifier -> ConnectivityManager.requestNetwork()
+ * -> bindProcessToNetwork() -> Sony Camera API -> Live View -> JPEG
+ * -> MediaStore -> actTakePicture.
+ */
+public class MainActivity extends FlutterActivity {
+    private static final String TAG = "LANDCAM";
+    private static final String METHOD_CHANNEL = "landcam/native";
+    private static final String EVENT_CHANNEL = "landcam/events";
+    private static final String API_URL = "http://192.168.122.1:8080/sony/camera";
+    private static final String CAMERA_IP = "192.168.122.1";
+    private static final int LOCATION_PERMISSION_REQUEST = 4101;
+
+    private EventChannel.EventSink eventSink;
+
+    private NfcAdapter nfcAdapter;
+    private PendingIntent pendingIntent;
+    private boolean nfcForegroundEnabled = false;
+
+    private ConnectivityManager connectivityManager;
+    private ConnectivityManager.NetworkCallback networkCallback;
+    private Network currentNetwork;
+
+    private final ExecutorService executor = Executors.newFixedThreadPool(4);
+    private final AtomicBoolean streaming = new AtomicBoolean(false);
+    private final AtomicBoolean firstFrameSent = new AtomicBoolean(false);
+
+    private volatile byte[] lastFrameBytes;
+    private volatile boolean quadMode = false;
+    private volatile boolean grayscaleMode = false;
+
+    private volatile String lastSsid = "";
+    private volatile String lastPassword = "";
+    private volatile String lastLiveviewUrl = "";
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setupFullscreen();
+        setupNfc();
+        lastSsid = getPreferences(MODE_PRIVATE).getString("camera_ssid", "");
+        lastPassword = getPreferences(MODE_PRIVATE).getString("camera_password", "");
+        requestWifiPermissions();
+        handleNfcIntent(getIntent());
+    }
+
+    @Override
+    public void configureFlutterEngine(FlutterEngine flutterEngine) {
+        super.configureFlutterEngine(flutterEngine);
+
+        new MethodChannel(
+                flutterEngine.getDartExecutor().getBinaryMessenger(),
+                METHOD_CHANNEL
+        ).setMethodCallHandler(this::handleMethodCall);
+
+        new EventChannel(
+                flutterEngine.getDartExecutor().getBinaryMessenger(),
+                EVENT_CHANNEL
+        ).setStreamHandler(new EventChannel.StreamHandler() {
+            @Override
+            public void onListen(Object arguments, EventChannel.EventSink events) {
+                eventSink = events;
+                sendEvent("ready", true);
+            }
+
+            @Override
+            public void onCancel(Object arguments) {
+                eventSink = null;
+            }
+        });
+    }
+
+    private void handleMethodCall(MethodCall call, MethodChannel.Result result) {
+        switch (call.method) {
+            case "initialize":
+                sendEvent("ready", true);
+                result.success(true);
+                return;
+            case "startNfc":
+                startNfc();
+                result.success(true);
+                return;
+            case "stopNfc":
+                stopNfc();
+                result.success(true);
+                return;
+            case "connectCurrentWifi":
+                executor.execute(this::useCurrentWifi);
+                result.success(true);
+                return;
+            case "connectLastWifi":
+                if (lastSsid.isEmpty() || lastPassword.isEmpty()) {
+                    result.error("NO_CREDENTIALS", "NO LAST CAMERA WI-FI CREDENTIALS", null);
+                } else {
+                    connectWifi(lastSsid, lastPassword);
+                    result.success(true);
+                }
+                return;
+            case "refreshLiveview":
+                executor.execute(this::startCameraEngine);
+                result.success(true);
+                return;
+            case "capture":
+                takePicture();
+                result.success(true);
+                return;
+            case "autofocus":
+                executor.execute(() -> {
+                    try {
+                        callApi("actFocus");
+                        Thread.sleep(500L);
+                        callApi("cancelFocus");
+                        sendEvent("focusComplete", true);
+                    } catch (Exception e) {
+                        sendEvent("error", "AUTOFOCUS FAILED: " + e.getMessage());
+                    }
+                });
+                result.success(true);
+                return;
+            case "toggleViewMode":
+                quadMode = !quadMode;
+                sendEvent("viewModeChanged", quadMode);
+                result.success(quadMode);
+                return;
+            case "setGrayscale":
+                grayscaleMode = Boolean.TRUE.equals(call.arguments);
+                sendEvent("grayscaleChanged", grayscaleMode);
+                result.success(true);
+                return;
+            case "disconnect":
+                disconnectCamera();
+                result.success(true);
+                return;
+            default:
+                result.notImplemented();
+        }
+    }
+
+    private void setupFullscreen() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            getWindow().setDecorFitsSystemWindows(false);
+            getWindow().getInsetsController().hide(
+                    android.view.WindowInsets.Type.statusBars()
+                            | android.view.WindowInsets.Type.navigationBars()
+            );
+        } else {
+            getWindow().getDecorView().setSystemUiVisibility(
+                    android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
+                            | android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                            | android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                            | android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                            | android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                            | android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            );
+        }
+    }
+
+    private void requestWifiPermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(Manifest.permission.NEARBY_WIFI_DEVICES)
+                    != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(
+                        new String[]{Manifest.permission.NEARBY_WIFI_DEVICES},
+                        LOCATION_PERMISSION_REQUEST
+                );
+            }
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                    != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(
+                        new String[]{Manifest.permission.ACCESS_FINE_LOCATION},
+                        LOCATION_PERMISSION_REQUEST
+                );
+            }
+        }
+    }
+
+    private void setupNfc() {
+        nfcAdapter = NfcAdapter.getDefaultAdapter(this);
+        if (nfcAdapter == null) {
+            sendEvent("error", "NFC NOT SUPPORTED");
+            return;
+        }
+
+        Intent intent = new Intent(this, MainActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            flags |= PendingIntent.FLAG_MUTABLE;
+        }
+
+        pendingIntent = PendingIntent.getActivity(this, 0, intent, flags);
+    }
+
+    private void startNfc() {
+        if (nfcAdapter == null || pendingIntent == null) {
+            sendEvent("error", "NFC NOT AVAILABLE");
+            return;
+        }
+        try {
+            nfcAdapter.enableForegroundDispatch(this, pendingIntent, null, null);
+            nfcForegroundEnabled = true;
+            sendEvent("nfcStarted", true);
+        } catch (Exception e) {
+            Log.e(TAG, "enableForegroundDispatch failed", e);
+            sendEvent("error", "NFC FOREGROUND DISPATCH FAILED: " + e.getMessage());
+        }
+    }
+
+    private void stopNfc() {
+        if (nfcAdapter != null && nfcForegroundEnabled) {
+            try {
+                nfcAdapter.disableForegroundDispatch(this);
+            } catch (Exception ignored) {
+            }
+        }
+        nfcForegroundEnabled = false;
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (nfcAdapter != null && pendingIntent != null) {
+            try {
+                nfcAdapter.enableForegroundDispatch(this, pendingIntent, null, null);
+                nfcForegroundEnabled = true;
+            } catch (Exception e) {
+                Log.e(TAG, "Foreground NFC failed", e);
+            }
+        }
+        setupFullscreen();
+    }
+
+    @Override
+    protected void onPause() {
+        if (nfcAdapter != null && nfcForegroundEnabled) {
+            try {
+                nfcAdapter.disableForegroundDispatch(this);
+            } catch (Exception ignored) {
+            }
+        }
+        nfcForegroundEnabled = false;
+        super.onPause();
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleNfcIntent(intent);
+    }
+
+    private void handleNfcIntent(Intent intent) {
+        if (intent == null) return;
+
+        Parcelable[] rawMessages;
+        try {
+            if (Build.VERSION.SDK_INT >= 33) {
+                rawMessages = intent.getParcelableArrayExtra(
+                        NfcAdapter.EXTRA_NDEF_MESSAGES,
+                        Parcelable.class
+                );
+            } else {
+                rawMessages = intent.getParcelableArrayExtra(NfcAdapter.EXTRA_NDEF_MESSAGES);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Unable to extract NDEF messages", e);
+            return;
+        }
+
+        if (rawMessages == null || rawMessages.length == 0) return;
+
+        try {
+            for (Parcelable parcelable : rawMessages) {
+                if (!(parcelable instanceof NdefMessage)) continue;
+                NdefMessage message = (NdefMessage) parcelable;
+                for (NdefRecord record : message.getRecords()) {
+                    String content = new String(record.getPayload(), StandardCharsets.UTF_8);
+                    int start = content.indexOf("DIRECT-");
+                    if (start < 0) continue;
+                    if (start + 23 > content.length()) continue;
+                    if (content.length() < 8) continue;
+
+                    String ssid = content.substring(start, start + 23).trim();
+                    String password = content.substring(content.length() - 8).trim();
+                    if (ssid.isEmpty() || password.isEmpty()) continue;
+
+                    lastSsid = ssid;
+                    lastPassword = password;
+                    getPreferences(MODE_PRIVATE)
+                            .edit()
+                            .putString("camera_ssid", ssid)
+                            .putString("camera_password", password)
+                            .apply();
+
+                    sendEvent("nfcDetected", mapOf(
+                            "payload", content,
+                            "ssid", ssid
+                    ));
+
+                    stopNfc();
+                    connectWifi(ssid, password);
+                    return;
+                }
+            }
+            sendEvent("error", "SONY NFC PAYLOAD NOT FOUND");
+        } catch (Exception e) {
+            Log.e(TAG, "NFC parsing error", e);
+            sendEvent("error", "NFC PARSE FAILED: " + e.getMessage());
+        }
+    }
+
+    private void useCurrentWifi() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            sendEvent("networkUnavailable", "CURRENT WIFI API NOT AVAILABLE");
+            return;
+        }
+
+        if (connectivityManager == null) {
+            connectivityManager = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+        }
+
+        if (connectivityManager == null) {
+            sendEvent("networkUnavailable", "CONNECTIVITY MANAGER UNAVAILABLE");
+            return;
+        }
+
+        try {
+            Network network = connectivityManager.getActiveNetwork();
+            if (network == null) {
+                sendEvent("networkUnavailable", "NO ACTIVE NETWORK");
+                return;
+            }
+
+            NetworkCapabilities capabilities = connectivityManager.getNetworkCapabilities(network);
+            if (capabilities == null
+                    || !capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                sendEvent("networkUnavailable", "CURRENT NETWORK IS NOT WIFI");
+                return;
+            }
+
+            currentNetwork = network;
+            connectivityManager.bindProcessToNetwork(network);
+
+            String ssid = getCurrentSsid();
+            if (ssid != null && !ssid.isEmpty()) {
+                lastSsid = ssid;
+                sendEvent("cameraInfo", mapOf("ssid", ssid, "model", "SONY CAMERA"));
+            }
+
+            sendEvent("wifiConnected", ssid == null ? "CURRENT WIFI" : ssid);
+            startCameraEngine();
+        } catch (Exception e) {
+            sendEvent("networkUnavailable", "CURRENT WIFI FAILED: " + e.getMessage());
+        }
+    }
+
+    private String getCurrentSsid() {
+        try {
+            android.net.wifi.WifiManager wifiManager =
+                    (android.net.wifi.WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
+            if (wifiManager == null) return "";
+            android.net.wifi.WifiInfo info = wifiManager.getConnectionInfo();
+            if (info == null) return "";
+            String ssid = info.getSSID();
+            if (ssid == null) return "";
+            return ssid.replace("\"", "");
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private void connectWifi(String ssid, String password) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            sendEvent("networkUnavailable", "ANDROID 10+ REQUIRED FOR WIFI NETWORK REQUEST API");
+            return;
+        }
+
+        if (ssid == null || ssid.trim().isEmpty() || password == null || password.isEmpty()) {
+            sendEvent("networkUnavailable", "NO CAMERA NETWORK CREDENTIALS");
+            return;
+        }
+
+        if (connectivityManager == null) {
+            connectivityManager = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+        }
+
+        if (connectivityManager == null) {
+            sendEvent("error", "CONNECTIVITY MANAGER UNAVAILABLE");
+            return;
+        }
+
+        if (networkCallback != null) {
+            try {
+                connectivityManager.unregisterNetworkCallback(networkCallback);
+            } catch (Exception ignored) {
+            }
+            networkCallback = null;
+        }
+
+        sendEvent("wifiConnecting", ssid);
+
+        final WifiNetworkSpecifier specifier;
+        try {
+            specifier = new WifiNetworkSpecifier.Builder()
+                    .setSsid(ssid)
+                    .setWpa2Passphrase(password)
+                    .build();
+        } catch (Exception e) {
+            sendEvent("error", "WIFI SPECIFIER FAILED: " + e.getMessage());
+            return;
+        }
+
+        final NetworkRequest request = new NetworkRequest.Builder()
+                .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .setNetworkSpecifier(specifier)
+                .build();
+
+        networkCallback = new ConnectivityManager.NetworkCallback() {
+            @Override
+            public void onAvailable(Network network) {
+                super.onAvailable(network);
+                currentNetwork = network;
+
+                try {
+                    connectivityManager.bindProcessToNetwork(network);
+                } catch (Exception e) {
+                    Log.e(TAG, "bindProcessToNetwork failed", e);
+                    sendEvent("error", "NETWORK BIND FAILED: " + e.getMessage());
+                    return;
+                }
+
+                sendEvent("wifiConnected", ssid);
+                executor.execute(MainActivity.this::startCameraEngine);
+            }
+
+            @Override
+            public void onUnavailable() {
+                super.onUnavailable();
+                sendEvent("networkUnavailable", "CAMERA WIFI NOT FOUND");
+            }
+
+            @Override
+            public void onLost(Network network) {
+                super.onLost(network);
+                if (currentNetwork == network) {
+                    currentNetwork = null;
+                }
+                if (!streaming.get()) {
+                    sendEvent("networkUnavailable", "CAMERA WIFI LOST");
+                }
+            }
+        };
+
+        try {
+            connectivityManager.requestNetwork(request, networkCallback, 30000);
+        } catch (Exception e) {
+            sendEvent("error", "REQUEST NETWORK FAILED: " + e.getMessage());
+        }
+    }
+
+    private void startCameraEngine() {
+        try {
+            sendEvent("systemStatus", statusMap("STARTING REC MODE", true));
+            callApi("startRecMode");
+            Thread.sleep(1200L);
+
+            try {
+                callApi("setFocusMode&focusMode=Continuous AF");
+            } catch (Exception e) {
+                sendEvent("warning", "AF-C SETUP WARNING: " + e.getMessage());
+            }
+            Thread.sleep(350L);
+
+            try {
+                callApi("setLiveviewSize&liveviewSize=L");
+            } catch (Exception e) {
+                sendEvent("warning", "LIVE VIEW SIZE WARNING: " + e.getMessage());
+            }
+            Thread.sleep(350L);
+
+            sendEvent("systemStatus", statusMap("STARTING LIVE VIEW", true));
+            ApiResult live = callApi("startLiveview");
+            if (live.result.length() == 0 || !(live.result.opt(0) instanceof String)) {
+                throw new IOException("START LIVE VIEW RETURNED NO URL");
+            }
+
+            lastLiveviewUrl = live.result.getString(0);
+            firstFrameSent.set(false);
+            startLiveviewStream(lastLiveviewUrl);
+        } catch (Exception e) {
+            Log.e(TAG, "Camera engine failed", e);
+            sendEvent("cameraError", "CAMERA ENGINE FAILED: " + e.getMessage());
+        }
+    }
+
+    private void startLiveviewStream(String urlString) {
+        if (urlString == null || urlString.isEmpty()) {
+            sendEvent("cameraError", "LIVE VIEW URL EMPTY");
+            return;
+        }
+
+        streaming.set(true);
+        sendEvent("liveviewActive", urlString);
+
+        executor.execute(() -> {
+            HttpURLConnection connection = null;
+            try {
+                URL url = new URL(urlString);
+                if (currentNetwork != null) {
+                    connection = (HttpURLConnection) currentNetwork.openConnection(url);
+                } else {
+                    connection = (HttpURLConnection) url.openConnection();
+                }
+                connection.setConnectTimeout(8000);
+                connection.setReadTimeout(0);
+                connection.setUseCaches(false);
+                connection.setRequestProperty("Connection", "keep-alive");
+                connection.connect();
+
+                if (connection.getResponseCode() < 200 || connection.getResponseCode() >= 300) {
+                    throw new IOException("LIVE VIEW HTTP " + connection.getResponseCode());
+                }
+
+                InputStream input = connection.getInputStream();
+                ByteArrayOutputStream buffer = new ByteArrayOutputStream(1024 * 256);
+                byte[] chunk = new byte[64 * 1024];
+
+                while (streaming.get()) {
+                    int read = input.read(chunk);
+                    if (read < 0) break;
+                    if (read == 0) continue;
+                    buffer.write(chunk, 0, read);
+
+                    byte[] data = buffer.toByteArray();
+                    int searchFrom = 0;
+                    while (true) {
+                        int start = findSeq(data, new byte[]{(byte) 0xFF, (byte) 0xD8}, searchFrom);
+                        if (start < 0) break;
+                        int end = findSeq(data, new byte[]{(byte) 0xFF, (byte) 0xD9}, start + 2);
+                        if (end < 0) break;
+
+                        byte[] jpeg = new byte[end + 2 - start];
+                        System.arraycopy(data, start, jpeg, 0, jpeg.length);
+                        lastFrameBytes = jpeg;
+                        sendEvent("liveviewFrame", mapOf("bytes", jpeg));
+
+                        if (firstFrameSent.compareAndSet(false, true)) {
+                            sendEvent("firstLiveviewFrame", true);
+                        }
+
+                        int remainingStart = end + 2;
+                        byte[] remaining = new byte[data.length - remainingStart];
+                        if (remaining.length > 0) {
+                            System.arraycopy(data, remainingStart, remaining, 0, remaining.length);
+                        }
+                        buffer.reset();
+                        if (remaining.length > 0) buffer.write(remaining);
+                        data = remaining;
+                        searchFrom = 0;
+                    }
+
+                    if (buffer.size() > 4 * 1024 * 1024) {
+                        byte[] safe = buffer.toByteArray();
+                        int lastJpeg = findSeq(safe, new byte[]{(byte) 0xFF, (byte) 0xD8}, Math.max(0, safe.length - 65536));
+                        buffer.reset();
+                        if (lastJpeg >= 0) {
+                            buffer.write(safe, lastJpeg, safe.length - lastJpeg);
+                        }
+                    }
+                }
+                input.close();
+            } catch (Exception e) {
+                if (streaming.get()) {
+                    Log.e(TAG, "Live View stream failed", e);
+                    sendEvent("streamLost", "LIVE VIEW LOST: " + e.getMessage());
+                }
+            } finally {
+                streaming.set(false);
+                if (connection != null) connection.disconnect();
+            }
+        });
+    }
+
+    private void takePicture() {
+        final byte[] frame = lastFrameBytes;
+        if (frame == null || frame.length == 0) {
+            sendEvent("captureError", "LIVE VIEW FRAME NOT AVAILABLE");
+            return;
+        }
+
+        executor.execute(() -> {
+            try {
+                String fileName = saveToGallery(frame);
+                sendEvent("captureSaved", fileName);
+                callApi("actTakePicture");
+                sendEvent("shutterAck", fileName);
+            } catch (Exception e) {
+                Log.e(TAG, "Capture failed", e);
+                sendEvent("captureError", "CAPTURE FAILED: " + e.getMessage());
+            }
+        });
+    }
+
+    private String saveToGallery(byte[] jpeg) throws Exception {
+        String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(new Date());
+        String displayName = "LandCam_" + timestamp + ".jpg";
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ContentResolver resolver = getContentResolver();
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.Images.Media.DISPLAY_NAME, displayName);
+            values.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
+            values.put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/LandCam_Monitor");
+            values.put(MediaStore.Images.Media.IS_PENDING, 1);
+
+            Uri uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+            if (uri == null) throw new IOException("MEDIASTORE INSERT FAILED");
+
+            try (OutputStream output = resolver.openOutputStream(uri)) {
+                if (output == null) throw new IOException("GALLERY OUTPUT STREAM FAILED");
+                output.write(jpeg);
+            }
+
+            ContentValues complete = new ContentValues();
+            complete.put(MediaStore.Images.Media.IS_PENDING, 0);
+            resolver.update(uri, complete, null, null);
+            return displayName;
+        }
+
+        ContentResolver resolver = getContentResolver();
+        ContentValues values = new ContentValues();
+        values.put(MediaStore.Images.Media.DISPLAY_NAME, displayName);
+        values.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
+        Uri uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+        if (uri == null) throw new IOException("MEDIASTORE INSERT FAILED");
+        try (OutputStream output = resolver.openOutputStream(uri)) {
+            if (output == null) throw new IOException("GALLERY OUTPUT STREAM FAILED");
+            output.write(jpeg);
+        }
+        return displayName;
+    }
+
+    private ApiResult callApi(String method) throws Exception {
+        HttpURLConnection connection = null;
+        try {
+            URL url = new URL(API_URL);
+            if (currentNetwork != null) {
+                connection = (HttpURLConnection) currentNetwork.openConnection(url);
+            } else {
+                connection = (HttpURLConnection) url.openConnection();
+            }
+            connection.setRequestMethod("POST");
+            connection.setConnectTimeout(8000);
+            connection.setReadTimeout(12000);
+            connection.setDoOutput(true);
+            connection.setUseCaches(false);
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+
+            JSONObject request = new JSONObject();
+            request.put("method", method);
+            request.put("params", new JSONArray());
+            request.put("id", 1);
+            request.put("version", "1.0");
+
+            byte[] body = request.toString().getBytes(StandardCharsets.UTF_8);
+            try (OutputStream output = connection.getOutputStream()) {
+                output.write(body);
+            }
+
+            int code = connection.getResponseCode();
+            InputStream input = code >= 200 && code < 400
+                    ? connection.getInputStream()
+                    : connection.getErrorStream();
+            if (input == null) throw new IOException("NO API RESPONSE");
+
+            String text = readAll(input);
+            if (code < 200 || code >= 300) {
+                throw new IOException("HTTP " + code + ": " + text);
+            }
+
+            JSONObject json = new JSONObject(text);
+            if (json.has("error")) {
+                JSONObject error = json.optJSONObject("error");
+                String message = error == null ? json.getString("error") : error.optString("message", "UNKNOWN ERROR");
+                int errorCode = error == null ? -1 : error.optInt("code", -1);
+                throw new IOException("API ERROR " + errorCode + ": " + message);
+            }
+
+            return new ApiResult(json);
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
+    private String readAll(InputStream input) throws IOException {
+        byte[] buffer = new byte[8192];
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        int n;
+        while ((n = input.read(buffer)) != -1) {
+            output.write(buffer, 0, n);
+        }
+        return output.toString(StandardCharsets.UTF_8.name());
+    }
+
+    private void disconnectCamera() {
+        executor.execute(() -> {
+            streaming.set(false);
+            try {
+                callApi("stopLiveview");
+            } catch (Exception ignored) {
+            }
+            try {
+                callApi("stopRecMode");
+            } catch (Exception ignored) {
+            }
+
+            if (connectivityManager != null && networkCallback != null) {
+                try {
+                    connectivityManager.unregisterNetworkCallback(networkCallback);
+                } catch (Exception ignored) {
+                }
+                networkCallback = null;
+            }
+
+            try {
+                connectivityManager.bindProcessToNetwork(null);
+            } catch (Exception ignored) {
+            }
+
+            currentNetwork = null;
+            lastFrameBytes = null;
+            firstFrameSent.set(false);
+            sendEvent("disconnected", true);
+        });
+    }
+
+    private static int findSeq(byte[] data, byte[] seq, int offset) {
+        if (seq.length == 0 || data.length < seq.length) return -1;
+        for (int i = Math.max(0, offset); i <= data.length - seq.length; i++) {
+            boolean match = true;
+            for (int j = 0; j < seq.length; j++) {
+                if (data[i + j] != seq[j]) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match) return i;
+        }
+        return -1;
+    }
+
+    private void sendEvent(String type, Object data) {
+        if (eventSink == null) return;
+        final Map<String, Object> event = new HashMap<>();
+        event.put("type", type);
+        event.put("data", data);
+        runOnUiThread(() -> {
+            if (eventSink != null) eventSink.success(event);
+        });
+    }
+
+    private Map<String, Object> mapOf(Object... values) {
+        Map<String, Object> map = new HashMap<>();
+        for (int i = 0; i + 1 < values.length; i += 2) {
+            map.put(String.valueOf(values[i]), values[i + 1]);
+        }
+        return map;
+    }
+
+    private Map<String, Object> statusMap(String status, boolean active) {
+        return mapOf("status", status, "active", active);
+    }
+
+    private static class ApiResult {
+        final JSONObject json;
+        final JSONArray result;
+
+        ApiResult(JSONObject json) {
+            this.json = json;
+            this.result = json.optJSONArray("result") == null
+                    ? new JSONArray()
+                    : json.optJSONArray("result");
+        }
+    }
+}
