@@ -7,6 +7,13 @@ import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
+import android.graphics.Paint;
+import android.graphics.Rect;
 import android.net.ConnectivityManager;
 import android.net.LinkAddress;
 import android.net.LinkProperties;
@@ -138,6 +145,40 @@ public class MainActivity extends FlutterActivity {
     private static final long FRAME_EVENT_INTERVAL_MS =
             55L;
 
+    /**
+     * LANDCAM dual-optical processing:
+     *
+     *   LEFT FOV  -> RGB / R / G / B
+     *   RIGHT FOV -> NIR
+     *
+     * ROI detection is performed once per source resolution and the resulting
+     * rectangles are reused for every subsequent frame at that resolution.
+     * This avoids per-frame circle detection and keeps live-view stable.
+     */
+    private static final int ROI_SCAN_STEP = 4;
+    private static final float ROI_PROFILE_COVERAGE = 0.10f;
+    private static final int ROI_BLACK_LUMA_THRESHOLD = 16;
+    private static final int ROI_PROFILE_SMOOTH_RADIUS = 8;
+    private static final float ROI_SQUARE_SAFETY_FACTOR = 0.95f;
+    private static final int IMAGE_JPEG_QUALITY = 94;
+    private static final int MAX_PROCESSING_DIMENSION = 4096;
+
+    // Conservative fallbacks for the known dual-circle camera geometry.
+    // They are used only when automatic circle-bound estimation fails.
+    private static final float FALLBACK_RGB_LEFT = 0.00f;
+    private static final float FALLBACK_RGB_TOP = 0.085f;
+    private static final float FALLBACK_RGB_RIGHT = 0.455f;
+    private static final float FALLBACK_RGB_BOTTOM = 0.955f;
+    private static final float FALLBACK_NIR_LEFT = 0.505f;
+    private static final float FALLBACK_NIR_TOP = 0.11f;
+    private static final float FALLBACK_NIR_RIGHT = 1.00f;
+    private static final float FALLBACK_NIR_BOTTOM = 0.93f;
+
+    // NIR JPEGs from the camera are rendered as grayscale using luma.
+    // This preserves the camera's intensity differences without inventing a
+    // false colour map.
+    private static final boolean NIR_USE_LUMA = true;
+
     /*
      * UI-facing protocol label.
      *
@@ -230,6 +271,36 @@ public class MainActivity extends FlutterActivity {
                     "B"
             );
 
+    /*
+     * NIR is not part of the standard Sony RGB live-view stream.
+     * LANDCAM therefore treats NIR as a real hardware/API capability only
+     * when the connected camera exposes a dedicated NIR/infrared API.
+     *
+     * The aliases below make the bridge tolerant of camera-specific naming
+     * conventions while keeping the UI honest: NIR is advertised only after
+     * a matching API method is actually discovered.
+     */
+    private static final List<String> NIR_METHOD_CANDIDATES =
+            Arrays.asList(
+                    "startNIRLiveview",
+                    "startNirLiveview",
+                    "startNIRLiveView",
+                    "startNirLiveView",
+                    "startInfraredLiveview",
+                    "startInfraredLiveView",
+                    "getNIRLiveview",
+                    "getNirLiveview",
+                    "getNIRFrame",
+                    "getNirFrame",
+                    "getInfraredFrame",
+                    "getNIRImage",
+                    "getNirImage",
+                    "getInfraredImage",
+                    "actTakeNIRPicture",
+                    "actTakeNirPicture",
+                    "actTakeInfraredPicture"
+            );
+
     private EventChannel.EventSink eventSink;
 
     private final List<HashMap<String, Object>> pendingEvents =
@@ -262,6 +333,9 @@ public class MainActivity extends FlutterActivity {
     private final AtomicBoolean isStreaming =
             new AtomicBoolean(false);
 
+    private final AtomicBoolean isNirPolling =
+            new AtomicBoolean(false);
+
     private final AtomicBoolean isEngineStarting =
             new AtomicBoolean(false);
 
@@ -275,6 +349,14 @@ public class MainActivity extends FlutterActivity {
             new AtomicReference<>(null);
 
     private volatile byte[] lastFrameBytes;
+    private volatile byte[] lastCompositeFrameBytes;
+
+    private volatile int calibratedSourceWidth = -1;
+    private volatile int calibratedSourceHeight = -1;
+    private volatile Rect rgbCropRect;
+    private volatile Rect nirCropRect;
+    private volatile long lastQuadEventAt = 0L;
+    private final AtomicLong spectralGeneration = new AtomicLong(0L);
 
     private volatile boolean isQuadMode =
             false;
@@ -303,6 +385,19 @@ public class MainActivity extends FlutterActivity {
     private volatile String cameraApiUrl;
 
     private volatile String lastLiveviewUrl;
+
+    private volatile String activeSpectralBand =
+            "RGB";
+
+    private volatile boolean realNirAvailable =
+            false;
+
+    private volatile String nirApiMethod;
+
+    private volatile String nirStreamUrl;
+
+    private volatile String streamingBand =
+            "RGB";
 
     /*
      * These values are still useful internally while talking to the camera,
@@ -552,60 +647,51 @@ public class MainActivity extends FlutterActivity {
             Object rawBand,
             MethodChannel.Result result
     ) {
+
         String band =
                 rawBand == null
                         ? ""
-                        : rawBand
-                                .toString()
+                        : rawBand.toString()
                                 .trim()
-                                .toUpperCase(
-                                        Locale.US
-                                );
+                                .toUpperCase(Locale.US);
 
-        if (SOFTWARE_DISPLAY_BANDS.contains(
-                band
-        )) {
-
-            HashMap<String, Object> data =
-                    new HashMap<>();
-
-            data.put(
-                    "band",
-                    band
-            );
-
-            data.put(
-                    "source",
-                    "RGB_LIVEVIEW_CHANNEL"
-            );
-
-            data.put(
-                    "realSpectralFrame",
-                    false
-            );
-
-            sendEvent(
-                    "spectralBandChanged",
-                    data
-            );
-
-            result.success(true);
-            return;
-        }
-
-        if ("NIR".equals(band)) {
-
-            sendEvent(
-                    "engineWarning",
-                    "NIR SENSOR DATA IS NOT PROVIDED "
-                            + "BY THE CURRENT CAMERA PIPELINE"
-            );
-
+        if (!Arrays.asList("RGB", "R", "G", "B", "NIR").contains(band)) {
             result.success(false);
             return;
         }
 
-        result.success(false);
+        if ("NIR".equals(band) && !realNirAvailable) {
+            sendEvent(
+                    "engineWarning",
+                    "NIR IS NOT AVAILABLE: RIGHT OPTICAL ROI WAS NOT DETECTED"
+            );
+            result.success(false);
+            return;
+        }
+
+        activeSpectralBand = band;
+        spectralGeneration.incrementAndGet();
+
+        HashMap<String, Object> data = new HashMap<>();
+        data.put("band", band);
+        data.put(
+                "source",
+                "NIR".equals(band)
+                        ? "NIR_RIGHT_OPTICAL_ROI"
+                        : "RGB_LEFT_OPTICAL_ROI"
+        );
+        data.put("realSpectralFrame", true);
+
+        sendEvent("spectralBandChanged", data);
+
+        updateSystemStatus(
+                "NIR".equals(band)
+                        ? "NIR VIEW"
+                        : band + " VIEW",
+                true
+        );
+
+        result.success(true);
     }
 
     private void setupFullscreen() {
@@ -1164,6 +1250,7 @@ public class MainActivity extends FlutterActivity {
                 sessionGeneration.incrementAndGet();
 
         stopStreaming();
+        stopNirPolling();
 
         releaseMulticastLock();
 
@@ -3018,7 +3105,8 @@ public class MainActivity extends FlutterActivity {
                         }
 
                         startStreaming(
-                                lastLiveviewUrl
+                                lastLiveviewUrl,
+                                "RGB"
                         );
 
                     } catch (Exception e) {
@@ -3099,65 +3187,55 @@ public class MainActivity extends FlutterActivity {
             Set<String> apiMethods
     ) {
 
-        HashMap<String, Object> data =
-                new HashMap<>();
+        boolean autofocus =
+                supportsAny(
+                        apiMethods,
+                        "actFocus",
+                        "actHalfPressShutter",
+                        "setFocusMode",
+                        "getFocusMode",
+                        "getAvailableFocusMode",
+                        "setTouchAFPosition"
+                );
 
+        if (apiMethods == null || apiMethods.isEmpty()) {
+            autofocus = true;
+        }
+
+        ArrayList<String> bands = new ArrayList<>();
+        bands.add("RGB");
+        bands.add("R");
+        bands.add("G");
+        bands.add("B");
+        if (realNirAvailable) {
+            bands.add("NIR");
+        }
+
+        HashMap<String, Object> data = new HashMap<>();
+        data.put("bands", bands);
+        data.put("spectralSource", "DUAL OPTICAL FOV COMPOSITE");
+        data.put("realNirAvailable", realNirAvailable);
+        data.put("rawBayerStreamAvailable", false);
         data.put(
-                "bands",
-                SOFTWARE_DISPLAY_BANDS
+                "nirSource",
+                realNirAvailable
+                        ? "RIGHT OPTICAL ROI"
+                        : "NONE"
         );
-
-        data.put(
-                "spectralSource",
-                "RGB LIVEVIEW"
-        );
-
-        data.put(
-                "realNirAvailable",
-                false
-        );
-
-        data.put(
-                "rawBayerStreamAvailable",
-                false
-        );
-
-        /*
-         * Generic protocol only.
-         */
-        data.put(
-                "protocol",
-                UI_PROTOCOL_LABEL
-        );
-
+        data.put("protocol", UI_PROTOCOL_LABEL);
         data.put(
                 "liveView",
-                supports(
-                        apiMethods,
-                        "startLiveview"
-                )
+                supports(apiMethods, "startLiveview")
         );
-
         data.put(
                 "capture",
-                supports(
-                        apiMethods,
-                        "actTakePicture"
-                )
+                supports(apiMethods, "actTakePicture")
         );
+        data.put("autofocus", autofocus);
+        data.put("dualOpticalRoi", realNirAvailable);
+        data.put("rgbSource", "LEFT OPTICAL ROI");
 
-        data.put(
-                "autofocus",
-                supports(
-                        apiMethods,
-                        "actFocus"
-                )
-        );
-
-        sendEvent(
-                "cameraCapabilities",
-                data
-        );
+        sendEvent("cameraCapabilities", data);
     }
 
     private boolean supports(
@@ -3167,7 +3245,158 @@ public class MainActivity extends FlutterActivity {
 
         return methods == null
                 || methods.isEmpty()
-                || methods.contains(method);
+                || methods.contains(
+                normalizeApiMethodName(method)
+        );
+    }
+
+    private boolean supportsAny(
+            Set<String> methods,
+            String... candidates
+    ) {
+
+        if (methods == null || methods.isEmpty()) {
+            return true;
+        }
+
+        if (candidates == null) {
+            return false;
+        }
+
+        for (String candidate : candidates) {
+            if (candidate != null
+                    && methods.contains(
+                    normalizeApiMethodName(candidate)
+            )) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void probeNirMethodsWhenCapabilityListUnavailable(
+            Network network,
+            CameraEndpoint endpoint
+    ) {
+
+        if (network == null || endpoint == null || realNirAvailable) {
+            return;
+        }
+
+        if (currentNetwork != network
+                || cameraApiUrl == null
+                || endpoint.apiUrl == null
+                || !cameraApiUrl.equals(endpoint.apiUrl)) {
+            return;
+        }
+
+        for (String candidate : NIR_METHOD_CANDIDATES) {
+
+            if (Thread.currentThread().isInterrupted()) {
+                return;
+            }
+
+            try {
+
+                JSONObject response =
+                        callApiAt(
+                                network,
+                                endpoint,
+                                candidate,
+                                new JSONArray(),
+                                HTTP_PROBE_TIMEOUT_MS,
+                                HTTP_PROBE_TIMEOUT_MS + 1500
+                        );
+
+                if (response != null && !hasApiError(response)) {
+                    String url =
+                            findUrlInJson(response);
+
+                    // A successful custom NIR method is enough to classify the
+                    // camera as NIR-capable. The frame activation step will
+                    // validate the actual image/stream payload.
+                    if (url != null && !url.isEmpty()) {
+                        nirApiMethod = candidate;
+                        realNirAvailable = true;
+                        emitCapabilities(
+                                Collections.emptySet()
+                        );
+                        log(
+                                "INFO",
+                                "Dedicated NIR API discovered: "
+                                        + candidate
+                        );
+                        return;
+                    }
+                }
+
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private boolean detectNirCapability(
+            Set<String> methods
+    ) {
+
+        realNirAvailable = false;
+        nirApiMethod = null;
+
+        if (methods == null || methods.isEmpty()) {
+            return false;
+        }
+
+        // Prefer explicit NIR/infrared aliases in the known order.
+        for (String candidate : NIR_METHOD_CANDIDATES) {
+            String normalized =
+                    normalizeApiMethodName(candidate);
+
+            if (methods.contains(normalized)) {
+                nirApiMethod = normalized;
+                realNirAvailable = true;
+                break;
+            }
+        }
+
+        // Also accept future/custom camera APIs that clearly declare an NIR
+        // or infrared method, without treating generic RGB methods as NIR.
+        if (!realNirAvailable) {
+            for (String method : methods) {
+                String lower =
+                        method.toLowerCase(
+                                Locale.US
+                        );
+
+                boolean hasNirName =
+                        lower.contains("nir")
+                                || lower.contains("infrared")
+                                || lower.contains("nearinfrared");
+
+                boolean hasFrameIntent =
+                        lower.contains("frame")
+                                || lower.contains("image")
+                                || lower.contains("liveview")
+                                || lower.contains("stream")
+                                || lower.contains("picture")
+                                || lower.contains("data");
+
+                boolean isFrameCommand =
+                        lower.startsWith("get")
+                                || lower.startsWith("start")
+                                || lower.startsWith("act");
+
+                if (hasNirName
+                        && hasFrameIntent
+                        && isFrameCommand) {
+                    nirApiMethod = method;
+                    realNirAvailable = true;
+                    break;
+                }
+            }
+        }
+
+        return realNirAvailable;
     }
 
     private JSONObject callApiAt(
@@ -3487,406 +3716,1521 @@ public class MainActivity extends FlutterActivity {
     }
 
     private void startStreaming(
-            String url
+            String url,
+            String streamBand
     ) {
 
         stopStreaming();
 
-        isStreaming.set(
+        isStreaming.set(true);
+        firstFrameSent = false;
+        lastFrameEventAt = 0L;
+        lastQuadEventAt = 0L;
+        streamingBand = "COMPOSITE";
+
+        updateSystemStatus("LIVE VIEW ACTIVE", true);
+        sendEvent("liveviewActive", true);
+        log("INFO", "Dual-optical Live View stream started");
+
+        executor.execute(() -> {
+            HttpURLConnection connection = null;
+
+            try {
+                URL streamUrl = new URL(url);
+                Network network = currentNetwork;
+
+                if (network == null) {
+                    throw new IllegalStateException("NO CAMERA NETWORK FOR LIVE VIEW");
+                }
+
+                URLConnection raw = network.openConnection(streamUrl);
+                if (!(raw instanceof HttpURLConnection)) {
+                    throw new IllegalStateException("LIVE VIEW IS NOT HTTP");
+                }
+
+                connection = (HttpURLConnection) raw;
+                liveviewConnection = connection;
+                connection.setConnectTimeout(LIVEVIEW_CONNECT_TIMEOUT_MS);
+                connection.setReadTimeout(0);
+                connection.setUseCaches(false);
+                connection.setRequestProperty(
+                        "Accept",
+                        "image/jpeg, multipart/x-mixed-replace, */*"
+                );
+
+                int responseCode = connection.getResponseCode();
+                if (responseCode < 200 || responseCode >= 400) {
+                    throw new IllegalStateException("LIVE VIEW HTTP " + responseCode);
+                }
+
+                try (InputStream input = new BufferedInputStream(connection.getInputStream())) {
+                    ByteArrayOutputStream accumulator = new ByteArrayOutputStream();
+                    byte[] buffer = new byte[8192];
+
+                    while (isStreaming.get()) {
+                        int count = input.read(buffer);
+                        if (count < 0) break;
+                        if (count == 0) continue;
+
+                        accumulator.write(buffer, 0, count);
+                        extractJpegFrames(accumulator, "COMPOSITE");
+
+                        if (accumulator.size() > 5 * 1024 * 1024) {
+                            trimStreamBuffer(accumulator);
+                        }
+                    }
+                }
+
+                if (isStreaming.get()) {
+                    isStreaming.set(false);
+                    updateSystemStatus("LIVE VIEW DISCONNECTED", false);
+                    sendEvent("streamLost", "LIVE VIEW DISCONNECTED");
+                }
+
+            } catch (Exception e) {
+                if (isStreaming.get()) {
+                    isStreaming.set(false);
+                    Log.e(TAG, "Live View stream failed", e);
+                    updateSystemStatus("LIVE VIEW DISCONNECTED", false);
+                    sendEvent(
+                            "streamLost",
+                            "LIVE VIEW DISCONNECTED: " + safeMessage(e)
+                    );
+                    log("ERROR", "Live View failed: " + safeMessage(e));
+                }
+
+            } finally {
+                if (connection != null) {
+                    connection.disconnect();
+                }
+                if (liveviewConnection == connection) {
+                    liveviewConnection = null;
+                }
+            }
+        });
+    }
+
+    private void extractJpegFrames(
+            ByteArrayOutputStream accumulator,
+            String streamBand
+    ) {
+
+        while (isStreaming.get()) {
+            byte[] data = accumulator.toByteArray();
+
+            int start = findSeq(
+                    data,
+                    new byte[]{(byte) 0xFF, (byte) 0xD8},
+                    0
+            );
+
+            if (start < 0) {
+                if (data.length > 65536) {
+                    accumulator.reset();
+                    accumulator.write(
+                            data,
+                            data.length - 65536,
+                            65536
+                    );
+                }
+                return;
+            }
+
+            int end = findSeq(
+                    data,
+                    new byte[]{(byte) 0xFF, (byte) 0xD9},
+                    start + 2
+            );
+
+            if (end < 0) {
+                if (start > 0) {
+                    accumulator.reset();
+                    accumulator.write(data, start, data.length - start);
+                }
+                return;
+            }
+
+            int jpegEnd = end + 2;
+            byte[] jpeg = new byte[jpegEnd - start];
+            System.arraycopy(data, start, jpeg, 0, jpeg.length);
+
+            processAndEmitCompositeFrame(jpeg);
+
+            byte[] remaining = new byte[data.length - jpegEnd];
+            System.arraycopy(data, jpegEnd, remaining, 0, remaining.length);
+            accumulator.reset();
+            accumulator.write(remaining, 0, remaining.length);
+        }
+    }
+
+    private String activeStreamBand() {
+
+        return streamingBand == null
+                ? "RGB"
+                : streamingBand;
+    }
+
+    private void activateNirSource(
+            Network network,
+            CameraEndpoint endpoint
+    ) {
+
+        String method = nirApiMethod;
+
+        if (
+                network == null
+                        || endpoint == null
+                        || method == null
+                        || method.isEmpty()
+        ) {
+            return;
+        }
+
+        stopStreaming();
+        stopNirPolling();
+        nirStreamUrl = null;
+
+        try {
+
+            JSONObject response =
+                    callNirApiBestEffort(
+                            network,
+                            endpoint,
+                            method
+                    );
+
+            if (response == null
+                    || hasApiError(response)) {
+
+                sendEvent(
+                        "engineWarning",
+                        "NIR API CALL FAILED: "
+                                + apiErrorDescription(response)
+                );
+                revertToRgbAfterNirFailure();
+                return;
+            }
+
+            String url =
+                    findUrlInJson(
+                            response
+                    );
+
+            if (url != null && !url.isEmpty()) {
+
+                nirStreamUrl =
+                        normalizeStreamUrl(
+                                url,
+                                endpoint
+                        );
+
+                if (looksLikeContinuousStream(nirStreamUrl)) {
+
+                    startStreaming(
+                            nirStreamUrl,
+                            "NIR"
+                    );
+                    return;
+                }
+
+                byte[] frame =
+                        downloadBytes(
+                                network,
+                                nirStreamUrl,
+                                12000
+                        );
+
+                if (frame != null && frame.length > 0) {
+                    emitSpectralFrame(
+                            frame,
+                            "NIR",
+                            "NIR_CAMERA_API"
+                    );
+
+                    if (isGetStyleNirMethod(method)) {
+                        startNirPolling(
+                                network,
+                                endpoint,
+                                method
+                        );
+                    }
+                    return;
+                }
+            }
+
+            // Some custom cameras expose a one-shot image API rather than a
+            // direct URL. Try a bounded poll so a changing frame source can
+            // still be consumed without blocking the main camera thread.
+            if (isGetStyleNirMethod(method)) {
+                startNirPolling(
+                        network,
+                        endpoint,
+                        method
+                );
+                return;
+            }
+
+            sendEvent(
+                    "engineWarning",
+                    "NIR API REACHED BUT DID NOT RETURN A FRAME URL"
+            );
+            revertToRgbAfterNirFailure();
+
+        } catch (Exception e) {
+
+            Log.e(
+                    TAG,
+                    "NIR activation failed",
+                    e
+            );
+
+            sendEvent(
+                    "engineWarning",
+                    "NIR ACTIVATION FAILED: "
+                            + safeMessage(e)
+            );
+            revertToRgbAfterNirFailure();
+        }
+    }
+
+    private JSONObject callNirApiBestEffort(
+            Network network,
+            CameraEndpoint endpoint,
+            String method
+    ) throws Exception {
+
+        JSONObject response =
+                callApiAt(
+                        network,
+                        endpoint,
+                        method,
+                        new JSONArray(),
+                        API_CONNECT_TIMEOUT_MS,
+                        API_READ_TIMEOUT_MS
+                );
+
+        if (!hasApiError(response)) {
+            return response;
+        }
+
+        String lower =
+                apiErrorDescription(response)
+                        .toLowerCase(
+                                Locale.US
+                        );
+
+        // A number of camera stream methods accept a preferred size. Retry
+        // only when the first no-argument request was rejected as an argument
+        // problem; this keeps normal API errors intact.
+        if (lower.contains("argument")
+                || lower.contains("param")
+                || lower.contains("size")) {
+
+            JSONArray params =
+                    new JSONArray();
+
+            params.put("L");
+
+            return callApiAt(
+                    network,
+                    endpoint,
+                    method,
+                    params,
+                    API_CONNECT_TIMEOUT_MS,
+                    API_READ_TIMEOUT_MS
+            );
+        }
+
+        return response;
+    }
+
+    private boolean isGetStyleNirMethod(
+            String method
+    ) {
+
+        if (method == null) {
+            return false;
+        }
+
+        String lower =
+                method.toLowerCase(
+                        Locale.US
+                );
+
+        return lower.startsWith("get")
+                || lower.contains("frame")
+                || lower.contains("image");
+    }
+
+    private boolean looksLikeContinuousStream(
+            String url
+    ) {
+
+        if (url == null) {
+            return false;
+        }
+
+        String lower =
+                url.toLowerCase(
+                        Locale.US
+                );
+
+        return lower.contains("liveview")
+                || lower.contains("liveviewstream")
+                || lower.contains("mjpeg")
+                || lower.contains("multipart")
+                || lower.contains("stream");
+    }
+
+    private void startNirPolling(
+            Network network,
+            CameraEndpoint endpoint,
+            String method
+    ) {
+
+        if (!isNirPolling.compareAndSet(
+                false,
                 true
-        );
-
-        firstFrameSent =
-                false;
-
-        lastFrameEventAt =
-                0L;
-
-        updateSystemStatus(
-                "LIVE VIEW ACTIVE",
-                true
-        );
-
-        sendEvent(
-                "liveviewActive",
-                true
-        );
-
-        log(
-                "INFO",
-                "Live View stream started"
-        );
+        )) {
+            return;
+        }
 
         executor.execute(
                 () -> {
 
-                    HttpURLConnection connection =
-                            null;
-
                     try {
 
-                        URL streamUrl =
-                                new URL(
-                                        url
-                                );
-
-                        Network network =
-                                currentNetwork;
-
-                        if (network == null) {
-
-                            throw new IllegalStateException(
-                                    "NO CAMERA NETWORK "
-                                            + "FOR LIVE VIEW"
-                            );
-                        }
-
-                        URLConnection raw =
-                                network.openConnection(
-                                        streamUrl
-                                );
-
-                        if (!(raw
-                                instanceof HttpURLConnection)) {
-
-                            throw new IllegalStateException(
-                                    "LIVE VIEW IS NOT HTTP"
-                            );
-                        }
-
-                        connection =
-                                (HttpURLConnection)
-                                        raw;
-
-                        liveviewConnection =
-                                connection;
-
-                        connection.setConnectTimeout(
-                                LIVEVIEW_CONNECT_TIMEOUT_MS
-                        );
-
-                        connection.setReadTimeout(
-                                0
-                        );
-
-                        connection.setUseCaches(
-                                false
-                        );
-
-                        connection.setRequestProperty(
-                                "Accept",
-                                "image/jpeg, "
-                                        + "multipart/x-mixed-replace, */*"
-                        );
-
-                        int responseCode =
-                                connection.getResponseCode();
-
-                        if (
-                                responseCode < 200
-                                        || responseCode >= 400
+                        while (
+                                isNirPolling.get()
+                                        && "NIR".equals(activeSpectralBand)
                         ) {
 
-                            throw new IllegalStateException(
-                                    "LIVE VIEW HTTP "
-                                            + responseCode
-                            );
-                        }
+                            JSONObject response =
+                                    callNirApiBestEffort(
+                                            network,
+                                            endpoint,
+                                            method
+                                    );
 
-                        try (
-                                InputStream input =
-                                        new BufferedInputStream(
-                                                connection
-                                                        .getInputStream()
-                                        )
-                        ) {
+                            if (response != null
+                                    && !hasApiError(response)) {
 
-                            ByteArrayOutputStream accumulator =
-                                    new ByteArrayOutputStream();
-
-                            byte[] buffer =
-                                    new byte[8192];
-
-                            while (
-                                    isStreaming.get()
-                            ) {
-
-                                int count =
-                                        input.read(
-                                                buffer
+                                String url =
+                                        findFirstImageUrl(
+                                                response
                                         );
 
-                                if (count < 0) {
-                                    break;
+                                if (url == null || url.isEmpty()) {
+                                    url = findUrlInJson(response);
                                 }
 
-                                if (count == 0) {
-                                    continue;
-                                }
+                                if (url != null && !url.isEmpty()) {
 
-                                accumulator.write(
-                                        buffer,
-                                        0,
-                                        count
-                                );
+                                    String normalized =
+                                            normalizeStreamUrl(
+                                                    url,
+                                                    endpoint
+                                            );
 
-                                extractJpegFrames(
-                                        accumulator
-                                );
+                                    if (!looksLikeContinuousStream(normalized)) {
 
-                                if (
-                                        accumulator.size()
-                                                > 5 * 1024 * 1024
-                                ) {
+                                        byte[] frame =
+                                                downloadBytes(
+                                                        network,
+                                                        normalized,
+                                                        10000
+                                                );
 
-                                    trimStreamBuffer(
-                                            accumulator
-                                    );
+                                        if (frame != null && frame.length > 0) {
+                                            emitSpectralFrame(
+                                                    frame,
+                                                    "NIR",
+                                                    "NIR_CAMERA_API"
+                                            );
+                                        }
+                                    } else {
+                                        // If polling suddenly returns a real
+                                        // MJPEG endpoint, hand it to the same
+                                        // streaming parser used by RGB.
+                                        stopNirPolling();
+                                        nirStreamUrl = normalized;
+                                        startStreaming(
+                                                normalized,
+                                                "NIR"
+                                        );
+                                        return;
+                                    }
                                 }
                             }
-                        }
 
-                        if (
-                                isStreaming.get()
-                        ) {
-
-                            isStreaming.set(
-                                    false
-                            );
-
-                            updateSystemStatus(
-                                    "LIVE VIEW DISCONNECTED",
-                                    false
-                            );
-
-                            sendEvent(
-                                    "streamLost",
-                                    "LIVE VIEW DISCONNECTED"
-                            );
+                            sleepQuietly(220L);
                         }
 
                     } catch (Exception e) {
 
-                        if (
-                                isStreaming.get()
-                        ) {
-
-                            isStreaming.set(
-                                    false
-                            );
-
+                        if (isNirPolling.get()) {
                             Log.e(
                                     TAG,
-                                    "Live View stream failed",
+                                    "NIR polling failed",
                                     e
                             );
-
-                            updateSystemStatus(
-                                    "LIVE VIEW DISCONNECTED",
-                                    false
-                            );
-
                             sendEvent(
-                                    "streamLost",
-                                    "LIVE VIEW DISCONNECTED: "
-                                            + safeMessage(e)
-                            );
-
-                            log(
-                                    "ERROR",
-                                    "Live View failed: "
+                                    "engineWarning",
+                                    "NIR STREAM POLLING FAILED: "
                                             + safeMessage(e)
                             );
                         }
 
                     } finally {
 
-                        if (connection != null) {
-                            connection.disconnect();
-                        }
-
-                        if (
-                                liveviewConnection
-                                        == connection
-                        ) {
-
-                            liveviewConnection =
-                                    null;
-                        }
+                        isNirPolling.set(false);
                     }
                 }
         );
     }
 
-    private void extractJpegFrames(
-            ByteArrayOutputStream accumulator
-    ) {
+    private void processAndEmitCompositeFrame(byte[] compositeJpeg) {
 
-        while (
-                isStreaming.get()
-        ) {
+        if (compositeJpeg == null || compositeJpeg.length == 0) return;
 
-            byte[] data =
-                    accumulator.toByteArray();
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
 
-            int start =
-                    findSeq(
-                            data,
-                            new byte[]{
-                                    (byte) 0xFF,
-                                    (byte) 0xD8
-                            },
-                            0
-                    );
+        Bitmap source = BitmapFactory.decodeByteArray(
+                compositeJpeg,
+                0,
+                compositeJpeg.length,
+                options
+        );
 
-            if (start < 0) {
+        if (source == null) {
+            log("WARN", "Composite frame decode failed");
+            return;
+        }
 
-                if (
-                        data.length
-                                > 65536
-                ) {
-
-                    accumulator.reset();
-
-                    accumulator.write(
-                            data,
-                            data.length
-                                    - 65536,
-                            65536
-                    );
-                }
-
+        try {
+            if (source.getWidth() > MAX_PROCESSING_DIMENSION
+                    || source.getHeight() > MAX_PROCESSING_DIMENSION) {
+                log("WARN", "Composite frame exceeds processing dimension");
                 return;
             }
 
-            int end =
-                    findSeq(
-                            data,
-                            new byte[]{
-                                    (byte) 0xFF,
-                                    (byte) 0xD9
-                            },
-                            start + 2
-                    );
+            ensureDualOpticalCalibration(source);
+            lastCompositeFrameBytes = compositeJpeg;
 
-            if (end < 0) {
+            final String band = activeSpectralBand == null
+                    ? "RGB"
+                    : activeSpectralBand;
+            final long generation = spectralGeneration.get();
 
-                if (start > 0) {
+            byte[] processed = processCompositeForBand(source, band);
+            if (processed == null || processed.length == 0) return;
 
-                    accumulator.reset();
+            if (generation != spectralGeneration.get()) return;
+            if (!band.equals(activeSpectralBand)) return;
 
-                    accumulator.write(
-                            data,
-                            start,
-                            data.length - start
-                    );
-                }
+            lastFrameBytes = processed;
 
-                return;
-            }
-
-            int jpegEnd =
-                    end + 2;
-
-            byte[] jpeg =
-                    new byte[
-                            jpegEnd - start
-                    ];
-
-            System.arraycopy(
-                    data,
-                    start,
-                    jpeg,
-                    0,
-                    jpeg.length
+            emitProcessedFrame(
+                    processed,
+                    band,
+                    "NIR".equals(band)
+                            ? "NIR_RIGHT_OPTICAL_ROI"
+                            : "RGB_LEFT_OPTICAL_ROI",
+                    true
             );
 
-            lastFrameBytes =
-                    jpeg;
+        } finally {
+            source.recycle();
+        }
+    }
 
-            long now =
-                    System.currentTimeMillis();
+    /**
+     * Calibrate the dual circular optical fields once per source resolution.
+     *
+     * The camera frame is a single composite image containing two circular
+     * fields. We estimate the visible circle bounds from the near-black outer
+     * mask, then compute the LARGEST safe axis-aligned square that fits inside
+     * the circle/ellipse and also remains inside the source bitmap.
+     *
+     * This is the key rule that prevents black/vignetted corners in every
+     * RGB/R/G/B/NIR result.
+     */
+    private void ensureDualOpticalCalibration(Bitmap source) {
 
-            if (
-                    now - lastFrameEventAt
-                            >= FRAME_EVENT_INTERVAL_MS
-            ) {
+        int width = source.getWidth();
+        int height = source.getHeight();
 
-                lastFrameEventAt =
-                        now;
+        if (width == calibratedSourceWidth
+                && height == calibratedSourceHeight
+                && rgbCropRect != null
+                && nirCropRect != null) {
+            return;
+        }
 
-                HashMap<String, Object> event =
-                        new HashMap<>();
+        int opticalSplit = detectOpticalSplit(source);
 
-                event.put(
-                        "bytes",
-                        jpeg
-                );
+        Rect detectedRgb = detectOpticalRoi(
+                source,
+                0,
+                opticalSplit
+        );
 
-                event.put(
-                        "band",
-                        "RGB"
-                );
+        Rect detectedNir = detectOpticalRoi(
+                source,
+                opticalSplit,
+                width
+        );
 
-                event.put(
-                        "quad",
-                        isQuadMode
-                );
-
-                event.put(
-                        "grayscale",
-                        grayscaleMode
-                );
-
-                event.put(
-                        "source",
-                        "LIVEVIEW_JPEG"
-                );
-
-                sendEvent(
-                        "liveviewFrame",
-                        event
-                );
-            }
-
-            if (!firstFrameSent) {
-
-                firstFrameSent =
-                        true;
-
-                sendEvent(
-                        "firstLiveviewFrame",
-                        true
-                );
-
-                updateSystemStatus(
-                        "CAMERA READY",
-                        true
-                );
-            }
-
-            byte[] remaining =
-                    new byte[
-                            data.length
-                                    - jpegEnd
-                    ];
-
-            System.arraycopy(
-                    data,
-                    jpegEnd,
-                    remaining,
-                    0,
-                    remaining.length
-            );
-
-            accumulator.reset();
-
-            accumulator.write(
-                    remaining,
-                    0,
-                    remaining.length
+        if (!isUsableCrop(detectedRgb, width, height)) {
+            detectedRgb = fallbackSquareCrop(
+                    width,
+                    height,
+                    FALLBACK_RGB_LEFT,
+                    FALLBACK_RGB_TOP,
+                    FALLBACK_RGB_RIGHT,
+                    FALLBACK_RGB_BOTTOM
             );
         }
+
+        if (!isUsableCrop(detectedNir, width, height)) {
+            detectedNir = fallbackSquareCrop(
+                    width,
+                    height,
+                    FALLBACK_NIR_LEFT,
+                    FALLBACK_NIR_TOP,
+                    FALLBACK_NIR_RIGHT,
+                    FALLBACK_NIR_BOTTOM
+            );
+        }
+
+        rgbCropRect = detectedRgb;
+        nirCropRect = detectedNir;
+        calibratedSourceWidth = width;
+        calibratedSourceHeight = height;
+
+        boolean validDual =
+                isUsableCrop(rgbCropRect, width, height)
+                        && isUsableCrop(nirCropRect, width, height);
+
+        boolean changed = realNirAvailable != validDual;
+        realNirAvailable = validDual;
+
+        log(
+                "INFO",
+                "Dual optical square calibration: RGB="
+                        + rectToString(rgbCropRect)
+                        + " NIR="
+                        + rectToString(nirCropRect)
+        );
+
+        if (changed) {
+            emitCapabilities(Collections.emptySet());
+        }
+    }
+
+    /**
+     * Detect the dark optical gap between the two circular fields.
+     *
+     * The two circles are not necessarily separated exactly at width / 2.
+     * Using the actual dark gap prevents the right circle from being treated
+     * as clipped on both sides, which was the cause of oversized crops with
+     * black corners.
+     */
+    private int detectOpticalSplit(Bitmap source) {
+
+        final int width = source.getWidth();
+        final int height = source.getHeight();
+        final float threshold = opticalBlackThreshold(source);
+
+        int yStart = Math.max(0, Math.round(height * 0.22f));
+        int yEnd = Math.min(height, Math.round(height * 0.78f));
+
+        float[] darkProfile = new float[width];
+        int samples = Math.max(
+                1,
+                (yEnd - yStart + ROI_SCAN_STEP - 1) / ROI_SCAN_STEP
+        );
+
+        for (int x = 0; x < width; x++) {
+            int dark = 0;
+            for (int i = 0; i < samples; i++) {
+                int y = Math.min(
+                        yEnd - 1,
+                        yStart + i * ROI_SCAN_STEP
+                );
+                if (pixelLuma(source.getPixel(x, y)) <= threshold) {
+                    dark++;
+                }
+            }
+            darkProfile[x] = (float) dark / (float) samples;
+        }
+
+        smoothProfile(darkProfile, 12);
+
+        int searchStart = Math.max(1, Math.round(width * 0.35f));
+        int searchEnd = Math.min(width - 1, Math.round(width * 0.65f));
+        int minimumRun = Math.max(16, Math.round(width * 0.015f));
+
+        int bestStart = -1;
+        int bestEnd = -1;
+        int runStart = -1;
+
+        for (int x = searchStart; x <= searchEnd; x++) {
+            boolean dark = darkProfile[x] >= 0.82f;
+
+            if (dark) {
+                if (runStart < 0) runStart = x;
+            } else if (runStart >= 0) {
+                if (x - runStart >= minimumRun) {
+                    if (isBetterSplitRun(
+                            runStart,
+                            x - 1,
+                            bestStart,
+                            bestEnd,
+                            width
+                    )) {
+                        bestStart = runStart;
+                        bestEnd = x - 1;
+                    }
+                }
+                runStart = -1;
+            }
+        }
+
+        if (runStart >= 0 && searchEnd + 1 - runStart >= minimumRun) {
+            if (isBetterSplitRun(
+                    runStart,
+                    searchEnd,
+                    bestStart,
+                    bestEnd,
+                    width
+            )) {
+                bestStart = runStart;
+                bestEnd = searchEnd;
+            }
+        }
+
+        int split;
+        if (bestStart >= 0 && bestEnd >= bestStart) {
+            split = Math.round((bestStart + bestEnd) * 0.5f);
+        } else {
+            split = width / 2;
+        }
+
+        int minimumSplit = Math.round(width * 0.42f);
+        int maximumSplit = Math.round(width * 0.58f);
+
+        split = Math.max(
+                minimumSplit,
+                Math.min(maximumSplit, split)
+        );
+
+        log(
+                "INFO",
+                "Dual optical split: " + split
+                        + " / " + width
+        );
+
+        return split;
+    }
+
+    private boolean isBetterSplitRun(
+            int start,
+            int end,
+            int currentStart,
+            int currentEnd,
+            int width
+    ) {
+
+        if (currentStart < 0 || currentEnd < currentStart) {
+            return true;
+        }
+
+        int currentLength = currentEnd - currentStart + 1;
+        int candidateLength = end - start + 1;
+
+        float candidateCenter = (start + end) * 0.5f;
+        float currentCenter = (currentStart + currentEnd) * 0.5f;
+
+        float candidateDistance =
+                Math.abs(candidateCenter - width * 0.5f);
+        float currentDistance =
+                Math.abs(currentCenter - width * 0.5f);
+
+        if (candidateDistance + 2f < currentDistance) {
+            return true;
+        }
+
+        return Math.abs(candidateDistance - currentDistance) <= 2f
+                && candidateLength > currentLength;
+    }
+
+    /**
+     * Finds the circle/ellipse in one optical half and returns a square crop
+     * guaranteed to remain inside that optical field.
+     */
+    private Rect detectOpticalRoi(
+            Bitmap source,
+            int xStart,
+            int xEnd
+    ) {
+
+        final int width = source.getWidth();
+        final int height = source.getHeight();
+
+        xStart = Math.max(0, Math.min(width - 1, xStart));
+        xEnd = Math.max(xStart + 1, Math.min(width, xEnd));
+
+        final float threshold = opticalBlackThreshold(source);
+
+        // Estimate top/bottom of the optical field from vertical occupancy.
+        int xSampleStart = xStart + Math.round((xEnd - xStart) * 0.20f);
+        int xSampleEnd = xStart + Math.round((xEnd - xStart) * 0.80f);
+        xSampleStart = Math.max(xStart, Math.min(xEnd - 1, xSampleStart));
+        xSampleEnd = Math.max(xSampleStart + 1, Math.min(xEnd, xSampleEnd));
+
+        int xSampleCount = Math.max(
+                9,
+                Math.min(
+                        48,
+                        Math.max(1, (xSampleEnd - xSampleStart) / ROI_SCAN_STEP)
+                )
+        );
+
+        float[] yProfile = new float[Math.max(1, (height + ROI_SCAN_STEP - 1) / ROI_SCAN_STEP)];
+        int[] rowPixels = new int[width];
+        int yi = 0;
+
+        for (int y = 0; y < height; y += ROI_SCAN_STEP) {
+
+            source.getPixels(
+                    rowPixels,
+                    0,
+                    width,
+                    0,
+                    y,
+                    width,
+                    1
+            );
+
+            int nonBlack = 0;
+            for (int i = 0; i < xSampleCount; i++) {
+                int x = interpolateInt(
+                        xSampleStart,
+                        xSampleEnd - 1,
+                        i,
+                        xSampleCount
+                );
+                if (pixelLuma(rowPixels[x]) > threshold) {
+                    nonBlack++;
+                }
+            }
+
+            yProfile[yi++] = (float) nonBlack / (float) xSampleCount;
+        }
+
+        smoothProfile(yProfile, ROI_PROFILE_SMOOTH_RADIUS);
+
+        int[] yRun = bestProfileRun(
+                yProfile,
+                ROI_PROFILE_COVERAGE,
+                yProfile.length / 2
+        );
+
+        if (yRun == null) {
+            return null;
+        }
+
+        int top = yRun[0] * ROI_SCAN_STEP;
+        int bottom = Math.min(
+                height,
+                ((yRun[1] + 1) * ROI_SCAN_STEP)
+        );
+
+        float centerY = (top + bottom) * 0.5f;
+        float radiusY = Math.max(1f, (bottom - top) * 0.5f);
+
+        // Estimate left/right visible edges around the estimated vertical center.
+        int yBandTop = Math.max(0, Math.round(centerY - radiusY * 0.62f));
+        int yBandBottom = Math.min(
+                height,
+                Math.round(centerY + radiusY * 0.62f)
+        );
+
+        if (yBandBottom <= yBandTop) {
+            return null;
+        }
+
+        int xProfileLength = Math.max(
+                1,
+                (xEnd - xStart + ROI_SCAN_STEP - 1) / ROI_SCAN_STEP
+        );
+        float[] xProfile = new float[xProfileLength];
+
+        int bandHeight = yBandBottom - yBandTop;
+        for (int i = 0; i < xProfileLength; i++) {
+            int x = Math.min(
+                    xEnd - 1,
+                    xStart + i * ROI_SCAN_STEP
+            );
+
+            int samples = Math.max(
+                    1,
+                    (bandHeight + ROI_SCAN_STEP - 1) / ROI_SCAN_STEP
+            );
+
+            int nonBlack = 0;
+            for (int j = 0; j < samples; j++) {
+                int y = Math.min(
+                        yBandBottom - 1,
+                        yBandTop + j * ROI_SCAN_STEP
+                );
+
+                if (pixelLuma(source.getPixel(x, y)) > threshold) {
+                    nonBlack++;
+                }
+            }
+
+            xProfile[i] = (float) nonBlack / (float) samples;
+        }
+
+        smoothProfile(xProfile, ROI_PROFILE_SMOOTH_RADIUS);
+
+        int expectedCenterIndex =
+                Math.max(
+                        0,
+                        Math.min(
+                                xProfile.length - 1,
+                                Math.round(
+                                        ((xStart + xEnd) * 0.5f - xStart)
+                                                / ROI_SCAN_STEP
+                                )
+                        )
+                );
+
+        int[] xRun = bestProfileRun(
+                xProfile,
+                ROI_PROFILE_COVERAGE,
+                expectedCenterIndex
+        );
+
+        if (xRun == null) {
+            return null;
+        }
+
+        int visibleLeft = xStart + xRun[0] * ROI_SCAN_STEP;
+        int visibleRight = Math.min(
+                xEnd,
+                xStart + (xRun[1] + 1) * ROI_SCAN_STEP
+        );
+
+        boolean leftClipped = visibleLeft <= xStart + ROI_SCAN_STEP;
+        boolean rightClipped = visibleRight >= xEnd - ROI_SCAN_STEP;
+
+        float centerX;
+        float radiusX;
+
+        if (!leftClipped && !rightClipped) {
+            centerX = (visibleLeft + visibleRight) * 0.5f;
+            radiusX = Math.max(1f, (visibleRight - visibleLeft) * 0.5f);
+        } else if (leftClipped && !rightClipped) {
+            // The circle continues beyond the left edge of the composite frame.
+            radiusX = radiusY;
+            centerX = visibleRight - radiusX;
+        } else if (!leftClipped && rightClipped) {
+            // The circle continues beyond the right edge of the composite frame.
+            radiusX = radiusY;
+            centerX = visibleLeft + radiusX;
+        } else {
+            radiusX = radiusY;
+            centerX = (xStart + xEnd) * 0.5f;
+        }
+
+        // Favor the smaller radius so corners stay inside the actual optical field.
+        float safeRadiusX = Math.max(1f, Math.min(radiusX, radiusY));
+        float safeRadiusY = Math.max(1f, Math.min(radiusY, radiusX));
+
+        return largestSafeSquare(
+                centerX,
+                centerY,
+                safeRadiusX,
+                safeRadiusY,
+                width,
+                height,
+                ROI_SQUARE_SAFETY_FACTOR
+        );
+    }
+
+    private float opticalBlackThreshold(Bitmap source) {
+        float border = estimateBorderBrightness(source);
+        return Math.max(
+                ROI_BLACK_LUMA_THRESHOLD,
+                Math.min(34f, border + 10f)
+        );
+    }
+
+    private int interpolateInt(int start, int end, int index, int count) {
+        if (count <= 1) return start;
+        return start
+                + Math.round(
+                (end - start)
+                        * (index / (float) (count - 1))
+        );
+    }
+
+    private void smoothProfile(float[] profile, int radius) {
+        if (profile == null || profile.length < 3 || radius <= 0) return;
+
+        float[] copy = profile.clone();
+        for (int i = 0; i < profile.length; i++) {
+            int from = Math.max(0, i - radius);
+            int to = Math.min(profile.length - 1, i + radius);
+            float sum = 0f;
+            int count = 0;
+            for (int j = from; j <= to; j++) {
+                sum += copy[j];
+                count++;
+            }
+            profile[i] = count == 0 ? copy[i] : sum / count;
+        }
+    }
+
+    /**
+     * Returns [start,end] of the strongest contiguous profile run above the
+     * threshold. When a preferred index falls inside a run, that run wins.
+     */
+    private int[] bestProfileRun(
+            float[] profile,
+            float threshold,
+            int preferredIndex
+    ) {
+
+        if (profile == null || profile.length == 0) return null;
+
+        ArrayList<int[]> runs = new ArrayList<>();
+        int start = -1;
+
+        for (int i = 0; i < profile.length; i++) {
+            if (profile[i] >= threshold) {
+                if (start < 0) start = i;
+            } else if (start >= 0) {
+                runs.add(new int[]{start, i - 1});
+                start = -1;
+            }
+        }
+
+        if (start >= 0) {
+            runs.add(new int[]{start, profile.length - 1});
+        }
+
+        if (runs.isEmpty()) return null;
+
+        for (int[] run : runs) {
+            if (preferredIndex >= run[0] && preferredIndex <= run[1]) {
+                return run;
+            }
+        }
+
+        int[] best = runs.get(0);
+        for (int[] run : runs) {
+            int bestLength = best[1] - best[0];
+            int runLength = run[1] - run[0];
+            if (runLength > bestLength) {
+                best = run;
+            }
+        }
+
+        return best;
+    }
+
+    private float estimateBorderBrightness(Bitmap source) {
+        int width = source.getWidth();
+        int height = source.getHeight();
+        int patchW = Math.max(8, Math.round(width * 0.035f));
+        int patchH = Math.max(8, Math.round(height * 0.035f));
+        long sum = 0L;
+        long count = 0L;
+
+        for (int y = 0; y < patchH; y += ROI_SCAN_STEP) {
+            for (int x = 0; x < patchW; x += ROI_SCAN_STEP) {
+                int c = source.getPixel(x, y);
+                sum += pixelLuma(c);
+                count++;
+
+                c = source.getPixel(width - 1 - x, y);
+                sum += pixelLuma(c);
+                count++;
+
+                c = source.getPixel(x, height - 1 - y);
+                sum += pixelLuma(c);
+                count++;
+
+                c = source.getPixel(width - 1 - x, height - 1 - y);
+                sum += pixelLuma(c);
+                count++;
+            }
+        }
+
+        return count <= 0
+                ? 2f
+                : ((float) sum / (float) count);
+    }
+
+    private int pixelLuma(int color) {
+        int r = (color >> 16) & 0xFF;
+        int g = (color >> 8) & 0xFF;
+        int b = color & 0xFF;
+        return (299 * r + 587 * g + 114 * b) / 1000;
+    }
+
+    /**
+     * Finds the largest axis-aligned square that fits inside an ellipse and
+     * also inside the source image. The small safety factor leaves a margin
+     * from the dark optical boundary so JPEG edge/vignetting never reaches the
+     * output corners.
+     */
+    private Rect largestSafeSquare(
+            float centerX,
+            float centerY,
+            float radiusX,
+            float radiusY,
+            int sourceWidth,
+            int sourceHeight,
+            float safetyFactor
+    ) {
+
+        float low = 16f;
+        float high = 2f * Math.min(radiusX, radiusY);
+
+        for (int i = 0; i < 32; i++) {
+            float side = (low + high) * 0.5f;
+            if (squareFitsEllipse(
+                    side,
+                    centerX,
+                    centerY,
+                    radiusX,
+                    radiusY,
+                    sourceWidth,
+                    sourceHeight
+            )) {
+                low = side;
+            } else {
+                high = side;
+            }
+        }
+
+        float side = Math.max(
+                16f,
+                low * Math.max(0.80f, Math.min(1f, safetyFactor))
+        );
+
+        side = Math.min(
+                side,
+                Math.min(sourceWidth, sourceHeight)
+        );
+
+        int size = Math.max(16, (int) Math.floor(side));
+        size -= size % 2;
+        if (size < 16) size = 16;
+
+        float half = size * 0.5f;
+        float squareCenterX = clamp(
+                centerX,
+                half,
+                sourceWidth - half
+        );
+        float squareCenterY = clamp(
+                centerY,
+                half,
+                sourceHeight - half
+        );
+
+        // A final conservative pull toward the ellipse center further avoids
+        // a black edge when one optical circle is clipped by the source frame.
+        int left = Math.max(
+                0,
+                Math.min(
+                        sourceWidth - size,
+                        Math.round(squareCenterX - half)
+                )
+        );
+        int top = Math.max(
+                0,
+                Math.min(
+                        sourceHeight - size,
+                        Math.round(squareCenterY - half)
+                )
+        );
+
+        // Verify the square against the ellipse. If rounding pushed a corner
+        // onto the boundary, step inward by a small amount until it is safe.
+        while (size >= 32) {
+            float cx = left + size * 0.5f;
+            float cy = top + size * 0.5f;
+            if (squareFitsEllipse(
+                    size,
+                    cx,
+                    cy,
+                    radiusX,
+                    radiusY,
+                    sourceWidth,
+                    sourceHeight
+            )) {
+                break;
+            }
+
+            size -= 4;
+            size -= size % 2;
+            if (size < 16) size = 16;
+
+            half = size * 0.5f;
+            squareCenterX = clamp(centerX, half, sourceWidth - half);
+            squareCenterY = clamp(centerY, half, sourceHeight - half);
+            left = Math.max(
+                    0,
+                    Math.min(
+                            sourceWidth - size,
+                            Math.round(squareCenterX - half)
+                    )
+            );
+            top = Math.max(
+                    0,
+                    Math.min(
+                            sourceHeight - size,
+                            Math.round(squareCenterY - half)
+                    )
+            );
+        }
+
+        return new Rect(
+                left,
+                top,
+                left + size,
+                top + size
+        );
+    }
+
+    private boolean squareFitsEllipse(
+            float side,
+            float centerX,
+            float centerY,
+            float radiusX,
+            float radiusY,
+            int sourceWidth,
+            int sourceHeight
+    ) {
+
+        if (side <= 0f
+                || radiusX <= 0f
+                || radiusY <= 0f) {
+            return false;
+        }
+
+        float half = side * 0.5f;
+
+        if (side > sourceWidth || side > sourceHeight) {
+            return false;
+        }
+
+        float clampedCenterX = clamp(
+                centerX,
+                half,
+                sourceWidth - half
+        );
+        float clampedCenterY = clamp(
+                centerY,
+                half,
+                sourceHeight - half
+        );
+
+        float dx = Math.abs(clampedCenterX - centerX) + half;
+        float dy = Math.abs(clampedCenterY - centerY) + half;
+
+        float normalizedX = dx / radiusX;
+        float normalizedY = dy / radiusY;
+
+        return normalizedX * normalizedX
+                + normalizedY * normalizedY
+                <= 1.0f;
+    }
+
+    private float clamp(float value, float min, float max) {
+        if (max < min) return (min + max) * 0.5f;
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private Rect fallbackSquareCrop(
+            int width,
+            int height,
+            float left,
+            float top,
+            float right,
+            float bottom
+    ) {
+
+        int rawLeft = Math.max(
+                0,
+                Math.min(width - 1, Math.round(width * left))
+        );
+        int rawTop = Math.max(
+                0,
+                Math.min(height - 1, Math.round(height * top))
+        );
+        int rawRight = Math.max(
+                rawLeft + 1,
+                Math.min(width, Math.round(width * right))
+        );
+        int rawBottom = Math.max(
+                rawTop + 1,
+                Math.min(height, Math.round(height * bottom))
+        );
+
+        float centerY = (rawTop + rawBottom) * 0.5f;
+        float radiusY = Math.max(
+                1f,
+                (rawBottom - rawTop) * 0.5f
+        );
+
+        boolean touchesLeft = rawLeft <= 1;
+        boolean touchesRight = rawRight >= width - 1;
+
+        float centerX;
+        if (touchesLeft && !touchesRight) {
+            centerX = rawRight - radiusY;
+        } else if (!touchesLeft && touchesRight) {
+            centerX = rawLeft + radiusY;
+        } else {
+            centerX = (rawLeft + rawRight) * 0.5f;
+        }
+
+        return largestSafeSquare(
+                centerX,
+                centerY,
+                radiusY,
+                radiusY,
+                width,
+                height,
+                0.90f
+        );
+    }
+
+    private boolean isUsableCrop(Rect rect, int sourceWidth, int sourceHeight) {
+        if (rect == null) return false;
+        if (rect.left < 0 || rect.top < 0
+                || rect.right > sourceWidth || rect.bottom > sourceHeight) {
+            return false;
+        }
+
+        int width = rect.width();
+        int height = rect.height();
+
+        return width == height
+                && width >= Math.max(160, sourceWidth / 10)
+                && height >= Math.max(160, sourceHeight / 10);
+    }
+
+    private String rectToString(Rect rect) {
+        return rect == null
+                ? "null"
+                : rect.left + "," + rect.top + " "
+                        + rect.width() + "x" + rect.height();
+    }
+
+    private byte[] processCompositeForBand(
+            Bitmap source,
+            String band
+    ) {
+
+        Rect rect = "NIR".equals(band)
+                ? nirCropRect
+                : rgbCropRect;
+
+        if (!isUsableCrop(rect, source.getWidth(), source.getHeight())) {
+            return null;
+        }
+
+        Bitmap crop = Bitmap.createBitmap(
+                source,
+                rect.left,
+                rect.top,
+                rect.width(),
+                rect.height()
+        );
+
+        Bitmap result = crop;
+        try {
+            if ("R".equals(band)) {
+                result = channelBitmap(crop, 0);
+            } else if ("G".equals(band)) {
+                result = channelBitmap(crop, 1);
+            } else if ("B".equals(band)) {
+                result = channelBitmap(crop, 2);
+            } else if ("NIR".equals(band)) {
+                result = grayscaleBitmap(crop);
+            }
+
+            return bitmapToJpeg(result, IMAGE_JPEG_QUALITY);
+        } finally {
+            if (result != crop && result != null && !result.isRecycled()) {
+                result.recycle();
+            }
+            if (!crop.isRecycled()) {
+                crop.recycle();
+            }
+        }
+    }
+
+    private Bitmap channelBitmap(Bitmap source, int channel) {
+        float[] values = new float[]{
+                0f, 0f, 0f, 0f, 0f,
+                0f, 0f, 0f, 0f, 0f,
+                0f, 0f, 0f, 0f, 0f,
+                0f, 0f, 0f, 1f, 0f
+        };
+
+        if (channel == 0) {
+            values[0] = 1f;
+            values[5] = 1f;
+            values[10] = 1f;
+        } else if (channel == 1) {
+            values[1] = 1f;
+            values[6] = 1f;
+            values[11] = 1f;
+        } else {
+            values[2] = 1f;
+            values[7] = 1f;
+            values[12] = 1f;
+        }
+
+        Bitmap output = Bitmap.createBitmap(
+                source.getWidth(),
+                source.getHeight(),
+                Bitmap.Config.ARGB_8888
+        );
+
+        Canvas canvas = new Canvas(output);
+        Paint paint = new Paint(
+                Paint.ANTI_ALIAS_FLAG
+                        | Paint.FILTER_BITMAP_FLAG
+        );
+        paint.setColorFilter(
+                new ColorMatrixColorFilter(
+                        new ColorMatrix(values)
+                )
+        );
+        canvas.drawBitmap(source, 0f, 0f, paint);
+        return output;
+    }
+
+    private Bitmap grayscaleBitmap(Bitmap source) {
+        float[] values = new float[]{
+                0.299f, 0.587f, 0.114f, 0f, 0f,
+                0.299f, 0.587f, 0.114f, 0f, 0f,
+                0.299f, 0.587f, 0.114f, 0f, 0f,
+                0f, 0f, 0f, 1f, 0f
+        };
+
+        Bitmap output = Bitmap.createBitmap(
+                source.getWidth(),
+                source.getHeight(),
+                Bitmap.Config.ARGB_8888
+        );
+
+        Canvas canvas = new Canvas(output);
+        Paint paint = new Paint(
+                Paint.ANTI_ALIAS_FLAG
+                        | Paint.FILTER_BITMAP_FLAG
+        );
+        paint.setColorFilter(
+                new ColorMatrixColorFilter(
+                        new ColorMatrix(values)
+                )
+        );
+        canvas.drawBitmap(source, 0f, 0f, paint);
+        return output;
+    }
+
+    private byte[] bitmapToJpeg(Bitmap bitmap, int quality) {
+        if (bitmap == null || bitmap.isRecycled()) return null;
+
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        if (!bitmap.compress(
+                Bitmap.CompressFormat.JPEG,
+                quality,
+                output
+        )) {
+            return null;
+        }
+
+        return output.toByteArray();
+    }
+
+    private void emitProcessedFrame(
+            byte[] jpeg,
+            String band,
+            String source,
+            boolean throttle
+    ) {
+        if (jpeg == null || jpeg.length == 0) return;
+
+        if (throttle) {
+            long now = System.currentTimeMillis();
+            if (now - lastFrameEventAt < FRAME_EVENT_INTERVAL_MS) return;
+            lastFrameEventAt = now;
+        }
+
+        Rect rect = "NIR".equals(band) ? nirCropRect : rgbCropRect;
+        HashMap<String, Object> event = new HashMap<>();
+        event.put("bytes", jpeg);
+        event.put("band", band);
+        event.put("quad", isQuadMode);
+        event.put("grayscale", grayscaleMode);
+        event.put("source", source);
+        event.put("processed", true);
+        event.put("isQuadFrame", !throttle);
+        event.put("realSpectralFrame", true);
+        event.put("width", rect == null ? 0 : rect.width());
+        event.put("height", rect == null ? 0 : rect.height());
+        event.put("bitDepth", 8);
+        event.put("compositeWidth", calibratedSourceWidth);
+        event.put("compositeHeight", calibratedSourceHeight);
+        event.put("cropX", rect == null ? 0 : rect.left);
+        event.put("cropY", rect == null ? 0 : rect.top);
+        event.put("cropWidth", rect == null ? 0 : rect.width());
+        event.put("cropHeight", rect == null ? 0 : rect.height());
+
+        sendEvent("liveviewFrame", event);
+
+        if (!firstFrameSent) {
+            firstFrameSent = true;
+            sendEvent("firstLiveviewFrame", true);
+            updateSystemStatus("CAMERA READY", true);
+        }
+    }
+
+    /**
+     * Legacy compatibility wrapper for the old NIR API path that remains in
+     * this single-file transport. The active LANDCAM path no longer uses it;
+     * NIR is derived from the right optical ROI of the composite frame.
+     */
+    private void emitSpectralFrame(
+            byte[] jpeg,
+            String band,
+            String source
+    ) {
+        emitProcessedFrame(jpeg, band, source, false);
+    }
+
+    private void stopNirPolling() {
+        isNirPolling.set(false);
+    }
+
+    private void revertToRgbAfterNirFailure() {
+        activeSpectralBand = "RGB";
+        spectralGeneration.incrementAndGet();
+        sendEvent("spectralBandChanged", mapOf("band", "RGB"));
+        updateSystemStatus("RGB VIEW", true);
     }
 
     private void trimStreamBuffer(
@@ -4065,148 +5409,112 @@ public class MainActivity extends FlutterActivity {
 
     private void takePicture() {
 
-        executor.execute(
-                () -> {
+        executor.execute(() -> {
+            Network network = currentNetwork;
+            CameraEndpoint endpoint = currentEndpoint();
+            byte[] fallbackFrame = lastCompositeFrameBytes;
 
-                    Network network =
-                            currentNetwork;
+            if (network == null || endpoint == null) {
+                sendEvent("captureError", "CAMERA NOT READY");
+                return;
+            }
 
-                    CameraEndpoint endpoint =
-                            currentEndpoint();
+            try {
+                JSONObject response = callApiAt(
+                        network,
+                        endpoint,
+                        "actTakePicture",
+                        new JSONArray(),
+                        API_CONNECT_TIMEOUT_MS,
+                        API_READ_TIMEOUT_MS
+                );
 
-                    byte[] fallbackFrame =
-                            lastFrameBytes;
+                if (hasApiError(response)) {
+                    throw new IllegalStateException(
+                            "SHUTTER FAILED: " + apiErrorDescription(response)
+                    );
+                }
 
-                    if (
-                            network == null
-                                    || endpoint == null
-                    ) {
+                String imageUrl = findFirstImageUrl(response);
+                byte[] composite = null;
 
-                        sendEvent(
-                                "captureError",
-                                "CAMERA NOT READY"
-                        );
-
-                        return;
-                    }
-
+                if (imageUrl != null && !imageUrl.isEmpty()) {
                     try {
-
-                        JSONObject response =
-                                callApiAt(
-                                        network,
-                                        endpoint,
-                                        "actTakePicture",
-                                        new JSONArray(),
-                                        API_CONNECT_TIMEOUT_MS,
-                                        API_READ_TIMEOUT_MS
-                                );
-
-                        if (
-                                hasApiError(
-                                        response
-                                )
-                        ) {
-
-                            throw new IllegalStateException(
-                                    "SHUTTER FAILED: "
-                                            + apiErrorDescription(
-                                            response
-                                    )
-                            );
-                        }
-
-                        String imageUrl =
-                                findFirstImageUrl(
-                                        response
-                                );
-
-                        String fileName =
-                                null;
-
-                        if (
-                                imageUrl != null
-                                        && !imageUrl.isEmpty()
-                        ) {
-
-                            try {
-
-                                byte[] captured =
-                                        downloadBytes(
-                                                network,
-                                                normalizeStreamUrl(
-                                                        imageUrl,
-                                                        endpoint
-                                                ),
-                                                15000
-                                        );
-
-                                if (
-                                        captured != null
-                                                && captured.length > 0
-                                ) {
-
-                                    fileName =
-                                            saveToGallery(
-                                                    captured
-                                            );
-                                }
-
-                            } catch (Exception e) {
-
-                                log(
-                                        "WARN",
-                                        "Camera capture URL download failed: "
-                                                + safeMessage(e)
-                                );
-                            }
-                        }
-
-                        if (
-                                fileName == null
-                                        && fallbackFrame != null
-                                        && fallbackFrame.length > 0
-                        ) {
-
-                            fileName =
-                                    saveToGallery(
-                                            fallbackFrame
-                                    );
-                        }
-
-                        if (fileName == null) {
-
-                            throw new IllegalStateException(
-                                    "NO CAPTURE IMAGE AVAILABLE"
-                            );
-                        }
-
-                        sendEvent(
-                                "captureSaved",
-                                fileName
+                        composite = downloadBytes(
+                                network,
+                                normalizeStreamUrl(imageUrl, endpoint),
+                                15000
                         );
-
-                        sendEvent(
-                                "shutterAck",
-                                fileName
-                        );
-
                     } catch (Exception e) {
-
-                        Log.e(
-                                TAG,
-                                "Capture failed",
-                                e
-                        );
-
-                        sendEvent(
-                                "captureError",
-                                "CAPTURE FAILED: "
+                        log(
+                                "WARN",
+                                "Camera capture URL download failed: "
                                         + safeMessage(e)
                         );
                     }
                 }
-        );
+
+                if (composite == null || composite.length == 0) {
+                    composite = fallbackFrame;
+                }
+
+                if (composite == null || composite.length == 0) {
+                    throw new IllegalStateException("NO CAPTURE IMAGE AVAILABLE");
+                }
+
+                Bitmap source = BitmapFactory.decodeByteArray(
+                        composite,
+                        0,
+                        composite.length
+                );
+
+                if (source == null) {
+                    throw new IllegalStateException("CAPTURE IMAGE DECODE FAILED");
+                }
+
+                String band = activeSpectralBand == null
+                        ? "RGB"
+                        : activeSpectralBand;
+
+                try {
+                    ensureDualOpticalCalibration(source);
+                    byte[] processed = processCompositeForBand(source, band);
+                    if (processed == null || processed.length == 0) {
+                        throw new IllegalStateException(
+                                "FAILED TO PROCESS " + band + " OPTICAL ROI"
+                        );
+                    }
+
+                    String fileName = saveToGallery(processed, band);
+
+                    HashMap<String, Object> data = new HashMap<>();
+                    data.put("fileName", fileName);
+                    data.put("band", band);
+                    data.put("source",
+                            "NIR".equals(band)
+                                    ? "NIR_RIGHT_OPTICAL_ROI"
+                                    : "RGB_LEFT_OPTICAL_ROI");
+                    data.put("processed", true);
+                    data.put("width",
+                            ("NIR".equals(band) ? nirCropRect : rgbCropRect).width());
+                    data.put("height",
+                            ("NIR".equals(band) ? nirCropRect : rgbCropRect).height());
+
+                    sendEvent("captureSaved", data);
+                    sendEvent("shutterAck", data);
+
+                } finally {
+                    source.recycle();
+                }
+
+            } catch (Exception e) {
+                Log.e(TAG, "Capture failed", e);
+                sendEvent(
+                        "captureError",
+                        "CAPTURE FAILED: " + safeMessage(e)
+                );
+            }
+        });
     }
 
     private byte[] downloadBytes(
@@ -4331,7 +5639,8 @@ public class MainActivity extends FlutterActivity {
     }
 
     private String saveToGallery(
-            byte[] jpeg
+            byte[] jpeg,
+            String band
     ) throws Exception {
 
         String timestamp =
@@ -4342,8 +5651,15 @@ public class MainActivity extends FlutterActivity {
                         new Date()
                 );
 
+        String safeBand =
+                band == null || band.trim().isEmpty()
+                        ? "RGB"
+                        : band.trim().toUpperCase(Locale.US);
+
         String displayName =
                 "LandCam_"
+                        + safeBand
+                        + "_"
                         + timestamp
                         + ".jpg";
 
@@ -4526,56 +5842,172 @@ public class MainActivity extends FlutterActivity {
 
                     try {
 
-                        JSONObject response =
-                                callApiAt(
-                                        network,
-                                        endpoint,
-                                        "actFocus",
-                                        new JSONArray(),
-                                        API_CONNECT_TIMEOUT_MS,
-                                        API_READ_TIMEOUT_MS
-                                );
+                        boolean focusModePrepared =
+                                false;
 
-                        if (
-                                hasApiError(
-                                        response
-                                )
-                        ) {
+                        // Best effort: configure an actual AF mode when the
+                        // connected camera exposes the focus-mode API.
+                        try {
 
-                            sendEvent(
-                                    "engineWarning",
-                                    "AUTOFOCUS NOT SUPPORTED "
-                                            + "BY CAMERA: "
-                                            + apiErrorDescription(
-                                            response
-                                    )
-                            );
+                            JSONObject availableModes =
+                                    callApiAt(
+                                            network,
+                                            endpoint,
+                                            "getAvailableFocusMode",
+                                            new JSONArray(),
+                                            HTTP_PROBE_TIMEOUT_MS,
+                                            HTTP_PROBE_TIMEOUT_MS
+                                    );
 
-                            return;
+                            String mode =
+                                    chooseAutofocusMode(
+                                            availableModes
+                                    );
+
+                            if (mode != null) {
+
+                                JSONObject setMode =
+                                        callApiAt(
+                                                network,
+                                                endpoint,
+                                                "setFocusMode",
+                                                new JSONArray().put(mode),
+                                                API_CONNECT_TIMEOUT_MS,
+                                                API_READ_TIMEOUT_MS
+                                        );
+
+                                focusModePrepared =
+                                        !hasApiError(setMode);
+                            }
+
+                        } catch (Exception ignored) {
+                            // Not all camera firmware exposes focus-mode APIs.
                         }
 
-                        sleepQuietly(
-                                500L
-                        );
+                        String directFocusError =
+                                null;
 
                         try {
 
-                            callApiAt(
-                                    network,
-                                    endpoint,
-                                    "cancelFocus",
-                                    new JSONArray(),
-                                    API_CONNECT_TIMEOUT_MS,
-                                    API_READ_TIMEOUT_MS
-                            );
+                            JSONObject response =
+                                    callApiAt(
+                                            network,
+                                            endpoint,
+                                            "actFocus",
+                                            new JSONArray(),
+                                            API_CONNECT_TIMEOUT_MS,
+                                            API_READ_TIMEOUT_MS
+                                    );
 
-                        } catch (Exception ignored) {
+                            if (!hasApiError(response)) {
+
+                                sleepQuietly(600L);
+
+                                try {
+                                    callApiAt(
+                                            network,
+                                            endpoint,
+                                            "cancelFocus",
+                                            new JSONArray(),
+                                            API_CONNECT_TIMEOUT_MS,
+                                            API_READ_TIMEOUT_MS
+                                    );
+                                } catch (Exception ignored) {
+                                }
+
+                                sendEvent(
+                                        "autofocusDone",
+                                        true
+                                );
+                                return;
+                            }
+
+                            directFocusError =
+                                    apiErrorDescription(response);
+
+                        } catch (Exception e) {
+                            directFocusError =
+                                    safeMessage(e);
                         }
 
-                        sendEvent(
-                                "autofocusDone",
-                                true
-                        );
+                        // Important compatibility path: several supported Sony
+                        // camera generations expose actHalfPressShutter rather
+                        // than actFocus. A half-press starts the camera's AF
+                        // process; cancelHalfPressShutter then releases it.
+                        try {
+
+                            JSONObject halfPress =
+                                    callApiAt(
+                                            network,
+                                            endpoint,
+                                            "actHalfPressShutter",
+                                            new JSONArray(),
+                                            API_CONNECT_TIMEOUT_MS,
+                                            API_READ_TIMEOUT_MS
+                                    );
+
+                            if (!hasApiError(halfPress)) {
+
+                                sleepQuietly(700L);
+
+                                try {
+                                    callApiAt(
+                                            network,
+                                            endpoint,
+                                            "cancelHalfPressShutter",
+                                            new JSONArray(),
+                                            API_CONNECT_TIMEOUT_MS,
+                                            API_READ_TIMEOUT_MS
+                                    );
+                                } catch (Exception ignored) {
+                                }
+
+                                sendEvent(
+                                        "autofocusDone",
+                                        true
+                                );
+                                return;
+                            }
+
+                            String halfPressError =
+                                    apiErrorDescription(
+                                            halfPress
+                                    );
+
+                            sendEvent(
+                                    "engineWarning",
+                                    "AUTOFOCUS NOT AVAILABLE: "
+                                            + "actFocus="
+                                            + truncate(
+                                            directFocusError == null
+                                                    ? "NO RESPONSE"
+                                                    : directFocusError,
+                                            160
+                                    )
+                                            + "; halfPress="
+                                            + truncate(
+                                            halfPressError,
+                                            160
+                                    )
+                            );
+
+                        } catch (Exception halfPressException) {
+
+                            sendEvent(
+                                    "engineWarning",
+                                    "AUTOFOCUS NOT AVAILABLE: "
+                                            + truncate(
+                                            directFocusError == null
+                                                    ? "NO DIRECT FOCUS"
+                                                    : directFocusError,
+                                            220
+                                    )
+                                            + "; halfPress command failed: "
+                                            + safeMessage(
+                                            halfPressException
+                                    )
+                            );
+                        }
 
                     } catch (Exception e) {
 
@@ -4593,6 +6025,103 @@ public class MainActivity extends FlutterActivity {
                     }
                 }
         );
+    }
+
+    private String chooseAutofocusMode(
+            JSONObject response
+    ) {
+
+        if (response == null || hasApiError(response)) {
+            return null;
+        }
+
+        ArrayList<String> modes =
+                new ArrayList<>();
+
+        collectFocusModes(
+                response.opt("result"),
+                modes,
+                0
+        );
+
+        String[] preferred =
+                new String[]{
+                        "AF-S",
+                        "AF-C",
+                        "Continuous AF"
+                };
+
+        for (String wanted : preferred) {
+            for (String mode : modes) {
+                if (wanted.equalsIgnoreCase(mode)) {
+                    return mode;
+                }
+            }
+        }
+
+        // Some cameras return a single opaque/locale-specific AF mode string.
+        // Prefer the first mode that still clearly describes autofocus.
+        for (String mode : modes) {
+            String lower =
+                    mode.toLowerCase(
+                            Locale.US
+                    );
+
+            if (lower.contains("af")) {
+                return mode;
+            }
+        }
+
+        return null;
+    }
+
+    private void collectFocusModes(
+            Object value,
+            List<String> target,
+            int depth
+    ) {
+
+        if (value == null
+                || depth > 8
+                || target == null) {
+            return;
+        }
+
+        if (value instanceof String) {
+            String text =
+                    ((String) value).trim();
+            if (!text.isEmpty()) {
+                target.add(text);
+            }
+            return;
+        }
+
+        if (value instanceof JSONArray) {
+            JSONArray array =
+                    (JSONArray) value;
+            for (int i = 0; i < array.length(); i++) {
+                collectFocusModes(
+                        array.opt(i),
+                        target,
+                        depth + 1
+                );
+            }
+            return;
+        }
+
+        if (value instanceof JSONObject) {
+            JSONObject object =
+                    (JSONObject) value;
+            java.util.Iterator<String> keys =
+                    object.keys();
+            while (keys.hasNext()) {
+                collectFocusModes(
+                        object.opt(keys.next()),
+                        target,
+                        depth + 1
+                );
+            }
+        }
     }
 
     private void toggleViewMode() {
@@ -4625,6 +6154,9 @@ public class MainActivity extends FlutterActivity {
         lastFrameBytes =
                 null;
 
+        lastCompositeFrameBytes =
+                null;
+
         firstFrameSent =
                 false;
 
@@ -4638,6 +6170,9 @@ public class MainActivity extends FlutterActivity {
 
         lastLiveviewUrl =
                 null;
+
+        activeSpectralBand =
+                "RGB";
 
         clearCameraEndpoint();
 
@@ -4725,6 +6260,30 @@ public class MainActivity extends FlutterActivity {
 
         cameraFriendlyName =
                 "";
+
+        activeSpectralBand =
+                "RGB";
+
+        realNirAvailable =
+                false;
+
+        nirApiMethod =
+                null;
+
+        nirStreamUrl =
+                null;
+
+        streamingBand =
+                "RGB";
+
+        lastCompositeFrameBytes = null;
+        lastFrameBytes = null;
+        calibratedSourceWidth = -1;
+        calibratedSourceHeight = -1;
+        rgbCropRect = null;
+        nirCropRect = null;
+        lastQuadEventAt = 0L;
+        spectralGeneration.incrementAndGet();
     }
 
     private void stopStreaming() {
@@ -5723,15 +7282,25 @@ public class MainActivity extends FlutterActivity {
                     ((String) value)
                             .trim();
 
-            if (
-                    text.matches(
-                            "[A-Za-z_][A-Za-z0-9]*"
-                    )
-            ) {
+            if (text.isEmpty()) {
+                return;
+            }
 
-                target.add(
-                        text
-                );
+            // Camera Remote API responses commonly use names such as
+            // "camera/actFocus". Normalize them to "actFocus" so capability
+            // checks work consistently across firmware versions.
+            String[] tokens =
+                    text.split("[:,\\s]+");
+
+            for (String token : tokens) {
+                String method =
+                        normalizeApiMethodName(token);
+
+                if (method.matches(
+                        "[A-Za-z_][A-Za-z0-9_]*"
+                )) {
+                    target.add(method);
+                }
             }
 
             return;
@@ -5740,15 +7309,9 @@ public class MainActivity extends FlutterActivity {
         if (value instanceof JSONArray) {
 
             JSONArray array =
-                    (JSONArray)
-                            value;
+                    (JSONArray) value;
 
-            for (
-                    int i = 0;
-                    i < array.length();
-                    i++
-            ) {
-
+            for (int i = 0; i < array.length(); i++) {
                 collectStringValues(
                         array.opt(i),
                         target,
@@ -5762,27 +7325,59 @@ public class MainActivity extends FlutterActivity {
         if (value instanceof JSONObject) {
 
             JSONObject object =
-                    (JSONObject)
-                            value;
+                    (JSONObject) value;
 
-            java.util.Iterator<String>
-                    keys =
+            java.util.Iterator<String> keys =
                     object.keys();
 
-            while (
-                    keys.hasNext()
-            ) {
-
-                String key =
-                        keys.next();
-
+            while (keys.hasNext()) {
                 collectStringValues(
-                        object.opt(key),
+                        object.opt(keys.next()),
                         target,
                         depth + 1
                 );
             }
         }
+    }
+
+    private String normalizeApiMethodName(
+            String raw
+    ) {
+
+        if (raw == null) {
+            return "";
+        }
+
+        String text =
+                raw.trim();
+
+        int slash =
+                text.lastIndexOf('/');
+
+        if (slash >= 0
+                && slash < text.length() - 1) {
+            text =
+                    text.substring(
+                            slash + 1
+                    );
+        }
+
+        int dot =
+                text.lastIndexOf('.');
+
+        if (dot >= 0
+                && dot < text.length() - 1
+                && !text.startsWith("http")) {
+            String suffix =
+                    text.substring(dot + 1);
+            if (suffix.matches(
+                    "[A-Za-z_][A-Za-z0-9_]*"
+            )) {
+                text = suffix;
+            }
+        }
+
+        return text.trim();
     }
 
     private boolean hasApiResult(
