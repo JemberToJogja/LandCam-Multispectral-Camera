@@ -23,6 +23,7 @@ import io.flutter.embedding.engine.FlutterEngine;
 import io.flutter.plugin.common.EventChannel;
 import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
+import io.flutter.view.TextureRegistry;
 
 /**
  * LANDCAM Android entry point.
@@ -69,6 +70,11 @@ public class MainActivity extends FlutterActivity
 
     private CameraEngine cameraEngine;
 
+    private TextureRegistry.SurfaceTextureEntry ndviTextureEntry;
+
+    private static final int GPU_NDVI_TEXTURE_WIDTH = 960;
+    private static final int GPU_NDVI_TEXTURE_HEIGHT = 960;
+
     private NfcAdapter nfcAdapter;
 
     private PendingIntent nfcPendingIntent;
@@ -97,6 +103,8 @@ public class MainActivity extends FlutterActivity
             cameraEngine = new CameraEngine(this, this);
         }
 
+        ensureNdviTexture(flutterEngine);
+
         new MethodChannel(
                 flutterEngine.getDartExecutor().getBinaryMessenger(),
                 METHOD_CHANNEL
@@ -114,6 +122,14 @@ public class MainActivity extends FlutterActivity
                 eventSink = events;
 
                 sendEventNow("ready", null);
+                if (ndviTextureEntry != null) {
+                    sendEventNow(
+                            "gpuTextureReady",
+                            mapOf("textureId", ndviTextureEntry.id(),
+                                    "width", GPU_NDVI_TEXTURE_WIDTH,
+                                    "height", GPU_NDVI_TEXTURE_HEIGHT)
+                    );
+                }
                 flushPendingEvents();
             }
 
@@ -252,6 +268,34 @@ public class MainActivity extends FlutterActivity
             cameraEngine = new CameraEngine(this, this);
         }
         return cameraEngine;
+    }
+
+    private void ensureNdviTexture(FlutterEngine flutterEngine) {
+        if (ndviTextureEntry != null) {
+            return;
+        }
+
+        try {
+            ndviTextureEntry =
+                    flutterEngine
+                            .getRenderer()
+                            .createSurfaceTexture();
+
+            ensureEngine().attachGpuNdviSurfaceTexture(
+                    ndviTextureEntry.surfaceTexture(),
+                    GPU_NDVI_TEXTURE_WIDTH,
+                    GPU_NDVI_TEXTURE_HEIGHT
+            );
+        } catch (Exception e) {
+            Log.e(TAG, "GPU NDVI texture setup failed", e);
+            if (ndviTextureEntry != null) {
+                try {
+                    ndviTextureEntry.release();
+                } catch (Exception ignored) {
+                }
+                ndviTextureEntry = null;
+            }
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -632,12 +676,23 @@ public class MainActivity extends FlutterActivity
         }
     }
 
-    private static HashMap<String, Object> mapOf(
-            String key,
-            Object value
-    ) {
+    private static HashMap<String, Object> mapOf(Object... entries) {
+        if (entries == null || (entries.length & 1) != 0) {
+            throw new IllegalArgumentException("mapOf requires key/value pairs");
+        }
+
         HashMap<String, Object> map = new HashMap<>();
-        map.put(key, value);
+
+        for (int i = 0; i < entries.length; i += 2) {
+            Object key = entries[i];
+
+            if (key == null) {
+                throw new IllegalArgumentException("mapOf key must not be null");
+            }
+
+            map.put(String.valueOf(key), entries[i + 1]);
+        }
+
         return map;
     }
 
@@ -665,6 +720,11 @@ public class MainActivity extends FlutterActivity
 
         if (cameraEngine != null) {
             try {
+                cameraEngine.detachGpuNdviSurfaceTexture();
+            } catch (Exception e) {
+                Log.w(TAG, "GPU NDVI detach failed", e);
+            }
+            try {
                 cameraEngine.destroy();
             } catch (Exception e) {
                 Log.e(TAG, "CameraEngine destroy failed", e);
@@ -674,6 +734,14 @@ public class MainActivity extends FlutterActivity
 
         synchronized (pendingEvents) {
             pendingEvents.clear();
+        }
+
+        if (ndviTextureEntry != null) {
+            try {
+                ndviTextureEntry.release();
+            } catch (Exception ignored) {
+            }
+            ndviTextureEntry = null;
         }
 
         eventSink = null;

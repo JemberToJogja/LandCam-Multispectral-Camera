@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,15 +12,16 @@ void main() {
 ///
 /// Native is responsible for:
 ///   1. Camera connection/discovery.
-///   2. Reading the composite optical frame.
-///   3. Cropping the LEFT optical field for RGB/R/G/B.
-///   4. Cropping the RIGHT optical field for NIR.
-///   5. Producing a square, black-corner-free spectral image.
-///   6. Calculating realtime relative/digital NDVI.
+///   2. Reading the composite dual-optical frame.
+///   3. Building one unified crop from the RGB and NIR optical fields.
+///   4. Registering the NIR field into the RGB coordinate system.
+///   5. Producing one common, black-corner-free spectral image.
+///   6. Calculating realtime relative/digital NDVI on the unified crop.
 ///   7. Continuous autofocus configuration.
 ///   8. RAW / PROCESSED capture.
 ///
-/// Flutter intentionally does NO spectral pixel processing.
+/// Flutter intentionally does NO spectral pixel processing and only renders
+/// the unified image bytes delivered by native.
 class NativeBridge {
   static const MethodChannel methods =
       MethodChannel('landcam/native');
@@ -192,14 +192,7 @@ extension SpectralBandX on SpectralBand {
         SpectralBand.nir => 'NIR',
       };
 
-  String get sourceLabel => switch (this) {
-        SpectralBand.rgb ||
-        SpectralBand.red ||
-        SpectralBand.green ||
-        SpectralBand.blue =>
-          'LEFT OPTICAL ROI',
-        SpectralBand.nir => 'RIGHT OPTICAL ROI',
-      };
+  String get sourceLabel => 'UNIFIED SPECTRAL CROP';
 }
 
 class LogEntry {
@@ -224,6 +217,9 @@ class LandCamApp extends StatefulWidget {
 class _LandCamAppState extends State<LandCamApp> {
   final GlobalKey<NavigatorState> _navigatorKey =
       GlobalKey<NavigatorState>();
+
+  final GlobalKey<ScaffoldMessengerState> _messengerKey =
+      GlobalKey<ScaffoldMessengerState>();
 
   final ValueNotifier<Uint8List?> _activeFrame =
       ValueNotifier<Uint8List?>(null);
@@ -259,7 +255,14 @@ class _LandCamAppState extends State<LandCamApp> {
 
   double? _ndvi;
   int _ndviValidPixels = 0;
+  double _ndviNirGain = 1.0;
   bool _ndviEnabled = false;
+
+  String _previewMode = 'PROCESSED';
+  bool _unifiedSpectralCropAvailable = false;
+  bool _registrationApplied = false;
+  String _registrationModel = '';
+
   bool _dark = true;
   bool _capturing = false;
   bool _nfcListening = false;
@@ -271,18 +274,12 @@ class _LandCamAppState extends State<LandCamApp> {
   bool _nirActivating = false;
 
   int _frameCount = 0;
-  int _captureCount = 0;
   int? _frameWidth;
   int? _frameHeight;
   double? _measuredFps;
-  int _lastFrameBytes = 0;
   DateTime? _previousFrameAt;
 
   String? _codec;
-  String? _iso;
-  String? _shutter;
-  String? _aperture;
-  String? _bayerPattern;
   int? _bitDepth;
 
   bool get _hasFrame {
@@ -373,9 +370,13 @@ class _LandCamAppState extends State<LandCamApp> {
 
       if (mounted) {
         setState(() {
-          _ndviEnabled =
-              ndviEnabled &&
-              _dualOpticalRoiAvailable;
+          _ndviEnabled = ndviEnabled;
+          _previewMode = ndviEnabled
+              ? 'NDVI'
+              : 'PROCESSED';
+          if (ndviEnabled) {
+            _sourceLabel = 'UNIFIED NDVI CROP';
+          }
         });
       }
 
@@ -629,7 +630,6 @@ class _LandCamAppState extends State<LandCamApp> {
         break;
 
       case 'captureSaved':
-        _captureCount++;
         _capturing = false;
         _status = 'CAPTURE SAVED';
 
@@ -796,13 +796,27 @@ class _LandCamAppState extends State<LandCamApp> {
     final dualOpticalRoi =
         data['dualOpticalRoi'] == true;
 
+    final unifiedCrop =
+        data['unifiedSpectralCrop'] == true;
+
     final realNir =
         nir ||
             data['realNirAvailable'] == true ||
-            dualOpticalRoi;
+            dualOpticalRoi ||
+            unifiedCrop;
 
     _dualOpticalRoiAvailable =
         realNir;
+
+    _unifiedSpectralCropAvailable =
+        unifiedCrop ||
+        realNir;
+
+    if (data['registrationModel'] != null) {
+      _registrationModel =
+          data['registrationModel']
+              .toString();
+    }
 
     final next =
         <SpectralBand>{
@@ -965,10 +979,6 @@ class _LandCamAppState extends State<LandCamApp> {
         pattern != null &&
         pattern.toString().isNotEmpty
     ) {
-      _bayerPattern =
-          pattern
-              .toString()
-              .toUpperCase();
     }
 
     final bitDepth =
@@ -1043,8 +1053,7 @@ class _LandCamAppState extends State<LandCamApp> {
         iso != null &&
         iso.isNotEmpty
     ) {
-      _iso = iso;
-    }
+      }
 
     final shutter =
         data['shutter']?.toString();
@@ -1053,8 +1062,7 @@ class _LandCamAppState extends State<LandCamApp> {
         shutter != null &&
         shutter.isNotEmpty
     ) {
-      _shutter = shutter;
-    }
+      }
 
     final aperture =
         data['aperture']?.toString();
@@ -1063,8 +1071,7 @@ class _LandCamAppState extends State<LandCamApp> {
         aperture != null &&
         aperture.isNotEmpty
     ) {
-      _aperture = aperture;
-    }
+      }
   }
 
   void _handleNdviModeChanged(
@@ -1076,10 +1083,21 @@ class _LandCamAppState extends State<LandCamApp> {
             : data == true;
 
     _ndviEnabled = enabled;
+    _previewMode =
+        enabled ? 'NDVI' : 'PROCESSED';
 
     if (!enabled) {
       _ndvi = null;
       _ndviValidPixels = 0;
+      _ndviNirGain = 1.0;
+      _sourceLabel =
+          'UNIFIED SPECTRAL CROP';
+    } else {
+      _sourceLabel =
+          'UNIFIED NDVI CROP';
+      _clearActiveFrame(
+        resetTiming: false,
+      );
     }
 
     _handleNativeRebuild();
@@ -1113,6 +1131,41 @@ class _LandCamAppState extends State<LandCamApp> {
               data['validPixels'],
             ) ??
             _ndviValidPixels;
+
+    final nirGain =
+        _parseDouble(
+          data['nirGain'],
+        );
+
+    if (nirGain != null &&
+        nirGain.isFinite &&
+        nirGain > 0) {
+      _ndviNirGain = nirGain;
+    }
+
+    if (data['unifiedSpectralCrop'] == true ||
+        data['source']?.toString().contains(
+              'UNIFIED',
+            ) ==
+            true) {
+      _unifiedSpectralCropAvailable = true;
+    }
+
+    if (data['registrationApplied'] == true) {
+      _registrationApplied = true;
+    }
+
+    final registrationModel =
+        data['registrationModel']?.toString();
+
+    if (registrationModel != null &&
+        registrationModel.isNotEmpty) {
+      _registrationModel =
+          registrationModel;
+    }
+
+    _previewMode = 'NDVI';
+    _sourceLabel = 'UNIFIED NDVI CROP';
 
     _handleNativeRebuild();
   }
@@ -1171,7 +1224,14 @@ class _LandCamAppState extends State<LandCamApp> {
     _band = band;
 
     _sourceLabel =
-        band.sourceLabel;
+        _ndviEnabled
+            ? 'UNIFIED NDVI CROP'
+            : band.sourceLabel;
+
+    _previewMode =
+        _ndviEnabled
+            ? 'NDVI'
+            : 'PROCESSED';
 
     _nirActivating =
         band == SpectralBand.nir;
@@ -1193,19 +1253,42 @@ class _LandCamAppState extends State<LandCamApp> {
   ) {
     if (data is! Map) return;
 
+    final previewMode =
+        data['previewMode']
+                ?.toString()
+                .trim()
+                .toUpperCase() ??
+            'PROCESSED';
+
+    final isRawPreview =
+        previewMode == 'RAW';
+
+    final isNdviPreview =
+        previewMode == 'NDVI';
+
     final band =
         _bandFromNativeName(
           data['band']?.toString() ?? '',
         );
 
-    if (band == null) return;
+    if (!isNdviPreview && band == null) {
+      return;
+    }
 
-    final processed =
-        data['processed'] == true;
+    final effectiveBand =
+        band ?? _band;
 
-    if (!processed) return;
+    if (!isRawPreview &&
+        !isNdviPreview &&
+        data['processed'] != true) {
+      return;
+    }
 
-    if (band != _band) return;
+    if (!isRawPreview &&
+        !isNdviPreview &&
+        band != _band) {
+      return;
+    }
 
     final bytes =
         _toBytes(
@@ -1213,19 +1296,47 @@ class _LandCamAppState extends State<LandCamApp> {
               data['displayBytes'],
         );
 
-    if (
-        bytes == null ||
-        bytes.isEmpty
-    ) {
+    if (bytes == null ||
+        bytes.isEmpty) {
       return;
     }
 
-    if (
-        band == SpectralBand.nir
-    ) {
-      if (
-          !_dualOpticalRoiAvailable
-      ) {
+    final unified =
+        data['unifiedSpectralCrop'] == true ||
+        data['registrationApplied'] == true;
+
+    if (unified) {
+      _unifiedSpectralCropAvailable = true;
+    }
+
+    _registrationApplied =
+        data['registrationApplied'] == true ||
+        _registrationApplied;
+
+    final registrationModel =
+        data['registrationModel']?.toString();
+
+    if (registrationModel != null &&
+        registrationModel.isNotEmpty) {
+      _registrationModel =
+          registrationModel;
+    }
+
+    final nirGain =
+        _parseDouble(
+          data['nirGain'],
+        );
+
+    if (nirGain != null &&
+        nirGain.isFinite &&
+        nirGain > 0) {
+      _ndviNirGain = nirGain;
+    }
+
+    if (!isRawPreview &&
+        !isNdviPreview &&
+        band == SpectralBand.nir) {
+      if (!_dualOpticalRoiAvailable) {
         return;
       }
 
@@ -1233,57 +1344,66 @@ class _LandCamAppState extends State<LandCamApp> {
         SpectralBand.nir,
       );
 
-      _nirActivating =
-          false;
-
+      _nirActivating = false;
       _dualOpticalRoiAvailable =
           true;
     }
 
-    _activeFrame.value =
-        bytes;
+    if (isNdviPreview) {
+      // Native is authoritative: this frame is the dedicated NDVI preview.
+      _ndviEnabled = true;
+      _previewMode = 'NDVI';
+      _sourceLabel = 'UNIFIED NDVI CROP';
+    } else if (isRawPreview) {
+      _previewMode = 'RAW';
+      _sourceLabel =
+          'FULL COMPOSITE • UNPROCESSED';
+    } else {
+      _previewMode = 'PROCESSED';
+      _sourceLabel =
+          unified
+              ? 'UNIFIED SPECTRAL CROP'
+              : data['source']?.toString() ??
+                  effectiveBand.sourceLabel;
+    }
 
-    _sourceLabel =
-        data['source']?.toString() ??
-            band.sourceLabel;
+    _activeFrame.value = bytes;
+
+    if (isRawPreview) {
+      _captureMode = 'RAW';
+    }
 
     final nativeCaptureMode =
         data['captureMode']
             ?.toString();
 
-    if (
-        nativeCaptureMode != null &&
-        nativeCaptureMode
-            .isNotEmpty
-    ) {
+    if (nativeCaptureMode != null &&
+        nativeCaptureMode.isNotEmpty) {
       final normalized =
           nativeCaptureMode
               .trim()
               .toUpperCase();
 
-      if (
-          normalized == 'RAW' ||
-          normalized == 'PROCESSED'
-      ) {
+      if (normalized == 'RAW' ||
+          normalized == 'PROCESSED') {
         _captureMode =
             normalized;
       }
     }
 
     _frameCount++;
-    _lastFrameBytes =
-        bytes.length;
-
     _updateFps();
 
     _readCommonMetadata(data);
     _handleSensorMetadata(data);
 
-    _link =
-        CameraLink.ready;
+    _link = CameraLink.ready;
 
-    _status =
-        '${band.title} READY';
+    _status = isRawPreview
+        ? 'RAW READY'
+        : isNdviPreview
+            ? 'NDVI READY'
+            : '${effectiveBand.title} READY';
 
     _handleNativeRebuild();
   }
@@ -1334,9 +1454,13 @@ class _LandCamAppState extends State<LandCamApp> {
 
     if (
         data['dualOpticalRoi'] == true ||
-        data['realNirAvailable'] == true
+        data['realNirAvailable'] == true ||
+        data['unifiedSpectralCrop'] == true
     ) {
       _dualOpticalRoiAvailable =
+          true;
+
+      _unifiedSpectralCropAvailable =
           true;
 
       _supportedBands.add(
@@ -1348,9 +1472,25 @@ class _LandCamAppState extends State<LandCamApp> {
       _dualOpticalRoiAvailable =
           false;
 
+      _unifiedSpectralCropAvailable =
+          data['unifiedSpectralCrop'] == true;
+
       _supportedBands.remove(
         SpectralBand.nir,
       );
+    }
+
+    final statusRegistrationModel =
+        data['registrationModel']?.toString();
+
+    if (statusRegistrationModel != null &&
+        statusRegistrationModel.isNotEmpty) {
+      _registrationModel =
+          statusRegistrationModel;
+    }
+
+    if (data['registrationApplied'] == true) {
+      _registrationApplied = true;
     }
 
     _cameraHost =
@@ -1385,8 +1525,13 @@ class _LandCamAppState extends State<LandCamApp> {
     _nirActivating =
         false;
     _ndviEnabled = false;
+    _previewMode = 'PROCESSED';
     _ndvi = null;
     _ndviValidPixels = 0;
+    _ndviNirGain = 1.0;
+    _unifiedSpectralCropAvailable = false;
+    _registrationApplied = false;
+    _registrationModel = '';
     if (
         _band == SpectralBand.nir
     ) {
@@ -1420,8 +1565,13 @@ class _LandCamAppState extends State<LandCamApp> {
     _nirActivating =
         false;
     _ndviEnabled = false;
+    _previewMode = 'PROCESSED';
     _ndvi = null;
     _ndviValidPixels = 0;
+    _ndviNirGain = 1.0;
+    _unifiedSpectralCropAvailable = false;
+    _registrationApplied = false;
+    _registrationModel = '';
     _clearFrames();
     _handleNativeRebuild();
   }
@@ -1468,7 +1618,13 @@ class _LandCamAppState extends State<LandCamApp> {
 
     _ndvi = null;
     _ndviValidPixels = 0;
+    _ndviNirGain = 1.0;
     _ndviEnabled = false;
+    _previewMode = 'PROCESSED';
+    _unifiedSpectralCropAvailable =
+        false;
+    _registrationApplied = false;
+    _registrationModel = '';
     _resetMetadata();
     _clearFrames();
 
@@ -1480,7 +1636,6 @@ class _LandCamAppState extends State<LandCamApp> {
     _clearActiveFrame();
 
     _frameCount = 0;
-    _lastFrameBytes = 0;
 
     _ndvi = null;
     _ndviValidPixels = 0;
@@ -1505,10 +1660,6 @@ class _LandCamAppState extends State<LandCamApp> {
     _frameWidth = null;
     _frameHeight = null;
     _codec = null;
-    _iso = null;
-    _shutter = null;
-    _aperture = null;
-    _bayerPattern = null;
     _bitDepth = null;
     _measuredFps = null;
     _previousFrameAt = null;
@@ -1837,8 +1988,20 @@ class _LandCamAppState extends State<LandCamApp> {
 
     setState(() {
       _ndviEnabled = next;
+      _previewMode =
+          next ? 'NDVI' : 'PROCESSED';
       _ndvi = null;
       _ndviValidPixels = 0;
+      _ndviNirGain = 1.0;
+      _sourceLabel =
+          next
+              ? 'UNIFIED NDVI CROP'
+              : 'UNIFIED SPECTRAL CROP';
+      if (next) {
+        _clearActiveFrame(
+          resetTiming: false,
+        );
+      }
       _status =
           next
               ? 'NDVI ENABLED'
@@ -1948,7 +2111,7 @@ class _LandCamAppState extends State<LandCamApp> {
       backgroundColor:
           Colors.transparent,
       barrierColor:
-          Colors.black.withOpacity(.78),
+          Colors.black.withValues(alpha: .78),
       builder: (
         sheetContext,
       ) =>
@@ -2001,7 +2164,7 @@ class _LandCamAppState extends State<LandCamApp> {
       backgroundColor:
           Colors.transparent,
       barrierColor:
-          Colors.black.withOpacity(.78),
+          Colors.black.withValues(alpha: .78),
       builder: (
         sheetContext,
       ) =>
@@ -2110,9 +2273,11 @@ class _LandCamAppState extends State<LandCamApp> {
     }
 
     final messenger =
-        ScaffoldMessenger.of(
-      context,
-    );
+        _messengerKey.currentState;
+
+    if (messenger == null) {
+      return;
+    }
 
     messenger
       ..hideCurrentSnackBar()
@@ -2211,6 +2376,8 @@ class _LandCamAppState extends State<LandCamApp> {
     return MaterialApp(
       navigatorKey:
           _navigatorKey,
+      scaffoldMessengerKey:
+          _messengerKey,
       debugShowCheckedModeBanner:
           false,
       title: 'LANDCAM',
@@ -2786,7 +2953,7 @@ class _PortraitHeader extends StatelessWidget {
                         TextStyle(
                       color:
                           secondary
-                              .withOpacity(
+                              .withValues(alpha: 
                         .8,
                       ),
                       fontFamily:
@@ -3313,7 +3480,7 @@ class _InlineControlButton
               color:
                   active
                       ? controlAccent
-                          .withOpacity(
+                          .withValues(alpha: 
                           dark
                               ? .14
                               : .09,
@@ -3480,7 +3647,7 @@ class _RailBandButton
                         ? _spectralAccent(
                             dark,
                             band,
-                          ).withOpacity(
+                          ).withValues(alpha: 
                             dark
                                 ? .14
                                 : .09,
@@ -3561,7 +3728,6 @@ class _RailActionButton
     required this.onTap,
     this.active = false,
     this.enabled = true,
-    this.busy = false,
   });
 
   final bool dark;
@@ -3570,7 +3736,6 @@ class _RailActionButton
   final VoidCallback onTap;
   final bool active;
   final bool enabled;
-  final bool busy;
 
   @override
   Widget build(
@@ -3613,7 +3778,7 @@ class _RailActionButton
                     active
                         ? _uiAccent(
                             dark,
-                          ).withOpacity(
+                          ).withValues(alpha: 
                             dark
                                 ? .14
                                 : .09,
@@ -3645,35 +3810,19 @@ class _RailActionButton
                     MainAxisAlignment
                         .center,
                 children: [
-                  busy
-                      ? SizedBox(
-                          width:
-                              15,
-                          height:
-                              15,
-                          child:
-                              CircularProgressIndicator(
-                            strokeWidth:
-                                1.6,
-                            color:
-                                _uiAccent(
-                              dark,
-                            ),
-                          ),
-                        )
-                      : Icon(
-                          icon,
-                          size:
-                              15,
-                          color:
-                              active
-                                  ? _uiAccent(
-                                      dark,
-                                    )
-                                  : _uiForeground(
-                                      dark,
-                                    ),
-                        ),
+                  Icon(
+                    icon,
+                    size:
+                        15,
+                    color:
+                        active
+                            ? _uiAccent(
+                                dark,
+                              )
+                            : _uiForeground(
+                                dark,
+                              ),
+                  ),
                   const SizedBox(
                     height: 3,
                   ),
@@ -3783,7 +3932,7 @@ class _CameraPreview
                   ready
                       ? _uiAccent(
                           dark,
-                        ).withOpacity(
+                        ).withValues(alpha: 
                           .72,
                         )
                       : _uiBorderStrong(
@@ -3802,7 +3951,7 @@ class _CameraPreview
                   color:
                       _uiAccent(
                     dark,
-                  ).withOpacity(
+                  ).withValues(alpha: 
                     .10,
                   ),
                   blurRadius:
@@ -3835,6 +3984,8 @@ class _CameraPreview
                     _ProcessedImage(
                       bytes:
                           bytes,
+                      fit:
+                          BoxFit.contain,
                     )
                   else
                     _PreviewEmpty(
@@ -3866,14 +4017,26 @@ class _CameraPreview
                       children: [
                         _PreviewTag(
                           text:
-                              currentBand.title,
+                              ndviEnabled
+                                  ? 'NDVI'
+                                  : captureMode == 'RAW'
+                                      ? 'RAW'
+                                      : currentBand.title,
                           active:
                               true,
                           accent:
-                              _spectralAccent(
-                            dark,
-                            currentBand,
-                          ),
+                              ndviEnabled
+                                  ? _uiAccent(dark)
+                                  : captureMode == 'RAW'
+                                      ? _spectralAccent(
+                                          dark,
+                                          SpectralBand
+                                              .nir,
+                                        )
+                                      : _spectralAccent(
+                                          dark,
+                                          currentBand,
+                                        ),
                         ),
                         const SizedBox(
                           width:
@@ -3939,6 +4102,21 @@ class _CameraPreview
                       ],
                     ),
                   ),
+
+                  if (ndviEnabled)
+                    Positioned(
+                      top:
+                          42,
+                      left:
+                          10,
+                      child:
+                          _NdviLegend(
+                        dark:
+                            dark,
+                        value:
+                            ndvi,
+                      ),
+                    ),
 
                   Positioned(
                     left:
@@ -4052,58 +4230,173 @@ class _CameraPreview
   }
 }
 
+
+
+class _NdviLegend extends StatelessWidget {
+  const _NdviLegend({
+    required this.dark,
+    required this.value,
+  });
+
+  final bool dark;
+  final double? value;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: .68),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: _uiBorderStrong(dark),
+          width: 1,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(7, 5, 7, 5),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'NDVI',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 8,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.1,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Container(
+              width: 122,
+              height: 8,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(3),
+                gradient: const LinearGradient(
+                  colors: [
+                    Color(0xFFD7191C),
+                    Color(0xFFFF7F00),
+                    Color(0xFFFFE600),
+                    Color(0xFF8BC34A),
+                    Color(0xFF15803D),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 2),
+            SizedBox(
+              width: 122,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _label('-1.0'),
+                  _label('0.0'),
+                  _label('+1.0'),
+                ],
+              ),
+            ),
+            if (value != null) ...[
+              const SizedBox(height: 2),
+              Text(
+                'CURRENT ${value!.toStringAsFixed(3)}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 8,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: .8,
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _label(String text) => Text(
+        text,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 7,
+          fontWeight: FontWeight.w700,
+        ),
+      );
+}
+
 class _ProcessedImage
     extends StatelessWidget {
   const _ProcessedImage({
     required this.bytes,
+    required this.fit,
   });
 
   final Uint8List bytes;
+  final BoxFit fit;
 
   @override
   Widget build(
     BuildContext context,
   ) =>
-      Image.memory(
-        bytes,
-        fit:
-            BoxFit.cover,
-        alignment:
-            Alignment.center,
-        gaplessPlayback:
-            true,
-        filterQuality:
-            FilterQuality.medium,
-        isAntiAlias:
-            true,
-        errorBuilder:
-            (
-          _,
-          __,
-          ___,
-        ) =>
-            Center(
-          child:
-              Text(
-            'FRAME DECODE ERROR',
-            style:
-                TextStyle(
-              color:
-                  _uiAccent(
-                Theme.of(
+      LayoutBuilder(
+        builder: (
+          context,
+          constraints,
+        ) {
+          final dpr =
+              MediaQuery.devicePixelRatioOf(
+            context,
+          );
+
+          final maxWidth =
+              constraints.maxWidth.isFinite
+                  ? constraints.maxWidth
+                  : MediaQuery.sizeOf(
+                      context,
+                    ).shortestSide;
+
+          final targetCacheWidth =
+              (maxWidth * dpr * 1.15)
+                  .round()
+                  .clamp(
+                    320,
+                    2048,
+                  )
+                  .toInt();
+
+          return Image.memory(
+            bytes,
+            fit: fit,
+            alignment: Alignment.center,
+            gaplessPlayback: true,
+            filterQuality: FilterQuality.medium,
+            isAntiAlias: true,
+            cacheWidth: targetCacheWidth,
+            errorBuilder:
+                (
+                  _,
+                  _,
+                  _,
+                ) =>
+                    Center(
+                  child: Text(
+                    'FRAME DECODE ERROR',
+                    style: TextStyle(
+                      color: _uiAccent(
+                        Theme.of(
                           context,
                         ).brightness ==
-                        Brightness.dark,
-              ),
-              fontWeight:
-                  FontWeight.w800,
-              fontSize:
-                  10,
-              letterSpacing:
-                  1,
-            ),
-          ),
-        ),
+                            Brightness.dark,
+                      ),
+                      fontWeight:
+                          FontWeight.w800,
+                      fontSize: 10,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ),
+          );
+        },
       );
 }
 
@@ -4423,7 +4716,7 @@ class _MonoBrandMark
             color:
                 _uiAccent(
               dark,
-            ).withOpacity(
+            ).withValues(alpha: 
               .75,
             ),
           ),
@@ -4492,7 +4785,7 @@ class _IconButton
                       active
                           ? _uiAccent(
                               dark,
-                            ).withOpacity(
+                            ).withValues(alpha: 
                               dark
                                   ? .14
                                   : .09,
@@ -4587,7 +4880,7 @@ class _StatusIndicator
                 ? [
                     BoxShadow(
                       color:
-                          color.withOpacity(
+                          color.withValues(alpha: 
                         .35,
                       ),
                       blurRadius:
@@ -4665,7 +4958,7 @@ class _ShutterButton
               border:
                   Border.all(
                 color:
-                    accent.withOpacity(
+                    accent.withValues(alpha: 
                   .9,
                 ),
                 width:
@@ -4676,7 +4969,7 @@ class _ShutterButton
                       ? [
                           BoxShadow(
                             color:
-                                accent.withOpacity(
+                                accent.withValues(alpha: 
                               .14,
                             ),
                             blurRadius:
@@ -4749,7 +5042,7 @@ class _PreviewTag
         color:
             active
                 ? tagAccent
-                    .withOpacity(
+                    .withValues(alpha: 
                     .90,
                   )
                 : const Color(
@@ -4761,7 +5054,7 @@ class _PreviewTag
               active
                   ? tagAccent
                   : Colors.white
-                      .withOpacity(
+                      .withValues(alpha: 
                       .18,
                     ),
         ),
@@ -4875,7 +5168,7 @@ class _SettingsSheet
                     decoration:
                         BoxDecoration(
                       color:
-                          foreground.withOpacity(
+                          foreground.withValues(alpha: 
                         .75,
                       ),
                       borderRadius:
@@ -5098,7 +5391,7 @@ class _SettingsTile
                   active
                       ? _uiAccent(
                           dark,
-                        ).withOpacity(
+                        ).withValues(alpha: 
                           dark
                               ? .12
                               : .08,
@@ -5534,14 +5827,16 @@ class _ConnectionSheet
                             supportsAutofocus
                                 ? 'CONTINUOUS'
                                 : 'NO',
-                        'DUAL OPTICAL ROI':
+                        'UNIFIED CROP':
                             dualOpticalRoiAvailable
                                 ? 'YES'
                                 : 'NO',
                         'RGB SOURCE':
-                            'LEFT',
+                            'LEFT -> UNIFIED',
                         'NIR SOURCE':
-                            'RIGHT',
+                            'RIGHT -> UNIFIED',
+                        'REGISTRATION':
+                            'CENTERED AFFINE',
                       },
                     ),
                     const SizedBox(
@@ -5840,7 +6135,7 @@ class _ConnectionInfoCard
               color:
                   _uiAccent(
                 dark,
-              ).withOpacity(
+              ).withValues(alpha: 
                 .70,
               ),
               borderRadius:
@@ -6027,7 +6322,7 @@ class _SheetButton
                 danger
                     ? _uiDanger(
                         dark,
-                      ).withOpacity(
+                      ).withValues(alpha: 
                         .70,
                       )
                     : _uiBorderStrong(
@@ -6146,15 +6441,15 @@ ThemeData _buildTheme(
     fontFamily:
         'Roboto',
     dividerColor:
-        foreground.withOpacity(
+        foreground.withValues(alpha: 
       .10,
     ),
     splashColor:
-        accent.withOpacity(
+        accent.withValues(alpha: 
       .10,
     ),
     highlightColor:
-        accent.withOpacity(
+        accent.withValues(alpha: 
       .05,
     ),
     snackBarTheme:
@@ -6354,7 +6649,7 @@ Color _uiSecondary(
           : const Color(
               0xFF2D3831,
             )
-    ).withOpacity(
+    ).withValues(alpha: 
       .68,
     );
 
@@ -6369,7 +6664,7 @@ Color _uiMuted(
           : const Color(
               0xFF56635B,
             )
-    ).withOpacity(
+    ).withValues(alpha: 
       .70,
     );
 
@@ -6384,7 +6679,7 @@ Color _uiBorder(
           : const Color(
               0xFF35423A,
             )
-    ).withOpacity(
+    ).withValues(alpha: 
       .14,
     );
 
@@ -6399,7 +6694,7 @@ Color _uiBorderStrong(
           : const Color(
               0xFF35423A,
             )
-    ).withOpacity(
+    ).withValues(alpha: 
       .24,
     );
 
