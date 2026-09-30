@@ -92,6 +92,19 @@ class LandCamViewModel extends ChangeNotifier {
 
   bool _disposed = false;
 
+  // Prevent overlapping spectral/NDVI mode commands. Native camera
+  // switching is asynchronous, so rapid consecutive requests must be
+  // serialized on the Flutter side.
+  bool _modeOperationInFlight = false;
+
+  // Preview ownership / stale-frame protection.
+  //
+  // Native emits a previewGeneration with every preview frame. The floor is
+  // advanced only after a native mode command has been accepted, so frames
+  // produced by the previous mode cannot become the new visible frame.
+  int _previewGenerationFloor = 0;
+  int? _lastCommittedPreviewGeneration;
+
   // ---------------------------------------------------------------------------
   // Public state
   // ---------------------------------------------------------------------------
@@ -1096,9 +1109,11 @@ class LandCamViewModel extends ChangeNotifier {
       _sourceLabel =
           'UNIFIED NDVI CROP';
 
-      _clearActiveFrame(
-        resetTiming: false,
-      );
+      // IMPORTANT:
+      //
+      // Do NOT clear _activeFrame here. Mode changes must hold the last
+      // successfully rendered frame until the first valid frame belonging to
+      // the new mode arrives. This prevents a blank flash during switching.
     }
   }
 
@@ -1255,10 +1270,8 @@ class LandCamViewModel extends ChangeNotifier {
     _nirActivating =
         band == SpectralBand.nir;
 
-    _clearActiveFrame(
-      resetTiming: false,
-    );
-
+    // Keep the last committed frame visible while the newly requested
+    // spectral mode acquires its first valid frame.
     _status =
         band == SpectralBand.nir
             ? 'NIR ACQUIRING'
@@ -1284,6 +1297,29 @@ class LandCamViewModel extends ChangeNotifier {
 
     final isNdviPreview =
         previewMode == 'NDVI';
+
+    /*
+     * A mode command is transactional from the Flutter side. While it is in
+     * flight, do not commit ANY preview frame. The native engine is already
+     * invalidating its own generation; waiting for the command result here
+     * prevents a frame from the previous mode winning a tiny race window.
+     */
+    if (_modeOperationInFlight) {
+      return;
+    }
+
+    /*
+     * Hard mode ownership:
+     *
+     * NDVI ON  -> only NDVI frames are legal.
+     * NDVI OFF -> only RAW/PROCESSED spectral frames are legal.
+     *
+     * Critically, a stale NDVI frame is never allowed to turn NDVI back on,
+     * and a stale RGB frame is never allowed to turn NDVI off.
+     */
+    if (isNdviPreview != _ndviEnabled) {
+      return;
+    }
 
     final band =
         _bandFromNativeName(
@@ -1311,6 +1347,36 @@ class LandCamViewModel extends ChangeNotifier {
       return;
     }
 
+    /*
+     * GPU NDVI intentionally carries bytes=null because the image is rendered
+     * directly into the native/Flutter SurfaceTexture. Accept its metadata,
+     * but do NOT replace the byte-backed activeFrame with null.
+     */
+    final gpuTexture =
+        data['gpuTexture'] == true;
+
+    if (isNdviPreview &&
+        gpuTexture) {
+      if (!_acceptPreviewGeneration(data)) {
+        return;
+      }
+
+      _previewMode = 'NDVI';
+      _sourceLabel = 'UNIFIED NDVI CROP';
+      _link = CameraLink.ready;
+      _status = 'NDVI READY';
+
+      _readCommonMetadata(
+        data,
+      );
+
+      _handleSensorMetadata(
+        data,
+      );
+
+      return;
+    }
+
     final bytes =
         _toBytes(
       data['bytes'] ??
@@ -1319,6 +1385,15 @@ class LandCamViewModel extends ChangeNotifier {
 
     if (bytes == null ||
         bytes.isEmpty) {
+      return;
+    }
+
+    /*
+     * Do generation validation immediately before committing the bytes.
+     * Once accepted, the generation becomes the last visible generation and
+     * any older/out-of-order frame is rejected.
+     */
+    if (!_acceptPreviewGeneration(data)) {
       return;
     }
 
@@ -1377,7 +1452,6 @@ class LandCamViewModel extends ChangeNotifier {
     }
 
     if (isNdviPreview) {
-      _ndviEnabled = true;
       _previewMode = 'NDVI';
       _sourceLabel =
           'UNIFIED NDVI CROP';
@@ -1479,9 +1553,9 @@ class LandCamViewModel extends ChangeNotifier {
               ? 'NDVI'
               : 'PROCESSED';
 
-      _clearActiveFrame(
-        resetTiming: false,
-      );
+      // Keep the last frame visible while native acquires the frame for the
+      // new mode. The preview handler will atomically replace it once the
+      // new mode's frame is valid.
     }
 
     _protocol =
@@ -1610,29 +1684,19 @@ class LandCamViewModel extends ChangeNotifier {
   Future<String?> selectBand(
     SpectralBand band,
   ) async {
-    if (_disposed) {
+    if (_disposed ||
+        _modeOperationInFlight) {
       return null;
     }
 
-    // IMPORTANT:
-    // Jangan melakukan early return hanya karena _band sama
-    // ketika NDVI sedang aktif.
-    //
-    // Contoh:
-    // _band == NIR + _ndviEnabled == true
-    //
-    // Menekan NIR harus tetap mematikan NDVI.
     if (!_ndviEnabled &&
         band == _band &&
         hasFrame) {
       return null;
     }
 
-    if (!isBandEnabled(
-      band,
-    )) {
-      if (band ==
-              SpectralBand.nir &&
+    if (!isBandEnabled(band)) {
+      if (band == SpectralBand.nir &&
           !_dualOpticalRoiAvailable) {
         return 'NIR OPTICAL ROI NOT AVAILABLE';
       }
@@ -1640,19 +1704,30 @@ class LandCamViewModel extends ChangeNotifier {
       return null;
     }
 
-    HapticFeedback.selectionClick();
+    _modeOperationInFlight = true;
 
-    // -------------------------------------------------------------------------
-    // SINGLE SELECT:
-    // Selecting RGB/R/G/B/NIR automatically disables NDVI.
-    // -------------------------------------------------------------------------
+    final previousBand =
+        _band;
+    final previousSourceLabel =
+        _sourceLabel;
+    final wasNdviEnabled =
+        _ndviEnabled;
 
-    if (_ndviEnabled) {
-      try {
+    try {
+      HapticFeedback.selectionClick();
+
+      /*
+       * -----------------------------------------------------------------------
+       * PHASE A — leave NDVI, if necessary.
+       *
+       * We keep the last visible NDVI frame on screen while native performs
+       * the switch. No preview event is allowed to commit while this operation
+       * is in flight.
+       * -----------------------------------------------------------------------
+       */
+      if (wasNdviEnabled) {
         final accepted =
-            await NativeBridge.setNdviEnabled(
-          false,
-        );
+            await NativeBridge.setNdviEnabled(false);
 
         if (_disposed) {
           return null;
@@ -1668,62 +1743,41 @@ class LandCamViewModel extends ChangeNotifier {
           return 'NDVI MODE REJECTED';
         }
 
-        // Native accepted the mode switch.
-        // Update Flutter state immediately so the UI can never show
-        // both NDVI and a spectral band as active.
+        _advancePreviewGenerationFloor();
+
         _ndviEnabled = false;
-
-        _previewMode =
-            'PROCESSED';
-
+        _previewMode = 'PROCESSED';
         _ndvi = null;
         _ndviValidPixels = 0;
         _ndviNirGain = 1.0;
-
         _sourceLabel =
             'UNIFIED SPECTRAL CROP';
-      } catch (e) {
-        if (_disposed) {
-          return null;
-        }
-
-        _addLog(
-          'ERROR',
-          'Failed to disable NDVI '
-          'before band switch: $e',
-        );
-
-        return 'NDVI MODE ERROR';
       }
 
+      /*
+       * -----------------------------------------------------------------------
+       * PHASE B — request exactly one spectral band.
+       *
+       * Do NOT clear _activeFrame. The previous valid image stays on screen
+       * until this new band actually produces its first frame.
+       * -----------------------------------------------------------------------
+       */
+      _band = band;
+
+      _sourceLabel =
+          band.sourceLabel;
+
+      _previewMode =
+          'PROCESSED';
+
+      _nirActivating =
+          band == SpectralBand.nir;
+
+      _status =
+          '${band.title} ACQUIRING';
+
       _notify();
-    }
 
-    // -------------------------------------------------------------------------
-    // Activate exactly one spectral band.
-    // -------------------------------------------------------------------------
-
-    _band = band;
-
-    _sourceLabel =
-        band.sourceLabel;
-
-    _previewMode =
-        'PROCESSED';
-
-    _nirActivating =
-        band == SpectralBand.nir;
-
-    _clearActiveFrame(
-      resetTiming: false,
-    );
-
-    _status =
-        '${band.title} ACQUIRING';
-
-    _notify();
-
-    try {
       final ok =
           await NativeBridge.setSpectralBand(
         band,
@@ -1734,19 +1788,59 @@ class LandCamViewModel extends ChangeNotifier {
       }
 
       if (!ok) {
+        /*
+         * Roll the Dart-side band state back to the last known good spectral
+         * selection. If the previous mode was NDVI, attempt to restore it so
+         * native and Flutter do not remain split-brain after a rejected band
+         * request.
+         */
+        _band =
+            previousBand;
+
+        _sourceLabel =
+            wasNdviEnabled
+                ? 'UNIFIED NDVI CROP'
+                : previousSourceLabel;
+
+        _previewMode =
+            wasNdviEnabled
+                ? 'NDVI'
+                : 'PROCESSED';
+
         _nirActivating = false;
 
-        _clearActiveFrame(
-          resetTiming: false,
-        );
+        if (wasNdviEnabled) {
+          final restored =
+              await NativeBridge.setNdviEnabled(true);
 
-        _status =
-            '${band.title} REQUEST REJECTED';
+          if (!_disposed &&
+              restored) {
+            _advancePreviewGenerationFloor();
+
+            _ndviEnabled = true;
+            _previewMode = 'NDVI';
+            _sourceLabel =
+                'UNIFIED NDVI CROP';
+            _status = 'NDVI RESTORED';
+          } else if (!_disposed) {
+            _ndviEnabled = false;
+            _previewMode = 'PROCESSED';
+            _sourceLabel =
+                previousSourceLabel;
+            _status =
+                '${band.title} REQUEST REJECTED';
+          }
+        } else {
+          _status =
+              '${band.title} REQUEST REJECTED';
+        }
 
         _notify();
 
         return '${band.title} REQUEST REJECTED';
       }
+
+      _advancePreviewGenerationFloor();
 
       return null;
     } catch (e) {
@@ -1754,14 +1848,57 @@ class LandCamViewModel extends ChangeNotifier {
         return null;
       }
 
+      _band =
+          previousBand;
+
+      _sourceLabel =
+          wasNdviEnabled
+              ? 'UNIFIED NDVI CROP'
+              : previousSourceLabel;
+
+      _previewMode =
+          wasNdviEnabled
+              ? 'NDVI'
+              : 'PROCESSED';
+
       _nirActivating = false;
 
-      _clearActiveFrame(
-        resetTiming: false,
-      );
+      if (wasNdviEnabled) {
+        try {
+          final restored =
+              await NativeBridge.setNdviEnabled(true);
 
-      _status =
-          '${band.title} ERROR';
+          if (!_disposed &&
+              restored) {
+            _advancePreviewGenerationFloor();
+
+            _ndviEnabled = true;
+            _previewMode = 'NDVI';
+            _sourceLabel =
+                'UNIFIED NDVI CROP';
+            _status = 'NDVI RESTORED';
+          } else if (!_disposed) {
+            _ndviEnabled = false;
+            _previewMode = 'PROCESSED';
+            _sourceLabel =
+                previousSourceLabel;
+            _status =
+                '${band.title} ERROR';
+          }
+        } catch (_) {
+          if (!_disposed) {
+            _ndviEnabled = false;
+            _previewMode = 'PROCESSED';
+            _sourceLabel =
+                previousSourceLabel;
+            _status =
+                '${band.title} ERROR';
+          }
+        }
+      } else {
+        _status =
+            '${band.title} ERROR';
+      }
 
       _addLog(
         'ERROR',
@@ -1772,6 +1909,9 @@ class LandCamViewModel extends ChangeNotifier {
       _notify();
 
       return '${band.title} ERROR';
+    } finally {
+      _modeOperationInFlight = false;
+      _notify();
     }
   }
 
@@ -1826,7 +1966,8 @@ class LandCamViewModel extends ChangeNotifier {
   ///
   /// Returns a user-facing message when the request is rejected.
   Future<String?> toggleNdvi() async {
-    if (_disposed) {
+    if (_disposed ||
+        _modeOperationInFlight) {
       return null;
     }
 
@@ -1835,66 +1976,107 @@ class LandCamViewModel extends ChangeNotifier {
       return 'NDVI REQUIRES RGB + NIR OPTICAL ROI';
     }
 
+    _modeOperationInFlight = true;
+
     final next =
         !_ndviEnabled;
 
-    final accepted =
-        await NativeBridge.setNdviEnabled(
-      next,
-    );
+    try {
+      /*
+       * Native owns the actual mode transition. While the command is in
+       * flight, frame events are intentionally ignored by
+       * _handleProcessedFrameEvent(). This creates an atomic presentation
+       * boundary between the old and new preview modes.
+       */
+      final accepted =
+          await NativeBridge.setNdviEnabled(
+        next,
+      );
 
-    if (_disposed) {
+      if (_disposed) {
+        return null;
+      }
+
+      if (!accepted) {
+        _addLog(
+          'ERROR',
+          'Native NDVI mode change rejected',
+        );
+
+        return 'NDVI MODE REJECTED';
+      }
+
+      _advancePreviewGenerationFloor();
+
+      HapticFeedback.selectionClick();
+
+      _ndviEnabled =
+          next;
+
+      _previewMode =
+          next
+              ? 'NDVI'
+              : 'PROCESSED';
+
+      _ndvi = null;
+      _ndviValidPixels = 0;
+      _ndviNirGain = 1.0;
+
+      _sourceLabel =
+          next
+              ? 'UNIFIED NDVI CROP'
+              : 'UNIFIED SPECTRAL CROP';
+
+      /*
+       * IMPORTANT:
+       *
+       * Never clear _activeFrame here.
+       *
+       * ON:
+       *   keep the previous frame until the first real NDVI frame arrives.
+       *
+       * OFF:
+       *   keep the last NDVI frame until the first valid spectral frame
+       *   arrives.
+       *
+       * This completely removes the blank-flash/old-frame race at the
+       * presentation boundary.
+       */
+
+      _status =
+          next
+              ? 'NDVI ENABLED'
+              : 'NDVI DISABLED';
+
+      _notify();
+
+      _addLog(
+        'INFO',
+        next
+            ? 'Realtime NDVI enabled'
+            : 'Realtime NDVI disabled',
+      );
+
       return null;
-    }
+    } catch (e) {
+      if (_disposed) {
+        return null;
+      }
 
-    if (!accepted) {
       _addLog(
         'ERROR',
-        'Native NDVI mode change rejected',
+        'NDVI mode failed: $e',
       );
 
-      return 'NDVI MODE REJECTED';
+      _notify();
+
+      return 'NDVI MODE ERROR';
+    } finally {
+      _modeOperationInFlight =
+          false;
+
+      _notify();
     }
-
-    HapticFeedback.selectionClick();
-
-    _ndviEnabled = next;
-
-    _previewMode =
-        next
-            ? 'NDVI'
-            : 'PROCESSED';
-
-    _ndvi = null;
-    _ndviValidPixels = 0;
-    _ndviNirGain = 1.0;
-
-    _sourceLabel =
-        next
-            ? 'UNIFIED NDVI CROP'
-            : 'UNIFIED SPECTRAL CROP';
-
-    if (next) {
-      _clearActiveFrame(
-        resetTiming: false,
-      );
-    }
-
-    _status =
-        next
-            ? 'NDVI ENABLED'
-            : 'NDVI DISABLED';
-
-    _notify();
-
-    _addLog(
-      'INFO',
-      next
-          ? 'Realtime NDVI enabled'
-          : 'Realtime NDVI disabled',
-    );
-
-    return null;
   }
 
   /// Toggles RAW / PROCESSED capture mode.
@@ -2055,6 +2237,10 @@ class LandCamViewModel extends ChangeNotifier {
   void _setConnectionError(
     String status,
   ) {
+    // Invalidate the presentation boundary before clearing the disconnected
+    // frame so late events from the old session cannot become visible.
+    _advancePreviewGenerationFloor();
+
     _link =
         CameraLink.error;
 
@@ -2090,6 +2276,10 @@ class LandCamViewModel extends ChangeNotifier {
   }
 
   void _resetCameraState() {
+    // Any frame arriving from the previous camera/session becomes stale.
+    _advancePreviewGenerationFloor();
+    _lastCommittedPreviewGeneration = null;
+
     _capturing =
         false;
 
@@ -2211,6 +2401,64 @@ class LandCamViewModel extends ChangeNotifier {
 
     _previousFrameAt =
         null;
+  }
+
+  /// Advances the local minimum preview generation after a native mode
+  /// command has been accepted.
+  ///
+  /// The native engine owns the real generation counter. Flutter therefore
+  /// treats this value only as a LOWER BOUND. If native performs additional
+  /// internal invalidations, a newer generation is still accepted.
+  void _advancePreviewGenerationFloor() {
+    final next =
+        _previewGenerationFloor + 1;
+
+    final lastCommitted =
+        _lastCommittedPreviewGeneration;
+
+    _previewGenerationFloor =
+        lastCommitted != null &&
+                lastCommitted + 1 > next
+            ? lastCommitted + 1
+            : next;
+  }
+
+  /// Validates the generation attached by native to a preview event.
+  ///
+  /// Old/out-of-order frames are rejected. Missing generation metadata is
+  /// tolerated for backward compatibility, while the strict mode ownership
+  /// checks in _handleProcessedFrameEvent still remain active.
+  bool _acceptPreviewGeneration(
+    Map data,
+  ) {
+    final generation =
+        _parseInt(
+      data['previewGeneration'] ??
+          data['generation'] ??
+          data['modeGeneration'],
+    );
+
+    if (generation == null) {
+      return true;
+    }
+
+    if (generation <
+        _previewGenerationFloor) {
+      return false;
+    }
+
+    final lastCommitted =
+        _lastCommittedPreviewGeneration;
+
+    if (lastCommitted != null &&
+        generation < lastCommitted) {
+      return false;
+    }
+
+    _lastCommittedPreviewGeneration =
+        generation;
+
+    return true;
   }
 
   SpectralBand? _bandFromNativeName(

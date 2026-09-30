@@ -11,7 +11,15 @@ import '../models/landcam_models.dart';
 ///
 /// Native remains responsible for camera discovery, connection,
 /// spectral processing, unified crop generation, registration,
-/// realtime NDVI calculation, autofocus, and capture processing.
+/// realtime NDVI calculation, autofocus, GPU preview rendering,
+/// and capture processing.
+///
+/// Design rule:
+/// - Flutter is the control/state plane.
+/// - Android is the camera/data/pixel plane.
+/// - The bridge must never throw a platform/plugin error into the UI
+///   layer for a normal bridge failure. Command methods return a safe
+///   fallback instead.
 class NativeBridge {
   NativeBridge();
 
@@ -24,155 +32,204 @@ class NativeBridge {
       EventChannel('landcam/events');
 
   /// Realtime event stream emitted by Android.
+  ///
+  /// This remains a broadcast stream so ViewModel/UI listeners do not need
+  /// to coordinate ownership of the native event source.
   static Stream<dynamic> get eventStream =>
       events.receiveBroadcastStream();
 
+  // ---------------------------------------------------------------------------
+  // Public camera / connection commands
+  // ---------------------------------------------------------------------------
+
   /// Initializes the native LANDCAM engine.
+  ///
+  /// A bridge failure returns false instead of propagating a
+  /// MissingPluginException / PlatformException into startup code.
   static Future<bool> initialize() async =>
-      (await methods.invokeMethod<bool>(
-        'initialize',
-      )) ??
-      false;
+      _invokeBool('initialize');
 
   /// Starts NFC listening/discovery.
   static Future<bool> startNfc() async =>
-      (await methods.invokeMethod<bool>(
-        'startNfc',
-      )) ??
-      false;
+      _invokeBool('startNfc');
 
   /// Attempts to reconnect using the last known Wi-Fi connection.
   static Future<bool> connectLastWifi() async =>
-      (await methods.invokeMethod<bool>(
-        'connectLastWifi',
-      )) ??
-      false;
+      _invokeBool('connectLastWifi');
 
   /// Probes the currently available network for the camera.
   static Future<bool> probeCurrentNetwork() async =>
-      (await methods.invokeMethod<bool>(
-        'probeCurrentNetwork',
-      )) ??
-      false;
+      _invokeBool('probeCurrentNetwork');
 
   /// Stops NFC listening.
+  ///
+  /// Kept as Future<void> for API compatibility with the existing
+  /// ViewModel/UI code.
   static Future<void> stopNfc() async =>
-      methods.invokeMethod<void>(
-        'stopNfc',
-      );
+      _invokeVoid('stopNfc');
 
   /// Requests a native live-view refresh.
   static Future<void> refreshLiveview() async =>
-      methods.invokeMethod<void>(
-        'refreshLiveview',
-      );
+      _invokeVoid('refreshLiveview');
 
   /// Requests image capture from the native camera engine.
   static Future<void> capture() async =>
-      methods.invokeMethod<void>(
-        'capture',
-      );
+      _invokeVoid('capture');
 
   /// Compatibility bridge for older native/UI callers.
   ///
   /// The current UI does not expose a manual autofocus button.
   static Future<void> autofocus() async =>
-      methods.invokeMethod<void>(
-        'autofocus',
-      );
+      _invokeVoid('autofocus');
+
+  // ---------------------------------------------------------------------------
+  // Spectral / preview mode
+  // ---------------------------------------------------------------------------
 
   /// Changes the active spectral acquisition band.
   ///
-  /// Returns false when the native side rejects the request or
-  /// the method is unavailable.
+  /// NDVI is deliberately not represented by [SpectralBand]. NDVI is a
+  /// separate preview/analysis mode controlled by [setNdviEnabled].
+  ///
+  /// Returns false when the native side rejects the request, the plugin is
+  /// unavailable, or the platform call otherwise fails.
   static Future<bool> setSpectralBand(
     SpectralBand band,
-  ) async {
-    try {
-      return (await methods.invokeMethod<bool>(
-            'setSpectralBand',
-            band.nativeName,
-          )) ??
-          false;
-    } on MissingPluginException {
-      return false;
-    } on PlatformException {
-      return false;
-    }
-  }
+  ) async =>
+      _invokeBool(
+        'setSpectralBand',
+        band.nativeName,
+      );
 
   /// Changes the capture mode.
   ///
   /// Expected values currently used by LANDCAM:
   /// - RAW
   /// - PROCESSED
+  ///
+  /// Invalid/unknown values are rejected locally so the native engine does
+  /// not receive malformed control commands.
   static Future<bool> setCaptureMode(
     String mode,
   ) async {
-    try {
-      return (await methods.invokeMethod<bool>(
-            'setCaptureMode',
-            mode,
-          )) ??
-          false;
-    } on MissingPluginException {
-      return false;
-    } on PlatformException {
+    final normalized = mode.trim().toUpperCase();
+
+    if (normalized != 'RAW' && normalized != 'PROCESSED') {
       return false;
     }
+
+    return _invokeBool(
+      'setCaptureMode',
+      normalized,
+    );
   }
 
   /// Returns the current native capture mode.
   ///
-  /// Falls back to PROCESSED when the native method is unavailable
-  /// or does not return a valid value.
+  /// Only RAW and PROCESSED are accepted from native. Anything else falls
+  /// back to PROCESSED so malformed/stale native state cannot leak upward.
   static Future<String> getCaptureMode() async {
-    try {
-      return (await methods.invokeMethod<String>(
-            'getCaptureMode',
-          )) ??
-          'PROCESSED';
-    } on MissingPluginException {
-      return 'PROCESSED';
-    } on PlatformException {
-      return 'PROCESSED';
+    final value = await _invokeString('getCaptureMode');
+    final normalized = value.trim().toUpperCase();
+
+    if (normalized == 'RAW' || normalized == 'PROCESSED') {
+      return normalized;
     }
+
+    return 'PROCESSED';
   }
 
   /// Enables or disables native realtime digital NDVI computation.
+  ///
+  /// NDVI is an exclusive preview mode on native:
+  ///
+  ///     NDVI = (NIR - R) / (NIR + R)
+  ///
+  /// The native renderer owns the pixel computation and the Flutter side
+  /// only controls the mode and consumes the resulting preview events.
   static Future<bool> setNdviEnabled(
     bool enabled,
-  ) async {
-    try {
-      return (await methods.invokeMethod<bool>(
-            'setNdviEnabled',
-            enabled,
-          )) ??
-          false;
-    } on MissingPluginException {
-      return false;
-    } on PlatformException {
-      return false;
-    }
-  }
+  ) async =>
+      _invokeBool(
+        'setNdviEnabled',
+        enabled,
+      );
 
   /// Returns whether native realtime NDVI is currently enabled.
-  static Future<bool> getNdviEnabled() async {
-    try {
-      return (await methods.invokeMethod<bool>(
-            'getNdviEnabled',
-          )) ??
-          false;
-    } on MissingPluginException {
-      return false;
-    } on PlatformException {
-      return false;
-    }
-  }
+  static Future<bool> getNdviEnabled() async =>
+      _invokeBool('getNdviEnabled');
 
   /// Disconnects the current camera/network session.
   static Future<void> disconnect() async =>
-      methods.invokeMethod<void>(
-        'disconnect',
+      _invokeVoid('disconnect');
+
+  // ---------------------------------------------------------------------------
+  // Safe platform-call helpers
+  // ---------------------------------------------------------------------------
+
+  /// Executes a native method expected to return bool.
+  ///
+  /// Platform/plugin failures are intentionally converted to a safe false
+  /// result. This keeps the Flutter control layer deterministic and prevents
+  /// transient Android bridge failures from escaping as uncaught exceptions.
+  static Future<bool> _invokeBool(
+    String method, [
+    Object? arguments,
+  ]) async {
+    try {
+      return await methods.invokeMethod<bool>(
+            method,
+            arguments,
+          ) ??
+          false;
+    } on MissingPluginException {
+      return false;
+    } on PlatformException {
+      return false;
+    } on Exception {
+      return false;
+    }
+  }
+
+  /// Executes a native method whose return value is irrelevant.
+  static Future<void> _invokeVoid(
+    String method, [
+    Object? arguments,
+  ]) async {
+    try {
+      await methods.invokeMethod<void>(
+        method,
+        arguments,
       );
+    } on MissingPluginException {
+      // Safe no-op: native method is unavailable in this build/runtime.
+    } on PlatformException {
+      // Safe no-op: native rejected the command.
+    } on Exception {
+      // Safe no-op: keep bridge failures out of the UI/control plane.
+    }
+  }
+
+  /// Executes a native method expected to return String.
+  ///
+  /// An empty string is used as the neutral failure value; public getters
+  /// validate the result before exposing it to the rest of the app.
+  static Future<String> _invokeString(
+    String method, [
+    Object? arguments,
+  ]) async {
+    try {
+      return await methods.invokeMethod<String>(
+            method,
+            arguments,
+          ) ??
+          '';
+    } on MissingPluginException {
+      return '';
+    } on PlatformException {
+      return '';
+    } on Exception {
+      return '';
+    }
+  }
 }

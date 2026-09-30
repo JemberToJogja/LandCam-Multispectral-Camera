@@ -4,7 +4,10 @@ import 'views/landcam_page.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const LandCamApp());
+
+  runApp(
+    const LandCamApp(),
+  );
 }
 
 /// Application root.
@@ -17,10 +20,14 @@ void main() {
 /// Camera logic, native communication, state management,
 /// and screen UI live outside this file.
 class LandCamApp extends StatelessWidget {
-  const LandCamApp({super.key});
+  const LandCamApp({
+    super.key,
+  });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+    BuildContext context,
+  ) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'LANDCAM',

@@ -1,3 +1,13 @@
+// → NDVI owns preview pipeline
+// → tidak pernah fall-through ke RGB/R/G/B/NIR
+// → frame NDVI belum waktunya = hold last frame
+// → GPU gagal = CPU session
+// → tidak GPU ↔ CPU bolak-balik
+// → mode change = increment previewGeneration
+// → frame lama = DROP
+// → stream worker juga tunduk pada generation
+// → RGB event lama tidak bisa takeover NDVI
+
 package com.example.landcam;
 
 import android.Manifest;
@@ -143,12 +153,13 @@ public class CameraEngine {
             70L;
 
     /**
-     * NDVI preview is intentionally rate-limited independently from the
+     * NDVI metadata/CPU-preview events are intentionally slower than the
+     * internal GPU render cadence. GPU output itself is kept on the surface.
      * camera stream.  A bounded latest-frame worker keeps the socket reader
      * responsive even when bitmap analysis briefly takes longer.
      */
     private static final long NDVI_PREVIEW_INTERVAL_MS =
-            33L;
+            40L;
 
     private static final int NDVI_HISTOGRAM_LOW_PERCENT = 2;
     private static final int NDVI_HISTOGRAM_HIGH_PERCENT = 98;
@@ -418,8 +429,34 @@ public class CameraEngine {
     private volatile boolean firstFrameSent =
             false;
 
-    private volatile long lastFrameEventAt =
+    /*
+     * Preview ownership.
+     *
+     * Every user-visible preview commit belongs to exactly one generation.
+     * A mode change invalidates all work from the previous generation.
+     * This prevents a stale RGB/spectral frame from arriving after NDVI
+     * has already become the active mode.
+     */
+    private final AtomicLong previewGeneration =
+            new AtomicLong(0L);
+
+    private volatile long lastNormalFrameEventAt =
             0L;
+
+    private volatile long lastNdviFrameEventAt =
+            0L;
+
+    private static final int NDVI_RENDERER_UNKNOWN = 0;
+    private static final int NDVI_RENDERER_GPU = 1;
+    private static final int NDVI_RENDERER_CPU = 2;
+
+    /*
+     * Renderer policy is sticky for the lifetime of one NDVI session.
+     * GPU failures do not make the renderer oscillate GPU -> CPU -> GPU.
+     * A surface that is temporarily unavailable does NOT force CPU mode.
+     */
+    private volatile int ndviRendererMode =
+            NDVI_RENDERER_UNKNOWN;
 
     private volatile String lastSsid;
 
@@ -703,8 +740,48 @@ public class CameraEngine {
             return false;
         }
 
+        /*
+         * Spectral selection and NDVI are mutually exclusive preview modes.
+         * A direct band command is authoritative: it turns NDVI off first.
+         *
+         * This is intentionally done here instead of in startup/lifecycle
+         * code, so normal camera initialization remains untouched.
+         */
+        if (ndviEnabled) {
+            ndviEnabled = false;
+
+            previewGeneration.incrementAndGet();
+
+            lastNdviEventAt = 0L;
+            lastNdviPreviewAt = 0L;
+            lastNdviComputedAt = 0L;
+            lastNdviValue = Double.NaN;
+            lastNdviValidPixels = 0;
+            lastNdviNirGain = 1.0f;
+            lastNdviCalibrationAt = 0L;
+            ndviRendererMode = NDVI_RENDERER_UNKNOWN;
+
+            HashMap<String, Object> ndviOff =
+                    new HashMap<>();
+            ndviOff.put("enabled", false);
+            ndviOff.put("metric", "RELATIVE_DIGITAL_NDVI");
+            ndviOff.put(
+                    "source",
+                    "RED_LEFT_OPTICAL_ROI_VS_NIR_RIGHT_OPTICAL_ROI"
+            );
+            ndviOff.put("reason", "SPECTRAL_BAND_SELECTED");
+            sendEvent("ndviModeChanged", ndviOff);
+        }
+
         activeSpectralBand = band;
         spectralGeneration.incrementAndGet();
+
+        /*
+         * Every spectral selection is a new preview generation. Any normal
+         * frame already in the processing queue must prove that it belongs to
+         * this generation before it can be published.
+         */
+        previewGeneration.incrementAndGet();
 
         HashMap<String, Object> data = new HashMap<>();
         data.put("band", band);
@@ -716,6 +793,7 @@ public class CameraEngine {
         );
         data.put("realSpectralFrame", true);
         data.put("unifiedSpectralCrop", true);
+        data.put("previewMode", "PROCESSED");
         sendEvent("spectralBandChanged", data);
 
         updateSystemStatus(
@@ -748,19 +826,46 @@ public class CameraEngine {
     }
 
     public boolean setNdviEnabled(boolean enabled) {
+
+        /*
+         * NDVI is only valid when the dual optical source exists. This is a
+         * native-side guard in addition to Flutter's capability guard.
+         */
+        if (enabled
+                && !realNirAvailable) {
+
+            sendEvent(
+                    "engineWarning",
+                    "NDVI REQUIRES RED + NIR OPTICAL ROI"
+            );
+            return false;
+        }
+
+        /*
+         * A mode change creates a new generation before any new preview can be
+         * committed. This invalidates all queued/stale spectral work.
+         */
         ndviEnabled = enabled;
-        lastNdviNirGain = 1.0f;
+        previewGeneration.incrementAndGet();
+
+        lastNdviEventAt = 0L;
+        lastNdviPreviewAt = 0L;
         lastNdviComputedAt = 0L;
+        lastNdviValue = Double.NaN;
+        lastNdviValidPixels = 0;
+        lastNdviNirGain = 1.0f;
         lastNdviCalibrationAt = 0L;
 
-        if (!enabled) {
-            lastNdviEventAt = 0L;
-            lastNdviPreviewAt = 0L;
-            lastNdviComputedAt = 0L;
-            lastNdviValue = Double.NaN;
-            lastNdviValidPixels = 0;
-            lastNdviNirGain = 1.0f;
-        }
+        /*
+         * A new NDVI session starts with renderer selection unknown. If the
+         * GPU surface is temporarily unavailable, CPU may be used for that
+         * frame without permanently locking the session. A real GPU failure
+         * is handled inside renderGpuNdvi() and then the session becomes CPU.
+         */
+        ndviRendererMode = NDVI_RENDERER_UNKNOWN;
+
+        lastNdviFrameEventAt = 0L;
+        lastNormalFrameEventAt = 0L;
 
         HashMap<String, Object> data = new HashMap<>();
         data.put("enabled", ndviEnabled);
@@ -1460,6 +1565,12 @@ public class CameraEngine {
 
         firstFrameSent =
                 false;
+
+        previewGeneration.incrementAndGet();
+        ndviRendererMode =
+                NDVI_RENDERER_UNKNOWN;
+        lastNormalFrameEventAt = 0L;
+        lastNdviFrameEventAt = 0L;
 
         ndviEnabled = false;
         lastNdviEventAt = 0L;
@@ -3476,9 +3587,16 @@ public class CameraEngine {
 
         stopStreaming();
 
+        /*
+         * Starting a stream is a new preview lifetime. Any frame processor
+         * still finishing work from the previous stream must self-invalidate.
+         */
+        previewGeneration.incrementAndGet();
+
         isStreaming.set(true);
         firstFrameSent = false;
-        lastFrameEventAt = 0L;
+        lastNormalFrameEventAt = 0L;
+        lastNdviFrameEventAt = 0L;
         lastQuadEventAt = 0L;
         streamingBand = "COMPOSITE";
 
@@ -3948,16 +4066,28 @@ public class CameraEngine {
             return;
         }
 
+        /*
+         * Latest-frame-only:
+         * a newer network frame replaces an older queued frame. The stream
+         * reader never waits for bitmap/NDVI processing.
+         */
         pendingCompositeFrame.set(compositeJpeg);
 
         if (!frameProcessorRunning.compareAndSet(false, true)) {
             return;
         }
 
+        final long workerPreviewGeneration =
+                previewGeneration.get();
+
         executor.execute(() -> {
             try {
-                while (isStreaming.get()) {
-                    byte[] frame = pendingCompositeFrame.getAndSet(null);
+                while (isStreaming.get()
+                        && workerPreviewGeneration == previewGeneration.get()) {
+
+                    byte[] frame =
+                            pendingCompositeFrame.getAndSet(null);
+
                     if (frame == null) {
                         break;
                     }
@@ -3969,22 +4099,37 @@ public class CameraEngine {
             } finally {
                 frameProcessorRunning.set(false);
 
-                // A frame can arrive between getAndSet(null) and the CAS.
-                // Restart once so the latest pending frame is not stranded.
+                /*
+                 * A frame can arrive between getAndSet(null) and the CAS.
+                 * Restart only for the same stream/mode generation. A mode
+                 * change intentionally lets this worker die so stale work
+                 * cannot cross the mode boundary.
+                 */
                 if (pendingCompositeFrame.get() != null
                         && isStreaming.get()
+                        && workerPreviewGeneration == previewGeneration.get()
                         && frameProcessorRunning.compareAndSet(false, true)) {
+
                     executor.execute(() -> {
                         try {
-                            while (isStreaming.get()) {
-                                byte[] frame = pendingCompositeFrame.getAndSet(null);
+                            while (isStreaming.get()
+                                    && workerPreviewGeneration == previewGeneration.get()) {
+
+                                byte[] frame =
+                                        pendingCompositeFrame.getAndSet(null);
+
                                 if (frame == null) {
                                     break;
                                 }
+
                                 processAndEmitCompositeFrame(frame);
                             }
                         } catch (Throwable t) {
-                            Log.e(TAG, "Live-view frame processor restart failed", t);
+                            Log.e(
+                                    TAG,
+                                    "Live-view frame processor restart failed",
+                                    t
+                            );
                         } finally {
                             frameProcessorRunning.set(false);
                         }
@@ -3996,109 +4141,289 @@ public class CameraEngine {
 
     private void processAndEmitCompositeFrame(byte[] compositeJpeg) {
 
-        if (compositeJpeg == null || compositeJpeg.length == 0) return;
+        if (compositeJpeg == null || compositeJpeg.length == 0) {
+            return;
+        }
 
-        BitmapFactory.Options options = new BitmapFactory.Options();
-        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+        /*
+         * Snapshot the current preview generation at the start of the job.
+         * The job may never publish a frame if the user changes mode while
+         * decode/calibration/rendering is in progress.
+         */
+        final long framePreviewGeneration =
+                previewGeneration.get();
 
-        Bitmap source = BitmapFactory.decodeByteArray(
-                compositeJpeg,
-                0,
-                compositeJpeg.length,
-                options
-        );
+        BitmapFactory.Options options =
+                new BitmapFactory.Options();
+        options.inPreferredConfig =
+                Bitmap.Config.ARGB_8888;
+
+        Bitmap source =
+                BitmapFactory.decodeByteArray(
+                        compositeJpeg,
+                        0,
+                        compositeJpeg.length,
+                        options
+                );
 
         if (source == null) {
-            log("WARN", "Composite frame decode failed");
+            log(
+                    "WARN",
+                    "Composite frame decode failed"
+            );
             return;
         }
 
         try {
             if (source.getWidth() > MAX_PROCESSING_DIMENSION
                     || source.getHeight() > MAX_PROCESSING_DIMENSION) {
-                log("WARN", "Composite frame exceeds processing dimension");
+                log(
+                        "WARN",
+                        "Composite frame exceeds processing dimension"
+                );
+                return;
+            }
+
+            /*
+             * A mode can change while BitmapFactory is decoding. Do not
+             * continue expensive work for an already-stale frame.
+             */
+            if (framePreviewGeneration != previewGeneration.get()) {
                 return;
             }
 
             ensureDualOpticalCalibration(source);
             lastCompositeFrameBytes = compositeJpeg;
 
-            // NDVI is an independent analysis mode. It NEVER uses the RGB
-            // image as a visual base. The formula uses RED from the left
-            // optical ROI and NIR intensity from the registered right ROI.
-            // The preferred live path renders the false-colour NDVI directly
-            // on the GPU into Flutter's TextureRegistry SurfaceTexture.
-            if (ndviEnabled
-                    && System.currentTimeMillis() - lastNdviPreviewAt >= NDVI_PREVIEW_INTERVAL_MS) {
+            /*
+             * ================================================================
+             * NDVI IS AN EXCLUSIVE PREVIEW MODE.
+             *
+             * Once NDVI is enabled, this branch owns the entire preview
+             * pipeline. Even when the next NDVI frame is not due yet, we
+             * RETURN instead of falling through to RGB/R/G/B/NIR processing.
+             *
+             * This is the primary anti-flicker rule.
+             * ================================================================
+             */
+            if (ndviEnabled) {
 
-                updateGpuNdviCalibrationIfDue(source);
+                if (framePreviewGeneration != previewGeneration.get()
+                        || !ndviEnabled) {
+                    return;
+                }
 
-                final boolean gpuRendered =
-                        renderGpuNdvi(source);
+                final long now =
+                        System.currentTimeMillis();
 
-                if (gpuRendered) {
-                    lastNdviPreviewAt = System.currentTimeMillis();
-                    emitGpuNdviFrame(
-                            rgbCropRect == null ? 0 : rgbCropRect.width(),
-                            rgbCropRect == null ? 0 : rgbCropRect.height()
-                    );
+                final boolean previewDue =
+                        now - lastNdviPreviewAt
+                                >= NDVI_PREVIEW_INTERVAL_MS;
+
+                if (!previewDue) {
+                    /*
+                     * Hold the last visible NDVI frame. Missing cadence is
+                     * never permission to publish RGB.
+                     */
                     emitNdviIfDue(source);
                     return;
                 }
 
-                // Safe CPU fallback when a GPU texture is unavailable. This
-                // still produces a PURE NDVI image: RED vs NIR only, with no
-                // RGB texture underneath the false-colour map.
-                byte[] ndviPreview = buildNdviPreviewJpeg(source);
-                if (ndviPreview != null && ndviPreview.length > 0) {
-                    lastNdviPreviewAt = System.currentTimeMillis();
-                    lastFrameBytes = ndviPreview;
+                updateGpuNdviCalibrationIfDue(source);
+
+                if (framePreviewGeneration != previewGeneration.get()
+                        || !ndviEnabled) {
+                    return;
+                }
+
+                boolean gpuRendered = false;
+
+                /*
+                 * Renderer policy:
+                 *
+                 * UNKNOWN -> try GPU when a valid Surface exists.
+                 * GPU     -> stay GPU for this NDVI session.
+                 * CPU     -> stay CPU for this NDVI session.
+                 */
+                if (ndviRendererMode != NDVI_RENDERER_CPU) {
+                    gpuRendered =
+                            renderGpuNdvi(source);
+
+                    if (gpuRendered) {
+                        ndviRendererMode =
+                                NDVI_RENDERER_GPU;
+
+                        if (framePreviewGeneration
+                                != previewGeneration.get()
+                                || !ndviEnabled) {
+                            return;
+                        }
+
+                        lastNdviPreviewAt =
+                                System.currentTimeMillis();
+
+                        emitGpuNdviFrame(
+                                rgbCropRect == null
+                                        ? 0
+                                        : rgbCropRect.width(),
+                                rgbCropRect == null
+                                        ? 0
+                                        : rgbCropRect.height(),
+                                framePreviewGeneration
+                        );
+
+                        emitNdviIfDue(source);
+
+                        /*
+                         * Never execute normal spectral processing after a
+                         * successful NDVI commit.
+                         */
+                        return;
+                    }
+                }
+
+                /*
+                 * A real GPU renderer failure marks the session as CPU inside
+                 * renderGpuNdvi(). If the GPU surface is merely unavailable,
+                 * the renderer mode remains UNKNOWN and CPU is used only as a
+                 * temporary safety path. Crucially, neither case falls through
+                 * to RGB.
+                 */
+                if (ndviRendererMode
+                        == NDVI_RENDERER_GPU) {
+                    /*
+                     * GPU was selected for the session but this frame did not
+                     * commit. Hold the last NDVI frame rather than changing
+                     * renderer or showing RGB.
+                     */
+                    emitNdviIfDue(source);
+                    return;
+                }
+
+                byte[] ndviPreview =
+                        buildNdviPreviewJpeg(source);
+
+                if (ndviPreview != null
+                        && ndviPreview.length > 0
+                        && framePreviewGeneration
+                                == previewGeneration.get()
+                        && ndviEnabled) {
+
+                    /*
+                     * CPU fallback is a pure NDVI image: RED vs NIR only.
+                     * Keep it entirely inside the NDVI mode boundary.
+                     */
+                    /*
+                     * Keep UNKNOWN when the GPU surface was simply unavailable.
+                     * The next frame may acquire a valid surface and use GPU.
+                     * A real GPU failure changes the mode to CPU inside
+                     * renderGpuNdvi(), making CPU sticky for that NDVI session.
+                     */
+                    lastNdviPreviewAt =
+                            System.currentTimeMillis();
+
+                    lastFrameBytes =
+                            ndviPreview;
+
                     emitPreviewFrame(
                             ndviPreview,
                             "NDVI",
                             "NDVI_RED_VS_NIR_CPU_FALLBACK",
                             true,
                             "NDVI",
-                            rgbCropRect == null ? 0 : rgbCropRect.width(),
-                            rgbCropRect == null ? 0 : rgbCropRect.height(),
-                            rgbCropRect
+                            rgbCropRect == null
+                                    ? 0
+                                    : rgbCropRect.width(),
+                            rgbCropRect == null
+                                    ? 0
+                                    : rgbCropRect.height(),
+                            rgbCropRect,
+                            framePreviewGeneration
                     );
+
                     emitNdviIfDue(source);
-                    return;
                 }
+
+                /*
+                 * ABSOLUTE RULE:
+                 * NDVI mode never falls through to normal spectral preview.
+                 */
+                return;
             }
 
-            emitNdviIfDue(source);
+            /*
+             * NDVI is off here. Any frame that started in an older generation
+             * is stale and must be discarded.
+             */
+            if (framePreviewGeneration
+                    != previewGeneration.get()) {
+                return;
+            }
 
-            // RAW preview means the untouched camera composite. It must not be
-            // replaced by the ROI crop used by PROCESSED mode.
+            /*
+             * RAW preview is still a capture/preview mode distinct from the
+             * spectral path. It can only be published while NDVI is off.
+             */
             if (CAPTURE_MODE_RAW.equals(captureMode)) {
-                lastFrameBytes = compositeJpeg;
+
+                if (framePreviewGeneration
+                        != previewGeneration.get()
+                        || ndviEnabled) {
+                    return;
+                }
+
+                lastFrameBytes =
+                        compositeJpeg;
+
                 emitPreviewFrame(
                         compositeJpeg,
-                        activeSpectralBand == null ? "RGB" : activeSpectralBand,
+                        activeSpectralBand == null
+                                ? "RGB"
+                                : activeSpectralBand,
                         "FULL_COMPOSITE",
                         false,
                         "RAW",
                         source.getWidth(),
                         source.getHeight(),
-                        null
+                        null,
+                        framePreviewGeneration
                 );
                 return;
             }
 
-            final String band = activeSpectralBand == null
-                    ? "RGB"
-                    : activeSpectralBand;
-            final long generation = spectralGeneration.get();
+            final String band =
+                    activeSpectralBand == null
+                            ? "RGB"
+                            : activeSpectralBand;
 
-            byte[] processed = processCompositeForBand(source, band);
-            if (processed == null || processed.length == 0) return;
+            final long generation =
+                    spectralGeneration.get();
 
-            if (generation != spectralGeneration.get()) return;
-            if (!band.equals(activeSpectralBand)) return;
+            byte[] processed =
+                    processCompositeForBand(
+                            source,
+                            band
+                    );
 
-            lastFrameBytes = processed;
+            if (processed == null
+                    || processed.length == 0) {
+                return;
+            }
+
+            /*
+             * Both the spectral generation and preview generation must still
+             * match before a normal processed frame can own the screen.
+             */
+            if (generation != spectralGeneration.get()
+                    || framePreviewGeneration
+                            != previewGeneration.get()
+                    || ndviEnabled
+                    || !band.equals(activeSpectralBand)) {
+                return;
+            }
+
+            lastFrameBytes =
+                    processed;
 
             emitProcessedFrame(
                     processed,
@@ -4106,7 +4431,8 @@ public class CameraEngine {
                     "NIR".equals(band)
                             ? "NIR_RIGHT_OPTICAL_ROI"
                             : "RGB_LEFT_OPTICAL_ROI",
-                    true
+                    true,
+                    framePreviewGeneration
             );
 
         } finally {
@@ -4129,13 +4455,13 @@ public class CameraEngine {
     /**
      * Builds a practical false-colour NDVI preview from the two optical ROIs.
      *
-     * The RGB field is kept as the spatial canvas. Each RGB pixel is paired
-     * with the corresponding NIR pixel from the right optical field and the
-     * resulting relative/digital NDVI is mapped RED -> YELLOW -> GREEN.
-     * Pixels without a usable denominator remain transparent so the original
-     * RGB image stays visible underneath.
+     * The RGB field is the spatial coordinate system only. Each output pixel
+     * uses the RED channel from the RGB ROI and the registered NIR intensity
+     * from the right optical ROI. The resulting relative/digital NDVI is
+     * mapped RED -> YELLOW -> GREEN.
      *
-     * This is an analysis visualization, not radiometrically calibrated NDVI.
+     * The output is PURE NDVI false colour. The RGB pixels are never blended
+     * into the visualization.
      */
     /**
      * Live NDVI preview for the unified crop.
@@ -4660,51 +4986,133 @@ public class CameraEngine {
 
                 return true;
             } catch (Throwable t) {
-                Log.e(TAG, "GPU NDVI render failed; falling back to CPU", t);
+                /*
+                 * A genuine GPU renderer failure is a session-level decision.
+                 * Release the GL objects once and stay on CPU for the rest of
+                 * this NDVI session. This avoids GPU/CPU oscillation.
+                 */
+                Log.e(
+                        TAG,
+                        "GPU NDVI render failed; switching to CPU session",
+                        t
+                );
+                ndviRendererMode =
+                        NDVI_RENDERER_CPU;
                 releaseGpuNdviRendererLocked();
                 return false;
             }
         }
     }
 
-    private void emitGpuNdviFrame(int width, int height) {
-        long now = System.currentTimeMillis();
-        if (now - lastFrameEventAt < NDVI_EVENT_INTERVAL_MS) {
+    private void emitGpuNdviFrame(
+            int width,
+            int height,
+            long expectedPreviewGeneration
+    ) {
+        /*
+         * The GPU surface itself holds the last successful buffer. We rate
+         * limit the lightweight Dart event separately from the actual GPU
+         * rendering, and we never publish a mode-mismatched event.
+         */
+        if (!ndviEnabled
+                || expectedPreviewGeneration
+                        != previewGeneration.get()) {
             return;
         }
-        lastFrameEventAt = now;
 
-        HashMap<String, Object> event = new HashMap<>();
+        long now =
+                System.currentTimeMillis();
+
+        if (now - lastNdviFrameEventAt
+                < NDVI_EVENT_INTERVAL_MS) {
+            return;
+        }
+
+        lastNdviFrameEventAt =
+                now;
+
+        HashMap<String, Object> event =
+                new HashMap<>();
+
         event.put("bytes", null);
         event.put("band", "NDVI");
-        event.put("source", "NDVI_RED_VS_NIR_GPU");
+        event.put(
+                "source",
+                "NDVI_RED_VS_NIR_GPU"
+        );
         event.put("processed", true);
-        event.put("previewMode", "NDVI");
+        event.put(
+                "previewMode",
+                "NDVI"
+        );
         event.put("gpuTexture", true);
         event.put("captureMode", captureMode);
         event.put("isQuadFrame", false);
         event.put("realSpectralFrame", true);
         event.put("width", GPU_NDVI_OUTPUT_WIDTH);
         event.put("height", GPU_NDVI_OUTPUT_HEIGHT);
-        event.put("bitDepth", 8);
         event.put("compositeWidth", calibratedSourceWidth);
         event.put("compositeHeight", calibratedSourceHeight);
-        event.put("cropX", rgbCropRect == null ? 0 : rgbCropRect.left);
-        event.put("cropY", rgbCropRect == null ? 0 : rgbCropRect.top);
+        event.put(
+                "cropX",
+                rgbCropRect == null
+                        ? 0
+                        : rgbCropRect.left
+        );
+        event.put(
+                "cropY",
+                rgbCropRect == null
+                        ? 0
+                        : rgbCropRect.top
+        );
         event.put("cropWidth", width);
         event.put("cropHeight", height);
-        event.put("unifiedSpectralCrop", true);
-        event.put("registrationApplied", true);
-        event.put("registrationModel", "CENTERED_AFFINE_GPU");
-        event.put("ndviInput", "RED_CHANNEL_VS_NIR_INTENSITY");
-        event.put("nirGain", lastNdviNirGain);
+        event.put(
+                "unifiedSpectralCrop",
+                true
+        );
+        event.put(
+                "registrationApplied",
+                true
+        );
+        event.put(
+                "registrationModel",
+                "CENTERED_AFFINE_GPU"
+        );
+        event.put(
+                "ndviInput",
+                "RED_CHANNEL_VS_NIR_INTENSITY"
+        );
+        event.put(
+                "nirGain",
+                lastNdviNirGain
+        );
+        event.put(
+                "previewGeneration",
+                expectedPreviewGeneration
+        );
 
-        sendEvent("liveviewFrame", event);
+        sendEvent(
+                "liveviewFrame",
+                event
+        );
 
-        if (!firstFrameSent) {
+        if (!firstFrameSent
+                && ndviEnabled
+                && expectedPreviewGeneration
+                        == previewGeneration.get()) {
+
             firstFrameSent = true;
-            sendEvent("firstLiveviewFrame", true);
-            updateSystemStatus("CAMERA READY", true);
+
+            sendEvent(
+                    "firstLiveviewFrame",
+                    true
+            );
+
+            updateSystemStatus(
+                    "CAMERA READY",
+                    true
+            );
         }
     }
 
@@ -6035,18 +6443,57 @@ public class CameraEngine {
             String previewMode,
             int width,
             int height,
-            Rect rect
+            Rect rect,
+            long expectedPreviewGeneration
     ) {
-        if (jpeg == null || jpeg.length == 0) return;
+        if (jpeg == null || jpeg.length == 0) {
+            return;
+        }
 
-        long now = System.currentTimeMillis();
-        long interval = "NDVI".equals(previewMode)
-                ? NDVI_EVENT_INTERVAL_MS
-                : FRAME_EVENT_INTERVAL_MS;
-        if (now - lastFrameEventAt < interval) return;
-        lastFrameEventAt = now;
+        /*
+         * Preview events have strict mode ownership.
+         *
+         * NDVI events are legal only when NDVI is enabled.
+         * Normal/RAW events are legal only when NDVI is disabled.
+         */
+        if (expectedPreviewGeneration
+                != previewGeneration.get()) {
+            return;
+        }
 
-        HashMap<String, Object> event = new HashMap<>();
+        final boolean isNdviPreview =
+                "NDVI".equalsIgnoreCase(
+                        previewMode
+                );
+
+        if (isNdviPreview != ndviEnabled) {
+            return;
+        }
+
+        long now =
+                System.currentTimeMillis();
+
+        if (isNdviPreview) {
+            if (now - lastNdviFrameEventAt
+                    < NDVI_EVENT_INTERVAL_MS) {
+                return;
+            }
+
+            lastNdviFrameEventAt =
+                    now;
+        } else {
+            if (now - lastNormalFrameEventAt
+                    < FRAME_EVENT_INTERVAL_MS) {
+                return;
+            }
+
+            lastNormalFrameEventAt =
+                    now;
+        }
+
+        HashMap<String, Object> event =
+                new HashMap<>();
+
         event.put("bytes", jpeg);
         event.put("band", band);
         event.put("quad", isQuadMode);
@@ -6055,55 +6502,116 @@ public class CameraEngine {
         event.put("processed", processed);
         event.put("previewMode", previewMode);
         event.put("captureMode", captureMode);
-        event.put("isQuadFrame", !processed);
-        event.put("realSpectralFrame", true);
+        event.put(
+                "isQuadFrame",
+                !processed
+        );
+        event.put(
+                "realSpectralFrame",
+                true
+        );
         event.put("width", width);
         event.put("height", height);
         event.put("bitDepth", 8);
-        event.put("compositeWidth", calibratedSourceWidth);
-        event.put("compositeHeight", calibratedSourceHeight);
-        event.put("cropX", rect == null ? 0 : rect.left);
-        event.put("cropY", rect == null ? 0 : rect.top);
-        event.put("cropWidth", rect == null ? 0 : rect.width());
-        event.put("cropHeight", rect == null ? 0 : rect.height());
-        event.put("unifiedSpectralCrop", "RAW".equals(previewMode) ? false : true);
-        event.put("registrationApplied", "RAW".equals(previewMode) ? false : true);
-        event.put("registrationModel", "CENTERED_AFFINE");
-        event.put("nirGain", lastNdviNirGain);
+        event.put(
+                "compositeWidth",
+                calibratedSourceWidth
+        );
+        event.put(
+                "compositeHeight",
+                calibratedSourceHeight
+        );
+        event.put(
+                "cropX",
+                rect == null ? 0 : rect.left
+        );
+        event.put(
+                "cropY",
+                rect == null ? 0 : rect.top
+        );
+        event.put(
+                "cropWidth",
+                rect == null ? 0 : rect.width()
+        );
+        event.put(
+                "cropHeight",
+                rect == null ? 0 : rect.height()
+        );
+        event.put(
+                "unifiedSpectralCrop",
+                isNdviPreview
+                        ? true
+                        : !"RAW".equals(previewMode)
+        );
+        event.put(
+                "registrationApplied",
+                isNdviPreview
+                        ? true
+                        : !"RAW".equals(previewMode)
+        );
+        event.put(
+                "registrationModel",
+                isNdviPreview
+                        ? "CENTERED_AFFINE"
+                        : "CENTERED_AFFINE"
+        );
+        event.put(
+                "nirGain",
+                lastNdviNirGain
+        );
+        event.put(
+                "previewGeneration",
+                expectedPreviewGeneration
+        );
 
-        sendEvent("liveviewFrame", event);
+        sendEvent(
+                "liveviewFrame",
+                event
+        );
 
-        if (!firstFrameSent) {
+        if (!firstFrameSent
+                && expectedPreviewGeneration
+                        == previewGeneration.get()
+                && isStreaming.get()) {
+
             firstFrameSent = true;
-            sendEvent("firstLiveviewFrame", true);
-            updateSystemStatus("CAMERA READY", true);
-        }
-    }
 
-    /**
-     * Compatibility helper used by the NDVI false-color renderer.
-     * Delegates to the existing JPEG encoder so there is only one bitmap-to-JPEG path.
-     */
-    private byte[] compressJpeg(Bitmap bitmap, int quality) {
-        return bitmapToJpeg(bitmap, quality);
+            sendEvent(
+                    "firstLiveviewFrame",
+                    true
+            );
+
+            updateSystemStatus(
+                    "CAMERA READY",
+                    true
+            );
+        }
     }
 
     private void emitProcessedFrame(
             byte[] jpeg,
             String band,
             String source,
-            boolean throttle
+            boolean throttle,
+            long expectedPreviewGeneration
     ) {
-        Rect rect = unifiedRgbRect();
+        Rect rect =
+                unifiedRgbRect();
+
         emitPreviewFrame(
                 jpeg,
                 band,
                 source,
                 true,
                 "PROCESSED",
-                rect == null ? 0 : rect.width(),
-                rect == null ? 0 : rect.height(),
-                rect
+                rect == null
+                        ? 0
+                        : rect.width(),
+                rect == null
+                        ? 0
+                        : rect.height(),
+                rect,
+                expectedPreviewGeneration
         );
     }
 
@@ -6121,7 +6629,8 @@ public class CameraEngine {
                 "RAW",
                 width,
                 height,
-                null
+                null,
+                previewGeneration.get()
         );
     }
 
@@ -6135,7 +6644,13 @@ public class CameraEngine {
             String band,
             String source
     ) {
-        emitProcessedFrame(jpeg, band, source, false);
+        emitProcessedFrame(
+                jpeg,
+                band,
+                source,
+                false,
+                previewGeneration.get()
+        );
     }
 
     private void stopNirPolling() {
@@ -7147,6 +7662,12 @@ public class CameraEngine {
         lastLiveviewUrl =
                 null;
 
+        previewGeneration.incrementAndGet();
+        ndviRendererMode =
+                NDVI_RENDERER_UNKNOWN;
+        lastNormalFrameEventAt = 0L;
+        lastNdviFrameEventAt = 0L;
+
         activeSpectralBand =
                 "RGB";
 
@@ -7261,9 +7782,18 @@ public class CameraEngine {
         nirCropRect = null;
         lastQuadEventAt = 0L;
         spectralGeneration.incrementAndGet();
+        previewGeneration.incrementAndGet();
+        ndviRendererMode =
+                NDVI_RENDERER_UNKNOWN;
     }
 
     private void stopStreaming() {
+
+        /*
+         * Invalidate all in-flight preview work immediately. The worker uses
+         * previewGeneration to self-terminate after the current call returns.
+         */
+        previewGeneration.incrementAndGet();
 
         isStreaming.set(
                 false
@@ -9124,6 +9654,8 @@ public class CameraEngine {
         lastNdviValidPixels = 0;
         lastNdviNirGain = 1.0f;
         lastNdviCalibrationAt = 0L;
+        ndviRendererMode = NDVI_RENDERER_UNKNOWN;
+        previewGeneration.incrementAndGet();
         shutdown();
     }
 

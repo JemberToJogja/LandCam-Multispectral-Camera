@@ -23,6 +23,9 @@ class LandCamHome extends StatelessWidget {
     required this.cameraEndpoint,
     required this.captureMode,
     required this.ndviEnabled,
+    this.previewMode,
+    this.ndviGpuActive = false,
+    this.ndviTextureId,
     required this.ndvi,
     required this.ndviValidPixels,
     required this.supportsCapture,
@@ -52,6 +55,21 @@ class LandCamHome extends StatelessWidget {
   final String? cameraEndpoint;
   final String captureMode;
   final bool ndviEnabled;
+
+  /// Mode of the LAST COMMITTED preview frame.
+  ///
+  /// When omitted, [ndviEnabled] is used for backward compatibility.
+  /// Passing this value from the ViewModel prevents the UI from labelling
+  /// an old held frame as a newly requested mode during a transition.
+  final String? previewMode;
+
+  /// True when native is presenting NDVI directly through a SurfaceTexture.
+  /// Optional so existing callers remain source-compatible.
+  final bool ndviGpuActive;
+
+  /// Flutter texture registry ID supplied by the native layer.
+  final int? ndviTextureId;
+
   final double? ndvi;
   final int ndviValidPixels;
   final bool supportsCapture;
@@ -63,11 +81,19 @@ class LandCamHome extends StatelessWidget {
   final VoidCallback onSettings;
   final VoidCallback onCapture;
 
+  bool get _hasByteFrame =>
+      frame != null &&
+      frame!.isNotEmpty;
+
+  bool get _hasGpuNdvi =>
+      ndviEnabled &&
+      ndviGpuActive &&
+      ndviTextureId != null;
+
   bool get _ready =>
       link == CameraLink.ready &&
       supportsCapture &&
-      frame != null &&
-      frame!.isNotEmpty;
+      (_hasByteFrame || _hasGpuNdvi);
 
   @override
   Widget build(
@@ -161,6 +187,12 @@ class LandCamHome extends StatelessWidget {
                                 captureMode,
                             ndviEnabled:
                                 ndviEnabled,
+                            previewMode:
+                                previewMode,
+                            ndviGpuActive:
+                                ndviGpuActive,
+                            ndviTextureId:
+                                ndviTextureId,
                             ndvi:
                                 ndvi,
                             ndviValidPixels:
@@ -1418,6 +1450,9 @@ class _CameraPreview
     required this.cameraEndpoint,
     required this.captureMode,
     required this.ndviEnabled,
+    this.previewMode,
+    this.ndviGpuActive = false,
+    this.ndviTextureId,
     required this.ndvi,
     required this.ndviValidPixels,
     required this.nirActivating,
@@ -1437,314 +1472,288 @@ class _CameraPreview
   final String? cameraEndpoint;
   final String captureMode;
   final bool ndviEnabled;
+  final String? previewMode;
+  final bool ndviGpuActive;
+  final int? ndviTextureId;
   final double? ndvi;
   final int ndviValidPixels;
   final bool nirActivating;
+
+  String get _effectivePreviewMode {
+    final explicit =
+        previewMode
+                ?.trim()
+                .toUpperCase() ??
+            '';
+
+    if (explicit == 'NDVI' ||
+        explicit == 'RAW' ||
+        explicit == 'PROCESSED') {
+      return explicit;
+    }
+
+    return ndviEnabled
+        ? 'NDVI'
+        : captureMode == 'RAW'
+            ? 'RAW'
+            : 'PROCESSED';
+  }
+
+  bool get _isNdviPreview =>
+      _effectivePreviewMode == 'NDVI';
+
+  bool get _isRawPreview =>
+      !_isNdviPreview &&
+      _effectivePreviewMode == 'RAW';
+
+  bool get _hasByteFrame =>
+      frame != null &&
+      frame!.isNotEmpty;
+
+  bool get _hasGpuNdviTexture =>
+      _isNdviPreview &&
+      ndviGpuActive &&
+      ndviTextureId != null;
+
+  bool get _hasPreview =>
+      _hasByteFrame ||
+      _hasGpuNdviTexture;
+
+  Color get _previewModeAccent =>
+      _isNdviPreview
+          ? _uiAccent(dark)
+          : _isRawPreview
+              ? _spectralAccent(
+                  dark,
+                  SpectralBand.nir,
+                )
+              : _spectralAccent(
+                  dark,
+                  currentBand,
+                );
+
+  String get _previewTitle =>
+      _isNdviPreview
+          ? 'NDVI'
+          : _isRawPreview
+              ? 'RAW'
+              : currentBand.title;
+
+  String get _previewSource =>
+      _isNdviPreview
+          ? 'RED + NIR • NDVI'
+          : sourceLabel ??
+              currentBand.sourceLabel;
 
   @override
   Widget build(
     BuildContext context,
   ) {
-    final bytes =
-        frame;
-
     final ready =
-        link ==
-                CameraLink
-                    .ready &&
-            bytes != null &&
-            bytes.isNotEmpty;
+        link == CameraLink.ready &&
+        _hasPreview;
 
-    return DecoratedBox(
-      decoration:
-          BoxDecoration(
-        color:
-            Colors.black,
-        border:
-            Border.all(
+    return RepaintBoundary(
+      child: DecoratedBox(
+        decoration:
+            BoxDecoration(
           color:
-              ready
-                  ? _uiAccent(
-                      dark,
-                    ).withValues(
-                      alpha:
-                          .72,
-                    )
-                  : _uiBorderStrong(
-                      dark,
-                    ),
-          width:
-              ready ? 1.2 : 1,
-        ),
-        borderRadius:
-            BorderRadius.circular(
-          8,
-        ),
-        boxShadow: [
-          if (ready)
-            BoxShadow(
-              color:
-                  _uiAccent(
-                dark,
-              ).withValues(
-                alpha:
-                    .10,
+              Colors.black,
+          border:
+              Border.all(
+            color:
+                ready
+                    ? _previewModeAccent.withValues(
+                        alpha: .72,
+                      )
+                    : _uiBorderStrong(dark),
+            width:
+                ready ? 1.2 : 1,
+          ),
+          borderRadius:
+              BorderRadius.circular(8),
+          boxShadow: [
+            if (ready)
+              BoxShadow(
+                color:
+                    _previewModeAccent.withValues(
+                  alpha: .10,
+                ),
+                blurRadius: 18,
+                spreadRadius: 1,
               ),
-              blurRadius:
-                  18,
-              spreadRadius:
-                  1,
-            ),
-        ],
-      ),
-      child:
-          ClipRRect(
-        borderRadius:
-            BorderRadius.circular(
-          7,
+          ],
         ),
         child:
-            AspectRatio(
-          aspectRatio:
-              1,
+            ClipRRect(
+          borderRadius:
+              BorderRadius.circular(7),
           child:
-              Stack(
-            fit:
-                StackFit.expand,
-            children: [
-              if (
-                  bytes !=
-                      null &&
-                  bytes.isNotEmpty
-              )
-                _ProcessedImage(
-                  bytes:
-                      bytes,
-                  fit:
-                      BoxFit.contain,
-                )
-              else
-                _PreviewEmpty(
-                  link:
-                      link,
-                  band:
-                      currentBand,
-                  activating:
-                      nirActivating,
-                ),
-              const Positioned.fill(
-                child:
-                    IgnorePointer(
+              AspectRatio(
+            aspectRatio: 1,
+            child:
+                Stack(
+              fit: StackFit.expand,
+              children: [
+                if (_hasGpuNdviTexture)
+                  SizedBox.expand(
+                    child: Texture(
+                      textureId: ndviTextureId!,
+                    ),
+                  )
+                else if (_hasByteFrame)
+                  _ProcessedImage(
+                    key: ValueKey<int>(frameCount),
+                    bytes: frame!,
+                    frameToken: frameCount,
+                    fit: BoxFit.contain,
+                  )
+                else
+                  _PreviewEmpty(
+                    link: link,
+                    band: currentBand,
+                    activating: nirActivating,
+                    ndviEnabled: _isNdviPreview,
+                  ),
+
+                const Positioned.fill(
                   child:
-                      _ViewfinderOverlay(),
+                      IgnorePointer(
+                    child:
+                        _ViewfinderOverlay(),
+                  ),
                 ),
-              ),
-              Positioned(
-                top:
-                    10,
-                left:
-                    10,
-                right:
-                    10,
-                child:
-                    Row(
-                  children: [
-                    _PreviewTag(
-                      text:
-                          ndviEnabled
-                              ? 'NDVI'
-                              : captureMode == 'RAW'
-                                  ? 'RAW'
-                                  : currentBand.title,
-                      active:
-                          true,
-                      accent:
-                          ndviEnabled
-                              ? _uiAccent(dark)
-                              : captureMode == 'RAW'
-                                  ? _spectralAccent(
-                                      dark,
-                                      SpectralBand
-                                          .nir,
-                                    )
-                                  : _spectralAccent(
-                                      dark,
-                                      currentBand,
-                                    ),
-                    ),
-                    const SizedBox(
-                      width: 5,
-                    ),
-                    Flexible(
-                      child:
-                          _PreviewTag(
-                        text:
-                            sourceLabel ??
-                                currentBand
-                                    .sourceLabel,
+
+                Positioned(
+                  top: 10,
+                  left: 10,
+                  right: 10,
+                  child: Row(
+                    children: [
+                      _PreviewTag(
+                        text: _previewTitle,
+                        active: true,
+                        accent: _previewModeAccent,
                       ),
-                    ),
-                    if (
-                        cameraName !=
-                            null
-                    ) ...[
-                      const SizedBox(
-                        width: 5,
-                      ),
+                      const SizedBox(width: 5),
                       Flexible(
                         child:
                             _PreviewTag(
-                          text:
-                              cameraName!,
+                          text: _previewSource,
                         ),
                       ),
+                      if (cameraName != null) ...[
+                        const SizedBox(width: 5),
+                        Flexible(
+                          child:
+                              _PreviewTag(
+                            text: cameraName!,
+                          ),
+                        ),
+                      ],
+                      const Spacer(),
+                      _PreviewTag(
+                        text:
+                            captureMode == 'RAW'
+                                ? 'RAW'
+                                : 'PROCESSED',
+                        active:
+                            captureMode == 'RAW',
+                        accent:
+                            captureMode == 'RAW'
+                                ? _spectralAccent(
+                                    dark,
+                                    SpectralBand.nir,
+                                  )
+                                : null,
+                      ),
+                      const SizedBox(width: 5),
+                      _PreviewTag(
+                        text: link.label,
+                        active:
+                            link == CameraLink.ready,
+                      ),
                     ],
-                    const Spacer(),
-                    _PreviewTag(
-                      text:
-                          captureMode ==
-                                  'RAW'
-                              ? 'RAW'
-                              : 'PROCESSED',
-                      active:
-                          captureMode ==
-                              'RAW',
-                      accent:
-                          captureMode ==
-                                  'RAW'
-                              ? _spectralAccent(
-                                  dark,
-                                  SpectralBand
-                                      .nir,
-                                )
-                              : null,
-                    ),
-                    const SizedBox(
-                      width: 5,
-                    ),
-                    _PreviewTag(
-                      text:
-                          link.label,
-                      active:
-                          link ==
-                              CameraLink
-                                  .ready,
-                    ),
-                  ],
-                ),
-              ),
-              if (ndviEnabled)
-                Positioned(
-                  top:
-                      42,
-                  left:
-                      10,
-                  child:
-                      _NdviLegend(
-                    dark:
-                        dark,
-                    value:
-                        ndvi,
                   ),
                 ),
-              Positioned(
-                left:
-                    10,
-                right:
-                    10,
-                bottom:
-                    10,
-                child:
-                    Row(
-                  children: [
-                    _PreviewTag(
-                      text:
-                          frameWidth !=
-                                      null &&
-                                  frameHeight !=
-                                      null
-                              ? '${frameWidth}x$frameHeight'
-                              : '---',
+
+                if (_isNdviPreview)
+                  Positioned(
+                    top: 42,
+                    left: 10,
+                    child:
+                        _NdviLegend(
+                      dark: dark,
+                      value: ndvi,
                     ),
-                    const SizedBox(
-                      width: 5,
-                    ),
-                    _PreviewTag(
-                      text:
-                          fps == null
-                              ? '-- FPS'
-                              : '${fps!.toStringAsFixed(1)} FPS',
-                    ),
-                    const SizedBox(
-                      width: 5,
-                    ),
-                    if (ndviEnabled)
-                      ...[
+                  ),
+
+                Positioned(
+                  left: 10,
+                  right: 10,
+                  bottom: 10,
+                  child: Row(
+                    children: [
+                      _PreviewTag(
+                        text:
+                            frameWidth != null &&
+                                    frameHeight != null
+                                ? '${frameWidth}x$frameHeight'
+                                : '---',
+                      ),
+                      const SizedBox(width: 5),
+                      _PreviewTag(
+                        text:
+                            fps == null
+                                ? '-- FPS'
+                                : '${fps!.toStringAsFixed(1)} FPS',
+                      ),
+                      const SizedBox(width: 5),
+                      if (_isNdviPreview) ...[
                         _PreviewTag(
                           text:
                               ndvi == null
                                   ? 'NDVI --'
                                   : 'NDVI ${ndvi!.toStringAsFixed(3)}',
-                          active:
-                              true,
-                          accent:
-                              _uiAccent(
-                            dark,
-                          ),
+                          active: true,
+                          accent: _uiAccent(dark),
                         ),
-                        const SizedBox(
-                          width: 5,
-                        ),
+                        const SizedBox(width: 5),
                         _PreviewTag(
                           text:
                               '$ndviValidPixels PX',
-                          active:
-                              ndvi !=
-                                  null,
+                          active: ndvi != null,
                         ),
                       ],
-                    if (
-                        codec !=
-                            null &&
-                        codec!.isNotEmpty
-                    ) ...[
-                      const SizedBox(
-                        width: 5,
-                      ),
-                      _PreviewTag(
-                        text:
-                            codec!,
-                      ),
-                    ],
-                    const Spacer(),
-                    if (
-                        cameraEndpoint !=
-                            null
-                    )
-                      Flexible(
-                        child:
-                            Align(
-                          alignment:
-                              Alignment
-                                  .centerRight,
+                      if (codec != null &&
+                          codec!.isNotEmpty) ...[
+                        const SizedBox(width: 5),
+                        _PreviewTag(text: codec!),
+                      ],
+                      const Spacer(),
+                      if (cameraEndpoint != null)
+                        Flexible(
                           child:
-                              _PreviewTag(
-                            text:
-                                cameraEndpoint!,
+                              Align(
+                            alignment:
+                                Alignment.centerRight,
+                            child:
+                                _PreviewTag(
+                              text:
+                                  cameraEndpoint!,
+                            ),
                           ),
                         ),
+                      const SizedBox(width: 5),
+                      _PreviewTag(
+                        text:
+                            '#${frameCount.toString().padLeft(5, '0')}',
                       ),
-                    const SizedBox(
-                      width: 5,
-                    ),
-                    _PreviewTag(
-                      text:
-                          '#${frameCount.toString().padLeft(5, '0')}',
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -1908,88 +1917,69 @@ class _NdviLegend extends StatelessWidget {
 class _ProcessedImage
     extends StatelessWidget {
   const _ProcessedImage({
+    super.key,
     required this.bytes,
+    required this.frameToken,
     required this.fit,
   });
 
   final Uint8List bytes;
+  final int frameToken;
   final BoxFit fit;
 
   @override
   Widget build(
     BuildContext context,
-  ) =>
-      LayoutBuilder(
-        builder: (
-          context,
-          constraints,
-        ) {
-          final dpr =
-              MediaQuery.devicePixelRatioOf(
-            context,
-          );
+  ) {
+    final dpr =
+        MediaQuery.devicePixelRatioOf(context);
 
-          final maxWidth =
-              constraints.maxWidth.isFinite
-                  ? constraints.maxWidth
-                  : MediaQuery.sizeOf(
-                      context,
-                    ).shortestSide;
+    final shortestSide =
+        MediaQuery.sizeOf(context).shortestSide;
 
-          final targetCacheWidth =
-              (maxWidth * dpr * 1.15)
-                  .round()
-                  .clamp(
-                    320,
-                    2048,
-                  )
-                  .toInt();
+    final targetCacheWidth =
+        (shortestSide * dpr * 1.10)
+            .round()
+            .clamp(320, 2048)
+            .toInt();
 
-          return Image.memory(
-            bytes,
-            fit:
-                fit,
-            alignment:
-                Alignment.center,
-            gaplessPlayback:
-                true,
-            filterQuality:
-                FilterQuality.medium,
-            isAntiAlias:
-                true,
-            cacheWidth:
-                targetCacheWidth,
-            errorBuilder:
-                (
-                  _,
-                  _,
-                  _,
-                ) =>
-                    Center(
-                  child:
-                      Text(
-                    'FRAME DECODE ERROR',
-                    style:
-                        TextStyle(
-                      color:
-                          _uiAccent(
-                        Theme.of(
-                          context,
-                        ).brightness ==
-                            Brightness.dark,
-                      ),
-                      fontWeight:
-                          FontWeight.w800,
-                      fontSize:
-                          10,
-                      letterSpacing:
-                          1,
-                    ),
-                  ),
-                ),
-          );
-        },
-      );
+    return Image.memory(
+      bytes,
+      key: ValueKey<int>(frameToken),
+      fit: fit,
+      alignment: Alignment.center,
+      gaplessPlayback: true,
+      filterQuality: FilterQuality.low,
+      isAntiAlias: true,
+      excludeFromSemantics: true,
+      cacheWidth: targetCacheWidth,
+      cacheHeight: targetCacheWidth,
+      errorBuilder:
+          (
+        _,
+        __,
+        ___,
+      ) =>
+          Center(
+        child:
+            Text(
+          'FRAME DECODE ERROR',
+          style:
+              TextStyle(
+            color:
+                _uiAccent(
+              Theme.of(context).brightness ==
+                  Brightness.dark,
+            ),
+            fontWeight:
+                FontWeight.w800,
+            fontSize: 10,
+            letterSpacing: 1,
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _PreviewEmpty
@@ -1998,11 +1988,13 @@ class _PreviewEmpty
     required this.link,
     required this.band,
     required this.activating,
+    this.ndviEnabled = false,
   });
 
   final CameraLink link;
   final SpectralBand band;
   final bool activating;
+  final bool ndviEnabled;
 
   @override
   Widget build(
@@ -2015,16 +2007,18 @@ class _PreviewEmpty
                 Brightness.dark;
 
     final message =
-        activating
-            ? 'ACQUIRING ${band.title}'
-            : link ==
-                        CameraLink
-                            .idle ||
-                    link ==
-                        CameraLink
-                            .error
-                ? 'CONNECT CAMERA'
-                : 'WAITING FOR ${band.title}';
+        ndviEnabled
+            ? 'WAITING FOR NDVI'
+            : activating
+                ? 'ACQUIRING ${band.title}'
+                : link ==
+                            CameraLink
+                                .idle ||
+                        link ==
+                            CameraLink
+                                .error
+                    ? 'CONNECT CAMERA'
+                    : 'WAITING FOR ${band.title}';
 
     return ColoredBox(
       color:
@@ -2061,27 +2055,20 @@ class _PreviewEmpty
               ),
               child:
                   Icon(
-                activating
-                    ? Icons
-                        .radar_rounded
+                ndviEnabled || activating
+                    ? Icons.radar_rounded
                     : link ==
                                 CameraLink
                                     .idle ||
                             link ==
                                 CameraLink
                                     .error
-                        ? Icons
-                            .camera_outlined
-                        : Icons
-                            .crop_free_rounded,
+                        ? Icons.camera_outlined
+                        : Icons.crop_free_rounded,
                 color:
-                    activating
-                        ? _uiAccent(
-                            dark,
-                          )
-                        : _uiMuted(
-                            dark,
-                          ),
+                    ndviEnabled || activating
+                        ? _uiAccent(dark)
+                        : _uiMuted(dark),
                 size:
                     24,
               ),

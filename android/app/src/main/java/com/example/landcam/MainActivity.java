@@ -36,14 +36,11 @@ import io.flutter.view.TextureRegistry;
  *   - delegating camera work to CameraEngine
  *
  * Camera networking, discovery, image processing, NDVI, autofocus,
- * live-view and capture logic belong to the other native classes:
+ * live-view and capture logic belong to CameraEngine and the other
+ * dedicated native components.
  *
- *   CameraEngine.java
- *   CameraDiscovery.java
- *   OpticalProcessor.java
- *   CaptureManager.java
- *
- * No camera protocol or image-processing implementation should be added here.
+ * This class must stay a thin integration layer. It must not contain
+ * camera-protocol or pixel-processing logic.
  */
 public class MainActivity extends FlutterActivity
         implements CameraEngine.Listener {
@@ -58,26 +55,40 @@ public class MainActivity extends FlutterActivity
 
     private static final int WIFI_PERMISSION_REQUEST = 100;
 
-    private EventChannel.EventSink eventSink;
+    private static final int GPU_NDVI_TEXTURE_WIDTH = 960;
+    private static final int GPU_NDVI_TEXTURE_HEIGHT = 960;
+
+    /**
+     * EventSink is written from Flutter's stream lifecycle callbacks and read
+     * from CameraEngine/background callbacks, so it must be safely published.
+     */
+    private volatile EventChannel.EventSink eventSink;
 
     /**
      * Non-liveview events can arrive before Flutter subscribes to the
-     * EventChannel. Keep a bounded queue so startup events are not lost.
-     * Liveview frames are deliberately never queued.
+     * EventChannel. Keep a bounded queue so startup/control events are not
+     * lost. High-frequency preview frames are never buffered.
      */
     private final List<Map<String, Object>> pendingEvents =
             new ArrayList<>();
 
     private CameraEngine cameraEngine;
 
+    /**
+     * Owned by Flutter's TextureRegistry. CameraEngine receives only the
+     * underlying SurfaceTexture and owns its Surface/GL resources.
+     */
     private TextureRegistry.SurfaceTextureEntry ndviTextureEntry;
-
-    private static final int GPU_NDVI_TEXTURE_WIDTH = 960;
-    private static final int GPU_NDVI_TEXTURE_HEIGHT = 960;
 
     private NfcAdapter nfcAdapter;
 
     private PendingIntent nfcPendingIntent;
+
+    /**
+     * Foreground dispatch is enabled only after Flutter explicitly requests
+     * NFC listening. This avoids silently changing NFC state from onResume.
+     */
+    private boolean nfcDispatchEnabled = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -88,7 +99,7 @@ public class MainActivity extends FlutterActivity
         checkPermissions();
 
         // Create the engine before handling an NFC intent so a launch caused
-        // by an NFC tap cannot lose its credentials before Flutter finishes
+        // by an NFC tap cannot lose credentials before Flutter finishes
         // wiring the EventChannel.
         cameraEngine = new CameraEngine(this, this);
 
@@ -99,10 +110,7 @@ public class MainActivity extends FlutterActivity
     public void configureFlutterEngine(FlutterEngine flutterEngine) {
         super.configureFlutterEngine(flutterEngine);
 
-        if (cameraEngine == null) {
-            cameraEngine = new CameraEngine(this, this);
-        }
-
+        ensureEngine();
         ensureNdviTexture(flutterEngine);
 
         new MethodChannel(
@@ -121,15 +129,28 @@ public class MainActivity extends FlutterActivity
             ) {
                 eventSink = events;
 
+                // These are deterministic channel/bootstrap notifications and
+                // should be emitted before buffered application events.
                 sendEventNow("ready", null);
+
                 if (ndviTextureEntry != null) {
                     sendEventNow(
                             "gpuTextureReady",
-                            mapOf("textureId", ndviTextureEntry.id(),
+                            mapOf(
+                                    "textureId", ndviTextureEntry.id(),
                                     "width", GPU_NDVI_TEXTURE_WIDTH,
-                                    "height", GPU_NDVI_TEXTURE_HEIGHT)
+                                    "height", GPU_NDVI_TEXTURE_HEIGHT
+                            )
+                    );
+                } else {
+                    sendEventNow(
+                            "gpuTextureUnavailable",
+                            mapOf(
+                                    "reason", "TEXTURE_SETUP_FAILED"
+                            )
                     );
                 }
+
                 flushPendingEvents();
             }
 
@@ -147,8 +168,7 @@ public class MainActivity extends FlutterActivity
         try {
             switch (call.method) {
                 case "initialize":
-                    ensureEngine();
-                    cameraEngine.initialize();
+                    ensureEngine().initialize();
                     result.success(true);
                     return;
 
@@ -181,15 +201,19 @@ public class MainActivity extends FlutterActivity
                     return;
 
                 /**
-                 * Kept for backward compatibility with older Flutter builds.
-                 * The new UI should no longer expose an AF button because
-                 * continuous AF is configured by CameraEngine on connection.
+                 * Backward-compatible manual AF entry point.
+                 * The current UI does not expose it because continuous AF is
+                 * configured by CameraEngine when the camera connects.
                  */
                 case "autofocus":
                     ensureEngine().triggerAutoFocus();
                     result.success(true);
                     return;
 
+                /**
+                 * Legacy compatibility methods. New Flutter code uses the
+                 * explicit spectral/NDVI preview APIs instead.
+                 */
                 case "toggleViewMode":
                     result.success(ensureEngine().toggleViewMode());
                     return;
@@ -213,29 +237,43 @@ public class MainActivity extends FlutterActivity
                     );
                     return;
 
-                /**
-                 * New capture-mode bridge.
-                 * Accepted values: RAW, PROCESSED.
-                 */
-                case "setCaptureMode":
+                case "setCaptureMode": {
+                    String mode = call.arguments == null
+                            ? null
+                            : String.valueOf(call.arguments);
+
+                    if (mode == null) {
+                        result.success(false);
+                        return;
+                    }
+
+                    mode = mode.trim().toUpperCase(java.util.Locale.US);
+
+                    if (!"RAW".equals(mode)
+                            && !"PROCESSED".equals(mode)) {
+                        result.success(false);
+                        return;
+                    }
+
                     result.success(
-                            ensureEngine().setCaptureMode(
-                                    call.arguments == null
-                                            ? null
-                                            : String.valueOf(call.arguments)
-                            )
+                            ensureEngine().setCaptureMode(mode)
                     );
                     return;
+                }
 
                 case "getCaptureMode":
                     result.success(ensureEngine().getCaptureMode());
                     return;
 
                 case "setNdviEnabled":
+                    if (!(call.arguments instanceof Boolean)) {
+                        result.success(false);
+                        return;
+                    }
+
                     result.success(
                             ensureEngine().setNdviEnabled(
-                                    call.arguments instanceof Boolean
-                                            && (Boolean) call.arguments
+                                    (Boolean) call.arguments
                             )
                     );
                     return;
@@ -253,7 +291,8 @@ public class MainActivity extends FlutterActivity
                     result.notImplemented();
             }
         } catch (Exception e) {
-            Log.e(TAG, "Method call failed: " + call.method, e);
+            Log.e(TAG, "Method call failed: "
+                    + (call == null ? "null" : call.method), e);
 
             result.error(
                     "NATIVE_ERROR",
@@ -270,6 +309,13 @@ public class MainActivity extends FlutterActivity
         return cameraEngine;
     }
 
+    /**
+     * Creates the single Flutter SurfaceTexture used by the native GPU NDVI
+     * renderer.
+     *
+     * IMPORTANT:
+     * Texture creation belongs to TextureRegistry, not FlutterRenderer itself.
+     */
     private void ensureNdviTexture(FlutterEngine flutterEngine) {
         if (ndviTextureEntry != null) {
             return;
@@ -288,6 +334,7 @@ public class MainActivity extends FlutterActivity
             );
         } catch (Exception e) {
             Log.e(TAG, "GPU NDVI texture setup failed", e);
+
             if (ndviTextureEntry != null) {
                 try {
                     ndviTextureEntry.release();
@@ -337,40 +384,61 @@ public class MainActivity extends FlutterActivity
             return false;
         }
 
-        ensureEngine().onNfcListeningStarted();
+        try {
+            ensureEngine().onNfcListeningStarted();
+            enableNfcForegroundDispatch();
+            nfcDispatchEnabled = true;
+            return true;
+        } catch (Exception e) {
+            nfcDispatchEnabled = false;
 
-        // Foreground dispatch is also enabled in onResume. Doing it here
-        // makes the MethodChannel call behave immediately when the app is
-        // already resumed.
-        if (nfcPendingIntent != null) {
-            try {
-                nfcAdapter.enableForegroundDispatch(
-                        this,
-                        nfcPendingIntent,
-                        null,
-                        null
-                );
-            } catch (Exception e) {
-                Log.e(TAG, "NFC foreground dispatch failed", e);
-                sendEvent(
-                        "error",
-                        "NFC FOREGROUND DISPATCH FAILED"
-                );
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private void stopNfcListening() {
-        ensureEngine().onNfcListeningStopped();
-
-        if (nfcAdapter != null) {
             try {
                 nfcAdapter.disableForegroundDispatch(this);
             } catch (Exception ignored) {
             }
+
+            Log.e(TAG, "NFC foreground dispatch failed", e);
+            sendEvent(
+                    "error",
+                    "NFC FOREGROUND DISPATCH FAILED"
+            );
+            return false;
+        }
+    }
+
+    private void stopNfcListening() {
+        nfcDispatchEnabled = false;
+
+        try {
+            ensureEngine().onNfcListeningStopped();
+        } catch (Exception e) {
+            Log.w(TAG, "Stopping NFC engine state failed", e);
+        }
+
+        disableNfcForegroundDispatch();
+    }
+
+    private void enableNfcForegroundDispatch() {
+        if (nfcAdapter == null || nfcPendingIntent == null) {
+            throw new IllegalStateException("NFC DISPATCH NOT READY");
+        }
+
+        nfcAdapter.enableForegroundDispatch(
+                this,
+                nfcPendingIntent,
+                null,
+                null
+        );
+    }
+
+    private void disableNfcForegroundDispatch() {
+        if (nfcAdapter == null) {
+            return;
+        }
+
+        try {
+            nfcAdapter.disableForegroundDispatch(this);
+        } catch (Exception ignored) {
         }
     }
 
@@ -378,31 +446,25 @@ public class MainActivity extends FlutterActivity
     protected void onResume() {
         super.onResume();
 
-        if (nfcAdapter != null && nfcPendingIntent != null) {
-            try {
-                nfcAdapter.enableForegroundDispatch(
-                        this,
-                        nfcPendingIntent,
-                        null,
-                        null
-                );
-            } catch (Exception e) {
-                Log.e(TAG, "NFC foreground dispatch failed", e);
-                sendEvent(
-                        "error",
-                        "NFC FOREGROUND DISPATCH FAILED"
-                );
-            }
+        if (!nfcDispatchEnabled) {
+            return;
+        }
+
+        try {
+            enableNfcForegroundDispatch();
+        } catch (Exception e) {
+            Log.e(TAG, "NFC foreground dispatch failed", e);
+            sendEvent(
+                    "error",
+                    "NFC FOREGROUND DISPATCH FAILED"
+            );
         }
     }
 
     @Override
     protected void onPause() {
-        if (nfcAdapter != null) {
-            try {
-                nfcAdapter.disableForegroundDispatch(this);
-            } catch (Exception ignored) {
-            }
+        if (nfcDispatchEnabled) {
+            disableNfcForegroundDispatch();
         }
 
         super.onPause();
@@ -446,8 +508,7 @@ public class MainActivity extends FlutterActivity
             return;
         }
 
-        ensureEngine();
-
+        CameraEngine engine = ensureEngine();
         boolean payloadForwarded = false;
 
         for (android.os.Parcelable raw : rawMessages) {
@@ -458,6 +519,10 @@ public class MainActivity extends FlutterActivity
             NdefMessage message = (NdefMessage) raw;
 
             for (NdefRecord record : message.getRecords()) {
+                if (record == null) {
+                    continue;
+                }
+
                 byte[] payload = record.getPayload();
 
                 if (payload == null || payload.length == 0) {
@@ -465,7 +530,7 @@ public class MainActivity extends FlutterActivity
                 }
 
                 payloadForwarded = true;
-                cameraEngine.handleNfcPayload(payload);
+                engine.handleNfcPayload(payload);
             }
         }
 
@@ -523,12 +588,15 @@ public class MainActivity extends FlutterActivity
             return;
         }
 
-        boolean granted = true;
+        boolean granted =
+                grantResults != null && grantResults.length > 0;
 
-        for (int value : grantResults) {
-            if (value != PackageManager.PERMISSION_GRANTED) {
-                granted = false;
-                break;
+        if (granted) {
+            for (int value : grantResults) {
+                if (value != PackageManager.PERMISSION_GRANTED) {
+                    granted = false;
+                    break;
+                }
             }
         }
 
@@ -580,8 +648,8 @@ public class MainActivity extends FlutterActivity
     // ---------------------------------------------------------------------
 
     /**
-     * CameraEngine emits all native events through this callback.
-     * MainActivity is deliberately the only owner of Flutter EventSink.
+     * CameraEngine emits native events through this callback. MainActivity
+     * remains the sole owner of Flutter's EventSink.
      */
     @Override
     public void onNativeEvent(String type, Object data) {
@@ -608,13 +676,20 @@ public class MainActivity extends FlutterActivity
             return;
         }
 
-        // Liveview is high-frequency and must never be buffered.
-        if ("liveviewFrame".equals(type)) {
+        /**
+         * Preview frames are high-frequency data-plane messages. Never buffer
+         * them because queueing old frames would reintroduce visual lag and
+         * can make a newly selected mode appear to flicker.
+         */
+        if ("liveviewFrame".equals(type)
+                || "spectralFrame".equals(type)) {
             sendEventNow(type, data);
             return;
         }
 
-        if (eventSink == null) {
+        EventChannel.EventSink sink = eventSink;
+
+        if (sink == null) {
             synchronized (pendingEvents) {
                 HashMap<String, Object> event = new HashMap<>();
                 event.put("type", type);
@@ -661,6 +736,10 @@ public class MainActivity extends FlutterActivity
         List<Map<String, Object>> snapshot;
 
         synchronized (pendingEvents) {
+            if (pendingEvents.isEmpty()) {
+                return;
+            }
+
             snapshot = new ArrayList<>(pendingEvents);
             pendingEvents.clear();
         }
@@ -716,7 +795,8 @@ public class MainActivity extends FlutterActivity
 
     @Override
     protected void onDestroy() {
-        stopNfcListening();
+        nfcDispatchEnabled = false;
+        disableNfcForegroundDispatch();
 
         if (cameraEngine != null) {
             try {
@@ -724,11 +804,13 @@ public class MainActivity extends FlutterActivity
             } catch (Exception e) {
                 Log.w(TAG, "GPU NDVI detach failed", e);
             }
+
             try {
                 cameraEngine.destroy();
             } catch (Exception e) {
                 Log.e(TAG, "CameraEngine destroy failed", e);
             }
+
             cameraEngine = null;
         }
 
