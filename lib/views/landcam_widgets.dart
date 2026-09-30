@@ -115,7 +115,8 @@ class LandCamHome extends StatelessWidget {
               return Row(
                 children: [
                   SizedBox(
-                    width: 108,
+                    width:
+                        108,
                     child:
                         _LandscapeControlRail(
                       dark:
@@ -143,7 +144,8 @@ class LandCamHome extends StatelessWidget {
                     ),
                   ),
                   Expanded(
-                    child: Center(
+                    child:
+                        Center(
                       child:
                           ConstrainedBox(
                         constraints:
@@ -167,22 +169,10 @@ class LandCamHome extends StatelessWidget {
                                 dark,
                             currentBand:
                                 currentBand,
-                            sourceLabel:
-                                sourceLabel,
                             frameCount:
                                 frameCount,
-                            frameWidth:
-                                frameWidth,
-                            frameHeight:
-                                frameHeight,
                             fps:
                                 fps,
-                            codec:
-                                codec,
-                            cameraName:
-                                cameraName,
-                            cameraEndpoint:
-                                cameraEndpoint,
                             captureMode:
                                 captureMode,
                             ndviEnabled:
@@ -195,8 +185,6 @@ class LandCamHome extends StatelessWidget {
                                 ndviTextureId,
                             ndvi:
                                 ndvi,
-                            ndviValidPixels:
-                                ndviValidPixels,
                             nirActivating:
                                 nirActivating,
                           ),
@@ -205,7 +193,8 @@ class LandCamHome extends StatelessWidget {
                     ),
                   ),
                   SizedBox(
-                    width: 108,
+                    width:
+                        108,
                     child:
                         _LandscapeShutterRail(
                       dark:
@@ -262,7 +251,8 @@ class LandCamHome extends StatelessWidget {
                       onNdvi,
                 ),
                 Expanded(
-                  child: Center(
+                  child:
+                      Center(
                     child:
                         Padding(
                       padding:
@@ -289,22 +279,10 @@ class LandCamHome extends StatelessWidget {
                               dark,
                           currentBand:
                               currentBand,
-                          sourceLabel:
-                              sourceLabel,
                           frameCount:
                               frameCount,
-                          frameWidth:
-                              frameWidth,
-                          frameHeight:
-                              frameHeight,
                           fps:
                               fps,
-                          codec:
-                              codec,
-                          cameraName:
-                              cameraName,
-                          cameraEndpoint:
-                              cameraEndpoint,
                           captureMode:
                               captureMode,
                           ndviEnabled:
@@ -317,8 +295,6 @@ class LandCamHome extends StatelessWidget {
                               ndviTextureId,
                           ndvi:
                               ndvi,
-                          ndviValidPixels:
-                              ndviValidPixels,
                           nirActivating:
                               nirActivating,
                         ),
@@ -345,7 +321,8 @@ class LandCamHome extends StatelessWidget {
   }
 }
 
-class _PortraitHeader extends StatelessWidget {
+class _PortraitHeader
+    extends StatelessWidget {
   const _PortraitHeader({
     required this.dark,
     required this.link,
@@ -377,8 +354,10 @@ class _PortraitHeader extends StatelessWidget {
     return Container(
       constraints:
           const BoxConstraints(
-        minHeight: 66,
-        maxHeight: 78,
+        minHeight:
+            66,
+        maxHeight:
+            78,
       ),
       padding:
           const EdgeInsets.fromLTRB(
@@ -400,44 +379,46 @@ class _PortraitHeader extends StatelessWidget {
           ),
         ),
       ),
-      child: Row(
+      child:
+          Row(
         children: [
           _MonoBrandMark(
             dark:
                 dark,
           ),
           const SizedBox(
-            width: 10,
+            width:
+                10,
           ),
           Expanded(
-            child: Column(
+            child:
+                Column(
               mainAxisAlignment:
-                  MainAxisAlignment
-                      .center,
+                  MainAxisAlignment.center,
               crossAxisAlignment:
-                  CrossAxisAlignment
-                      .start,
+                  CrossAxisAlignment.start,
               children: [
                 Text(
                   'LANDCAM',
-                  maxLines: 1,
+                  maxLines:
+                      1,
                   overflow:
-                      TextOverflow
-                          .ellipsis,
+                      TextOverflow.ellipsis,
                   style:
                       TextStyle(
                     color:
                         foreground,
-                    fontSize: 14,
+                    fontSize:
+                        14,
                     fontWeight:
-                        FontWeight
-                            .w900,
+                        FontWeight.w900,
                     letterSpacing:
                         1.8,
                   ),
                 ),
                 const SizedBox(
-                  height: 3,
+                  height:
+                      3,
                 ),
                 Row(
                   children: [
@@ -448,7 +429,8 @@ class _PortraitHeader extends StatelessWidget {
                           dark,
                     ),
                     const SizedBox(
-                      width: 6,
+                      width:
+                          6,
                     ),
                     Flexible(
                       child:
@@ -457,10 +439,10 @@ class _PortraitHeader extends StatelessWidget {
                                 null
                             ? status
                             : '$cameraName  •  $status',
-                        maxLines: 1,
+                        maxLines:
+                            1,
                         overflow:
-                            TextOverflow
-                                .ellipsis,
+                            TextOverflow.ellipsis,
                         style:
                             TextStyle(
                           color:
@@ -468,8 +450,7 @@ class _PortraitHeader extends StatelessWidget {
                           fontSize:
                               8,
                           fontWeight:
-                              FontWeight
-                                  .w800,
+                              FontWeight.w800,
                           letterSpacing:
                               .75,
                         ),
@@ -482,20 +463,19 @@ class _PortraitHeader extends StatelessWidget {
                         null
                 ) ...[
                   const SizedBox(
-                    height: 2,
+                    height:
+                        2,
                   ),
                   Text(
                     cameraEndpoint!,
                     maxLines:
                         1,
                     overflow:
-                        TextOverflow
-                            .ellipsis,
+                        TextOverflow.ellipsis,
                     style:
                         TextStyle(
                       color:
-                          secondary
-                              .withValues(
+                          secondary.withValues(
                         alpha:
                             .8,
                       ),
@@ -512,7 +492,8 @@ class _PortraitHeader extends StatelessWidget {
             ),
           ),
           const SizedBox(
-            width: 6,
+            width:
+                6,
           ),
           _IconButton(
             dark:
@@ -528,7 +509,8 @@ class _PortraitHeader extends StatelessWidget {
                     CameraLink.ready,
           ),
           const SizedBox(
-            width: 5,
+            width:
+                5,
           ),
           _IconButton(
             dark:
@@ -564,10 +546,8 @@ class _PortraitControlBar
   final CameraLink link;
   final bool ndviEnabled;
   final bool nirActivating;
-  final bool Function(SpectralBand)
-      bandEnabled;
-  final ValueChanged<SpectralBand>
-      onBand;
+  final bool Function(SpectralBand) bandEnabled;
+  final ValueChanged<SpectralBand> onBand;
   final VoidCallback onNdvi;
 
   @override
@@ -575,7 +555,8 @@ class _PortraitControlBar
     BuildContext context,
   ) {
     return Container(
-      height: 56,
+      height:
+          56,
       padding:
           const EdgeInsets.fromLTRB(
         8,
@@ -596,7 +577,8 @@ class _PortraitControlBar
           ),
         ),
       ),
-      child: Row(
+      child:
+          Row(
         children: [
           for (
             final band
@@ -607,7 +589,8 @@ class _PortraitControlBar
                   Padding(
                 padding:
                     const EdgeInsets.symmetric(
-                  horizontal: 2,
+                  horizontal:
+                      2,
                 ),
                 child:
                     _InlineControlButton(
@@ -615,15 +598,10 @@ class _PortraitControlBar
                       dark,
                   label:
                       band.shortLabel,
-
-                  // SINGLE SELECT:
-                  // ketika NDVI aktif, tidak ada
-                  // spectral band yang ikut highlighted.
                   active:
                       !ndviEnabled &&
                       band ==
                           currentBand,
-
                   enabled:
                       bandEnabled(
                     band,
@@ -650,7 +628,8 @@ class _PortraitControlBar
                 Padding(
               padding:
                   const EdgeInsets.symmetric(
-                horizontal: 2,
+                horizontal:
+                    2,
               ),
               child:
                   _InlineControlButton(
@@ -660,13 +639,8 @@ class _PortraitControlBar
                     Icons.analytics_outlined,
                 label:
                     'NDVI',
-
-                // SINGLE SELECT:
-                // NDVI adalah satu-satunya
-                // tombol yang highlighted.
                 active:
                     ndviEnabled,
-
                 enabled:
                     link ==
                             CameraLink.ready &&
@@ -705,7 +679,8 @@ class _PortraitShutterBar
     BuildContext context,
   ) =>
       Container(
-        height: 96,
+        height:
+            96,
         decoration:
             BoxDecoration(
           color:
@@ -758,10 +733,8 @@ class _LandscapeControlRail
   final SpectralBand currentBand;
   final bool ndviEnabled;
   final bool nirActivating;
-  final bool Function(SpectralBand)
-      bandEnabled;
-  final ValueChanged<SpectralBand>
-      onBand;
+  final bool Function(SpectralBand) bandEnabled;
+  final ValueChanged<SpectralBand> onBand;
   final VoidCallback onNdvi;
   final VoidCallback onConnection;
   final VoidCallback onSettings;
@@ -772,7 +745,9 @@ class _LandscapeControlRail
   ) {
     return Container(
       padding:
-          const EdgeInsets.all(7),
+          const EdgeInsets.all(
+        7,
+      ),
       decoration:
           BoxDecoration(
         color:
@@ -786,7 +761,8 @@ class _LandscapeControlRail
           ),
         ),
       ),
-      child: Column(
+      child:
+          Column(
         children: [
           _MonoBrandMark(
             dark:
@@ -795,7 +771,8 @@ class _LandscapeControlRail
                 true,
           ),
           const SizedBox(
-            height: 7,
+            height:
+                7,
           ),
           _RailActionButton(
             dark:
@@ -811,7 +788,8 @@ class _LandscapeControlRail
                 onConnection,
           ),
           const SizedBox(
-            height: 5,
+            height:
+                5,
           ),
           _RailActionButton(
             dark:
@@ -824,7 +802,8 @@ class _LandscapeControlRail
                 onSettings,
           ),
           const SizedBox(
-            height: 9,
+            height:
+                9,
           ),
           Expanded(
             child:
@@ -839,7 +818,8 @@ class _LandscapeControlRail
                   Padding(
                     padding:
                         const EdgeInsets.only(
-                      bottom: 5,
+                      bottom:
+                          5,
                     ),
                     child:
                         _RailBandButton(
@@ -847,15 +827,10 @@ class _LandscapeControlRail
                           dark,
                       band:
                           band,
-
-                      // SINGLE SELECT:
-                      // ketika NDVI aktif, tidak ada
-                      // spectral band yang ikut highlighted.
                       active:
                           !ndviEnabled &&
                           band ==
                               currentBand,
-
                       available:
                           bandEnabled(
                         band,
@@ -875,7 +850,8 @@ class _LandscapeControlRail
             ),
           ),
           const SizedBox(
-            height: 5,
+            height:
+                5,
           ),
           _RailActionButton(
             dark:
@@ -884,13 +860,8 @@ class _LandscapeControlRail
                 Icons.analytics_outlined,
             label:
                 'NDVI',
-
-            // SINGLE SELECT:
-            // NDVI menjadi satu-satunya
-            // tombol yang highlighted.
             active:
                 ndviEnabled,
-
             enabled:
                 link ==
                         CameraLink.ready &&
@@ -901,21 +872,23 @@ class _LandscapeControlRail
                 onNdvi,
           ),
           const SizedBox(
-            height: 5,
+            height:
+                5,
           ),
           Text(
             status,
-            maxLines: 2,
+            maxLines:
+                2,
             overflow:
-                TextOverflow
-                    .ellipsis,
+                TextOverflow.ellipsis,
             textAlign:
                 TextAlign.center,
             style:
                 TextStyle(
               color:
                   _uiSecondary(dark),
-              fontSize: 7,
+              fontSize:
+                  7,
               fontWeight:
                   FontWeight.w800,
               letterSpacing:
@@ -1018,7 +991,9 @@ class _InlineControlButton
 
     return Opacity(
       opacity:
-          enabled ? 1 : .35,
+          enabled
+              ? 1
+              : .35,
       child:
           Material(
         color:
@@ -1046,13 +1021,12 @@ class _InlineControlButton
                 BoxDecoration(
               color:
                   active
-                      ? controlAccent
-                          .withValues(
-                        alpha:
-                            dark
-                                ? .14
-                                : .09,
-                      )
+                      ? controlAccent.withValues(
+                          alpha:
+                              dark
+                                  ? .14
+                                  : .09,
+                        )
                       : _uiSurfaceAlt(
                           dark,
                         ),
@@ -1077,8 +1051,7 @@ class _InlineControlButton
             child:
                 Row(
               mainAxisAlignment:
-                  MainAxisAlignment
-                      .center,
+                  MainAxisAlignment.center,
               children: [
                 if (busy)
                   SizedBox(
@@ -1114,7 +1087,8 @@ class _InlineControlButton
                     busy
                 )
                   const SizedBox(
-                    width: 4,
+                    width:
+                        4,
                   ),
                 Flexible(
                   child:
@@ -1123,27 +1097,25 @@ class _InlineControlButton
                         BoxFit.scaleDown,
                     child:
                         Text(
-                      label,
-                      maxLines:
-                          1,
-                      style:
-                          TextStyle(
-                        color:
-                            active
-                                ? _uiAccent(
-                                    dark,
-                                  )
-                                : _uiForeground(
-                                    dark,
-                                  ),
-                        fontSize:
-                            8,
-                        fontWeight:
-                            FontWeight.w800,
-                        letterSpacing:
-                            .55,
-                      ),
-                    ),
+                          label,
+                          maxLines:
+                              1,
+                          style:
+                              TextStyle(
+                            color:
+                                active
+                                    ? controlAccent
+                                    : _uiForeground(
+                                        dark,
+                                      ),
+                            fontSize:
+                                8,
+                            fontWeight:
+                                FontWeight.w800,
+                            letterSpacing:
+                                .55,
+                          ),
+                        ),
                   ),
                 ),
               ],
@@ -1179,7 +1151,9 @@ class _RailBandButton
   ) =>
       Opacity(
         opacity:
-            available ? 1 : .30,
+            available
+                ? 1
+                : .30,
         child:
             Material(
           color:
@@ -1207,7 +1181,8 @@ class _RailBandButton
                   37,
               padding:
                   const EdgeInsets.symmetric(
-                horizontal: 8,
+                horizontal:
+                    8,
               ),
               alignment:
                   Alignment.center,
@@ -1317,7 +1292,9 @@ class _RailActionButton
   ) =>
       Opacity(
         opacity:
-            enabled ? 1 : .30,
+            enabled
+                ? 1
+                : .30,
         child:
             Material(
           color:
@@ -1345,7 +1322,8 @@ class _RailActionButton
                   44,
               padding:
                   const EdgeInsets.symmetric(
-                horizontal: 6,
+                horizontal:
+                    6,
               ),
               decoration:
                   BoxDecoration(
@@ -1385,8 +1363,7 @@ class _RailActionButton
               child:
                   Column(
                 mainAxisAlignment:
-                    MainAxisAlignment
-                        .center,
+                    MainAxisAlignment.center,
                 children: [
                   Icon(
                     icon,
@@ -1402,34 +1379,35 @@ class _RailActionButton
                               ),
                   ),
                   const SizedBox(
-                    height: 3,
+                    height:
+                        3,
                   ),
                   FittedBox(
                     fit:
                         BoxFit.scaleDown,
                     child:
                         Text(
-                      label,
-                      maxLines:
-                          1,
-                      style:
-                          TextStyle(
-                        color:
-                            active
-                                ? _uiAccent(
-                                    dark,
-                                  )
-                                : _uiForeground(
-                                    dark,
-                                  ),
-                        fontSize:
-                            6.5,
-                        fontWeight:
-                            FontWeight.w800,
-                        letterSpacing:
-                            .45,
-                      ),
-                    ),
+                          label,
+                          maxLines:
+                              1,
+                          style:
+                              TextStyle(
+                            color:
+                                active
+                                    ? _uiAccent(
+                                        dark,
+                                      )
+                                    : _uiForeground(
+                                        dark,
+                                      ),
+                            fontSize:
+                                6.5,
+                            fontWeight:
+                                FontWeight.w800,
+                            letterSpacing:
+                                .45,
+                          ),
+                        ),
                   ),
                 ],
               ),
@@ -1446,21 +1424,14 @@ class _CameraPreview
     required this.link,
     required this.dark,
     required this.currentBand,
-    required this.sourceLabel,
     required this.frameCount,
-    required this.frameWidth,
-    required this.frameHeight,
     required this.fps,
-    required this.codec,
-    required this.cameraName,
-    required this.cameraEndpoint,
     required this.captureMode,
     required this.ndviEnabled,
     this.previewMode,
     this.ndviGpuActive = false,
     this.ndviTextureId,
     required this.ndvi,
-    required this.ndviValidPixels,
     required this.nirActivating,
   });
 
@@ -1468,21 +1439,14 @@ class _CameraPreview
   final CameraLink link;
   final bool dark;
   final SpectralBand currentBand;
-  final String? sourceLabel;
   final int frameCount;
-  final int? frameWidth;
-  final int? frameHeight;
   final double? fps;
-  final String? codec;
-  final String? cameraName;
-  final String? cameraEndpoint;
   final String captureMode;
   final bool ndviEnabled;
   final String? previewMode;
   final bool ndviGpuActive;
   final int? ndviTextureId;
   final double? ndvi;
-  final int ndviValidPixels;
   final bool nirActivating;
 
   String get _effectivePreviewMode {
@@ -1492,7 +1456,8 @@ class _CameraPreview
                 .toUpperCase() ??
             '';
 
-    if (explicit == 'NDVI' ||
+    if (
+        explicit == 'NDVI' ||
         explicit == 'RAW' ||
         explicit == 'PROCESSED') {
       return explicit;
@@ -1506,11 +1471,8 @@ class _CameraPreview
   }
 
   bool get _isNdviPreview =>
-      _effectivePreviewMode == 'NDVI';
-
-  bool get _isRawPreview =>
-      !_isNdviPreview &&
-      _effectivePreviewMode == 'RAW';
+      _effectivePreviewMode ==
+      'NDVI';
 
   bool get _hasByteFrame =>
       frame != null &&
@@ -1528,39 +1490,28 @@ class _CameraPreview
   Color get _previewModeAccent =>
       _isNdviPreview
           ? _uiAccent(dark)
-          : _isRawPreview
-              ? _spectralAccent(
-                  dark,
-                  SpectralBand.nir,
-                )
-              : _spectralAccent(
-                  dark,
-                  currentBand,
-                );
+          : _spectralAccent(
+              dark,
+              currentBand,
+            );
 
-  String get _previewTitle =>
-      _isNdviPreview
-          ? 'NDVI'
-          : _isRawPreview
-              ? 'RAW'
-              : currentBand.title;
+  String get _previewModeLabel {
+    if (_isNdviPreview) {
+      return 'NDVI';
+    }
 
-  String get _previewSource =>
-      _isNdviPreview
-          ? 'RED + NIR • NDVI'
-          : sourceLabel ??
-              currentBand.sourceLabel;
+    // Untuk RGB / R / G / B / NIR,
+    // gunakan label spectral band.
+    return currentBand.shortLabel;
+  }
 
   @override
   Widget build(
     BuildContext context,
   ) {
-    final ready =
-        link == CameraLink.ready &&
-        _hasPreview;
-
     return RepaintBoundary(
-      child: DecoratedBox(
+      child:
+          DecoratedBox(
         decoration:
             BoxDecoration(
           color:
@@ -1568,58 +1519,88 @@ class _CameraPreview
           border:
               Border.all(
             color:
-                ready
-                    ? _previewModeAccent.withValues(
-                        alpha: .72,
-                      )
-                    : _uiBorderStrong(dark),
+                _hasPreview
+                    ? _previewModeAccent
+                        .withValues(
+                      alpha:
+                          .72,
+                    )
+                    : _uiBorderStrong(
+                        dark,
+                      ),
             width:
-                ready ? 1.2 : 1,
+                _hasPreview
+                    ? 1.2
+                    : 1,
           ),
           borderRadius:
-              BorderRadius.circular(8),
+              BorderRadius.circular(
+            8,
+          ),
           boxShadow: [
-            if (ready)
+            if (_hasPreview)
               BoxShadow(
                 color:
-                    _previewModeAccent.withValues(
-                  alpha: .10,
+                    _previewModeAccent
+                        .withValues(
+                  alpha:
+                      .10,
                 ),
-                blurRadius: 18,
-                spreadRadius: 1,
+                blurRadius:
+                    18,
+                spreadRadius:
+                    1,
               ),
           ],
         ),
         child:
             ClipRRect(
           borderRadius:
-              BorderRadius.circular(7),
+              BorderRadius.circular(
+            7,
+          ),
           child:
               AspectRatio(
-            aspectRatio: 1,
+            aspectRatio:
+                1,
             child:
                 Stack(
-              fit: StackFit.expand,
+              fit:
+                  StackFit.expand,
               children: [
+                // =========================================================
+                // PREVIEW IMAGE
+                // =========================================================
                 if (_hasGpuNdviTexture)
                   SizedBox.expand(
-                    child: Texture(
-                      textureId: ndviTextureId!,
+                    child:
+                        Texture(
+                      textureId:
+                          ndviTextureId!,
                     ),
                   )
                 else if (_hasByteFrame)
                   _ProcessedImage(
-                    bytes: frame!,
-                    fit: BoxFit.contain,
+                    bytes:
+                        frame!,
+                    fit:
+                        BoxFit.contain,
                   )
                 else
                   _PreviewEmpty(
-                    link: link,
-                    band: currentBand,
-                    activating: nirActivating,
-                    ndviEnabled: _isNdviPreview,
+                    link:
+                        link,
+                    band:
+                        currentBand,
+                    activating:
+                        nirActivating,
+                    ndviEnabled:
+                        _isNdviPreview,
                   ),
 
+                // =========================================================
+                // VIEWFINDER
+                // =========================================================
                 const Positioned.fill(
                   child:
                       IgnorePointer(
@@ -1628,134 +1609,50 @@ class _CameraPreview
                   ),
                 ),
 
+                // =========================================================
+                // ONLY MODE + FPS
+                // =========================================================
                 Positioned(
-                  top: 10,
-                  left: 10,
-                  right: 10,
-                  child: Row(
+                  top:
+                      10,
+                  left:
+                      10,
+                  right:
+                      10,
+                  child:
+                      Row(
                     children: [
                       _PreviewTag(
-                        text: _previewTitle,
-                        active: true,
-                        accent: _previewModeAccent,
-                      ),
-                      const SizedBox(width: 5),
-                      Flexible(
-                        child:
-                            _PreviewTag(
-                          text: _previewSource,
-                        ),
-                      ),
-                      if (cameraName != null) ...[
-                        const SizedBox(width: 5),
-                        Flexible(
-                          child:
-                              _PreviewTag(
-                            text: cameraName!,
-                          ),
-                        ),
-                      ],
-                      const Spacer(),
-                      _PreviewTag(
                         text:
-                            captureMode == 'RAW'
-                                ? 'RAW'
-                                : 'PROCESSED',
+                            _previewModeLabel,
                         active:
-                            captureMode == 'RAW',
+                            true,
                         accent:
-                            captureMode == 'RAW'
-                                ? _spectralAccent(
-                                    dark,
-                                    SpectralBand.nir,
-                                  )
-                                : null,
+                            _previewModeAccent,
                       ),
-                      const SizedBox(width: 5),
-                      _PreviewTag(
-                        text: link.label,
-                        active:
-                            link == CameraLink.ready,
-                      ),
-                    ],
-                  ),
-                ),
-
-                if (_isNdviPreview)
-                  Positioned(
-                    top: 42,
-                    left: 10,
-                    child:
-                        _NdviLegend(
-                      dark: dark,
-                      value: ndvi,
-                    ),
-                  ),
-
-                Positioned(
-                  left: 10,
-                  right: 10,
-                  bottom: 10,
-                  child: Row(
-                    children: [
-                      _PreviewTag(
-                        text:
-                            frameWidth != null &&
-                                    frameHeight != null
-                                ? '${frameWidth}x$frameHeight'
-                                : '---',
-                      ),
-                      const SizedBox(width: 5),
+                      const Spacer(),
                       _PreviewTag(
                         text:
                             fps == null
                                 ? '-- FPS'
                                 : '${fps!.toStringAsFixed(1)} FPS',
                       ),
-                      const SizedBox(width: 5),
-                      if (_isNdviPreview) ...[
-                        _PreviewTag(
-                          text:
-                              ndvi == null
-                                  ? 'NDVI --'
-                                  : 'NDVI ${ndvi!.toStringAsFixed(3)}',
-                          active: true,
-                          accent: _uiAccent(dark),
-                        ),
-                        const SizedBox(width: 5),
-                        _PreviewTag(
-                          text:
-                              '$ndviValidPixels PX',
-                          active: ndvi != null,
-                        ),
-                      ],
-                      if (codec != null &&
-                          codec!.isNotEmpty) ...[
-                        const SizedBox(width: 5),
-                        _PreviewTag(text: codec!),
-                      ],
-                      const Spacer(),
-                      if (cameraEndpoint != null)
-                        Flexible(
-                          child:
-                              Align(
-                            alignment:
-                                Alignment.centerRight,
-                            child:
-                                _PreviewTag(
-                              text:
-                                  cameraEndpoint!,
-                            ),
-                          ),
-                        ),
-                      const SizedBox(width: 5),
-                      _PreviewTag(
-                        text:
-                            '#${frameCount.toString().padLeft(5, '0')}',
-                      ),
                     ],
                   ),
                 ),
+
+                // =========================================================
+                // NDVI LEGEND ONLY
+                // =========================================================
+                if (_isNdviPreview)
+                  Positioned(
+                    top:
+                        44,
+                    left:
+                        10,
+                    child:
+                        const _NdviLegend(),
+                  ),
               ],
             ),
           ),
@@ -1765,19 +1662,23 @@ class _CameraPreview
   }
 }
 
-class _NdviLegend extends StatelessWidget {
-  const _NdviLegend({
-    required this.dark,
-    required this.value,
-  });
-
-  final bool dark;
-  final double? value;
+class _NdviLegend
+    extends StatelessWidget {
+  const _NdviLegend();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+    BuildContext context,
+  ) {
+    final dark =
+        Theme.of(
+                  context,
+                ).brightness ==
+                Brightness.dark;
+
     return DecoratedBox(
-      decoration: BoxDecoration(
+      decoration:
+          BoxDecoration(
         color:
             Colors.black.withValues(
           alpha:
@@ -1793,7 +1694,8 @@ class _NdviLegend extends StatelessWidget {
               _uiBorderStrong(
             dark,
           ),
-          width: 1,
+          width:
+              1,
         ),
       ),
       child:
@@ -1827,7 +1729,8 @@ class _NdviLegend extends StatelessWidget {
               ),
             ),
             const SizedBox(
-              height: 4,
+              height:
+                  4,
             ),
             Container(
               width:
@@ -1843,17 +1746,28 @@ class _NdviLegend extends StatelessWidget {
                 gradient:
                     const LinearGradient(
                   colors: [
-                    Color(0xFFD7191C),
-                    Color(0xFFFF7F00),
-                    Color(0xFFFFE600),
-                    Color(0xFF8BC34A),
-                    Color(0xFF15803D),
+                    Color(
+                      0xFFD7191C,
+                    ),
+                    Color(
+                      0xFFFF7F00,
+                    ),
+                    Color(
+                      0xFFFFE600,
+                    ),
+                    Color(
+                      0xFF8BC34A,
+                    ),
+                    Color(
+                      0xFF15803D,
+                    ),
                   ],
                 ),
               ),
             ),
             const SizedBox(
-              height: 2,
+              height:
+                  2,
             ),
             SizedBox(
               width:
@@ -1876,25 +1790,6 @@ class _NdviLegend extends StatelessWidget {
                 ],
               ),
             ),
-            if (value != null) ...[
-              const SizedBox(
-                height: 2,
-              ),
-              Text(
-                'CURRENT ${value!.toStringAsFixed(3)}',
-                style:
-                    const TextStyle(
-                  color:
-                      Colors.white,
-                  fontSize:
-                      8,
-                  fontWeight:
-                      FontWeight.w800,
-                  letterSpacing:
-                      .8,
-                ),
-              ),
-            ],
           ],
         ),
       ),
@@ -1918,7 +1813,8 @@ class _NdviLegend extends StatelessWidget {
       );
 }
 
-class _ProcessedImage extends StatefulWidget {
+class _ProcessedImage
+    extends StatefulWidget {
   const _ProcessedImage({
     super.key,
     required this.bytes,
@@ -1933,9 +1829,12 @@ class _ProcessedImage extends StatefulWidget {
       _ProcessedImageState();
 }
 
-class _ProcessedImageState extends State<_ProcessedImage> {
+class _ProcessedImageState
+    extends State<_ProcessedImage> {
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+    BuildContext context,
+  ) {
     /*
      * IMPORTANT — NORMAL RGB/R/G/B PREVIEW ONLY
      *
@@ -1943,28 +1842,27 @@ class _ProcessedImageState extends State<_ProcessedImage> {
      * lifecycle manage the provider transition. We intentionally do NOT call
      * provider.resolve() ourselves here.
      *
-     * The previous implementation manually resolved every MemoryImage and
-     * then rendered the same provider again through Image(...). With a
-     * continuous JPEG stream that creates duplicate image-stream work and can
-     * build up decode/cache pressure until the visible preview appears to
-     * stall.
+     * gaplessPlayback=true keeps the previous decoded frame visible while
+     * the next JPEG frame is decoding.
      *
-     * gaplessPlayback=true is the critical stability rule: while the next
-     * JPEG is decoding, the last decoded image remains visible. There is no
-     * per-frame key, so this State/Image element is never torn down between
-     * frames.
-     *
-     * NDVI NEVER ENTERS THIS WIDGET. NDVI is rendered by the native
-     * SurfaceTexture branch in _CameraPreview and is therefore unchanged.
+     * NDVI NEVER ENTERS THIS WIDGET.
+     * NDVI is rendered by the native SurfaceTexture branch in
+     * _CameraPreview.
      */
     return Image.memory(
       widget.bytes,
-      fit: widget.fit,
-      alignment: Alignment.center,
-      gaplessPlayback: true,
-      filterQuality: FilterQuality.low,
-      isAntiAlias: false,
-      excludeFromSemantics: true,
+      fit:
+          widget.fit,
+      alignment:
+          Alignment.center,
+      gaplessPlayback:
+          true,
+      filterQuality:
+          FilterQuality.low,
+      isAntiAlias:
+          false,
+      excludeFromSemantics:
+          true,
     );
   }
 }
@@ -1999,11 +1897,9 @@ class _PreviewEmpty
             : activating
                 ? 'ACQUIRING ${band.title}'
                 : link ==
-                            CameraLink
-                                .idle ||
+                            CameraLink.idle ||
                         link ==
-                            CameraLink
-                                .error
+                            CameraLink.error
                     ? 'CONNECT CAMERA'
                     : 'WAITING FOR ${band.title}';
 
@@ -2042,7 +1938,8 @@ class _PreviewEmpty
               ),
               child:
                   Icon(
-                ndviEnabled || activating
+                ndviEnabled ||
+                        activating
                     ? Icons.radar_rounded
                     : link ==
                                 CameraLink
@@ -2053,15 +1950,21 @@ class _PreviewEmpty
                         ? Icons.camera_outlined
                         : Icons.crop_free_rounded,
                 color:
-                    ndviEnabled || activating
-                        ? _uiAccent(dark)
-                        : _uiMuted(dark),
+                    ndviEnabled ||
+                            activating
+                        ? _uiAccent(
+                            dark,
+                          )
+                        : _uiMuted(
+                            dark,
+                          ),
                 size:
                     24,
               ),
             ),
             const SizedBox(
-              height: 12,
+              height:
+                  12,
             ),
             Text(
               message,
@@ -2451,8 +2354,7 @@ class _StatusIndicator
             color,
         boxShadow:
             link ==
-                    CameraLink
-                        .ready
+                    CameraLink.ready
                 ? [
                     BoxShadow(
                       color:
@@ -2497,7 +2399,9 @@ class _ShutterButton
 
     return Opacity(
       opacity:
-          ready ? 1 : .38,
+          ready
+              ? 1
+              : .38,
       child:
           Material(
         color:
@@ -2567,10 +2471,8 @@ class _ShutterButton
             child:
                 Icon(
               capturing
-                  ? Icons
-                      .hourglass_top_rounded
-                  : Icons
-                      .camera_alt_rounded,
+                  ? Icons.hourglass_top_rounded
+                  : Icons.camera_alt_rounded,
               color:
                   capturing
                       ? accent
@@ -2623,8 +2525,10 @@ class _PreviewTag
       ),
       padding:
           const EdgeInsets.symmetric(
-        horizontal: 7,
-        vertical: 4,
+        horizontal:
+            7,
+        vertical:
+            4,
       ),
       decoration:
           BoxDecoration(
@@ -2642,8 +2546,7 @@ class _PreviewTag
           color:
               active
                   ? tagAccent
-                  : Colors.white
-                      .withValues(
+                  : Colors.white.withValues(
                       alpha:
                           .18,
                     ),
@@ -2818,45 +2721,45 @@ Color _spectralAccent(
 ) =>
     switch (band) {
       SpectralBand.rgb =>
-          dark
-              ? const Color(
-                  0xFFE9EFEB,
-                )
-              : const Color(
-                  0xFF1A211D,
-                ),
+        dark
+            ? const Color(
+                0xFFE9EFEB,
+              )
+            : const Color(
+                0xFF1A211D,
+              ),
       SpectralBand.red =>
-          dark
-              ? const Color(
-                  0xFFE16B70,
-                )
-              : const Color(
-                  0xFFB23D43,
-                ),
+        dark
+            ? const Color(
+                0xFFE16B70,
+              )
+            : const Color(
+                0xFFB23D43,
+              ),
       SpectralBand.green =>
-          dark
-              ? const Color(
-                  0xFF55D98B,
-                )
-              : const Color(
-                  0xFF1D7E4B,
-                ),
+        dark
+            ? const Color(
+                0xFF55D98B,
+              )
+            : const Color(
+                0xFF1D7E4B,
+              ),
       SpectralBand.blue =>
-          dark
-              ? const Color(
-                  0xFF72A8F4,
-                )
-              : const Color(
-                  0xFF3A68AE,
-                ),
+        dark
+            ? const Color(
+                0xFF72A8F4,
+              )
+            : const Color(
+                0xFF3A68AE,
+              ),
       SpectralBand.nir =>
-          dark
-              ? const Color(
-                  0xFFD4A56B,
-                )
-              : const Color(
-                  0xFF946428,
-                ),
+        dark
+            ? const Color(
+                0xFFD4A56B,
+              )
+            : const Color(
+                0xFF946428,
+              ),
     };
 
 Color _activeTextOn(
