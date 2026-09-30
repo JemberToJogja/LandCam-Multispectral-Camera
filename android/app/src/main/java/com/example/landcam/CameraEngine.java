@@ -1,13 +1,3 @@
-// → NDVI owns preview pipeline
-// → tidak pernah fall-through ke RGB/R/G/B/NIR
-// → frame NDVI belum waktunya = hold last frame
-// → GPU gagal = CPU session
-// → tidak GPU ↔ CPU bolak-balik
-// → mode change = increment previewGeneration
-// → frame lama = DROP
-// → stream worker juga tunduk pada generation
-// → RGB event lama tidak bisa takeover NDVI
-
 package com.example.landcam;
 
 import android.Manifest;
