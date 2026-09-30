@@ -1934,163 +1934,36 @@ class _ProcessedImage extends StatefulWidget {
 }
 
 class _ProcessedImageState extends State<_ProcessedImage> {
-  late ImageProvider<Object> _displayedProvider;
-
-  ImageStream? _pendingStream;
-  ImageStreamListener? _pendingListener;
-
-  int _requestGeneration = 0;
-  bool _hasDisplayedFrame = false;
-  bool _pendingError = false;
-  bool _initialResolveDone = false;
-  ImageConfiguration? _imageConfiguration;
-
-  @override
-  void initState() {
-    super.initState();
-
-    // Only initialize the provider here. Do not resolve it yet:
-    // createLocalImageConfiguration(context) reads inherited widgets such as
-    // MediaQuery, which are not safe to depend on during initState().
-    _displayedProvider = MemoryImage(widget.bytes);
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-
-    // This is the first lifecycle point where inherited widgets such as
-    // MediaQuery may safely be read. Keep the configuration for subsequent
-    // frame resolves so didUpdateWidget() never has to depend on them.
-    _imageConfiguration = createLocalImageConfiguration(context);
-
-    if (_initialResolveDone) {
-      return;
-    }
-
-    _initialResolveDone = true;
-    _resolveNext(_displayedProvider, initial: true);
-  }
-
-  @override
-  void didUpdateWidget(covariant _ProcessedImage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-
-    if (identical(oldWidget.bytes, widget.bytes)) {
-      return;
-    }
-
-    _resolveNext(
-      MemoryImage(widget.bytes),
-      initial: false,
-    );
-  }
-
-  void _resolveNext(
-    ImageProvider<Object> provider, {
-    required bool initial,
-  }) {
-    _removePendingListener();
-
-    final generation = ++_requestGeneration;
-
-    final configuration = _imageConfiguration;
-    if (configuration == null) {
-      return;
-    }
-
-    final stream = provider.resolve(configuration);
-
-    late final ImageStreamListener listener;
-
-    listener = ImageStreamListener(
-      (ImageInfo info, bool synchronousCall) {
-        if (!mounted || generation != _requestGeneration) {
-          return;
-        }
-
-        _removePendingListener();
-
-        // Commit after the current build phase. This also covers the case where
-        // the image is already cached and ImageStream calls us synchronously.
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted || generation != _requestGeneration) {
-            return;
-          }
-
-          setState(() {
-            _displayedProvider = provider;
-            _hasDisplayedFrame = true;
-            _pendingError = false;
-          });
-        });
-      },
-      onError: (Object error, StackTrace? stack) {
-        if (!mounted || generation != _requestGeneration) {
-          return;
-        }
-
-        _removePendingListener();
-
-        // Never replace a valid frame with a blank/error frame.
-        if (!_hasDisplayedFrame && initial) {
-          setState(() {
-            _pendingError = true;
-          });
-        }
-      },
-    );
-
-    _pendingStream = stream;
-    _pendingListener = listener;
-    stream.addListener(listener);
-  }
-
-  void _removePendingListener() {
-    final stream = _pendingStream;
-    final listener = _pendingListener;
-
-    if (stream != null && listener != null) {
-      stream.removeListener(listener);
-    }
-
-    _pendingStream = null;
-    _pendingListener = null;
-  }
-
-  @override
-  void dispose() {
-    _removePendingListener();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
-    if (_pendingError && !_hasDisplayedFrame) {
-      return Center(
-        child: Text(
-          'FRAME DECODE ERROR',
-          style: TextStyle(
-            color: _uiAccent(
-              Theme.of(context).brightness == Brightness.dark,
-            ),
-            fontWeight: FontWeight.w800,
-            fontSize: 10,
-            letterSpacing: 1,
-          ),
-        ),
-      );
-    }
-
-    // The Image subtree stays alive while the next JPEG is decoding.
-    // Only the provider changes after a real decoded frame exists.
-    return Image(
-      image: _displayedProvider,
+    /*
+     * IMPORTANT — NORMAL RGB/R/G/B PREVIEW ONLY
+     *
+     * Keep exactly ONE Image element alive and let Flutter's own Image
+     * lifecycle manage the provider transition. We intentionally do NOT call
+     * provider.resolve() ourselves here.
+     *
+     * The previous implementation manually resolved every MemoryImage and
+     * then rendered the same provider again through Image(...). With a
+     * continuous JPEG stream that creates duplicate image-stream work and can
+     * build up decode/cache pressure until the visible preview appears to
+     * stall.
+     *
+     * gaplessPlayback=true is the critical stability rule: while the next
+     * JPEG is decoding, the last decoded image remains visible. There is no
+     * per-frame key, so this State/Image element is never torn down between
+     * frames.
+     *
+     * NDVI NEVER ENTERS THIS WIDGET. NDVI is rendered by the native
+     * SurfaceTexture branch in _CameraPreview and is therefore unchanged.
+     */
+    return Image.memory(
+      widget.bytes,
       fit: widget.fit,
       alignment: Alignment.center,
       gaplessPlayback: true,
       filterQuality: FilterQuality.low,
-      isAntiAlias: true,
+      isAntiAlias: false,
       excludeFromSemantics: true,
     );
   }
