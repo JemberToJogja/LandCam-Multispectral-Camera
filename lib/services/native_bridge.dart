@@ -8,18 +8,26 @@ import '../models/landcam_models.dart';
 /// - communicate with Android through MethodChannel
 /// - receive realtime native events through EventChannel
 /// - expose camera/network/capture/NDVI commands to the ViewModel
+/// - apply LANDCAM Advanced Settings to the native camera pipeline
 ///
-/// Native remains responsible for camera discovery, connection,
-/// spectral processing, unified crop generation, registration,
-/// realtime NDVI calculation, autofocus, GPU preview rendering,
-/// and capture processing.
+/// Native remains responsible for:
+/// - camera discovery
+/// - connection
+/// - spectral processing
+/// - unified crop generation
+/// - registration
+/// - realtime NDVI calculation
+/// - autofocus
+/// - GPU preview rendering
+/// - capture processing
 ///
 /// Design rule:
 /// - Flutter is the control/state plane.
 /// - Android is the camera/data/pixel plane.
 /// - The bridge must never throw a platform/plugin error into the UI
-///   layer for a normal bridge failure. Command methods return a safe
-///   fallback instead.
+///   layer for a normal bridge failure.
+///
+/// Command methods return safe fallback values instead.
 class NativeBridge {
   NativeBridge();
 
@@ -33,7 +41,7 @@ class NativeBridge {
 
   /// Realtime event stream emitted by Android.
   ///
-  /// This remains a broadcast stream so ViewModel/UI listeners do not need
+  /// This is a broadcast stream so ViewModel/UI listeners do not need
   /// to coordinate ownership of the native event source.
   static Stream<dynamic> get eventStream =>
       events.receiveBroadcastStream();
@@ -44,7 +52,7 @@ class NativeBridge {
 
   /// Initializes the native LANDCAM engine.
   ///
-  /// A bridge failure returns false instead of propagating a
+  /// A bridge failure returns false instead of propagating
   /// MissingPluginException / PlatformException into startup code.
   static Future<bool> initialize() async =>
       _invokeBool('initialize');
@@ -63,7 +71,7 @@ class NativeBridge {
 
   /// Stops NFC listening.
   ///
-  /// Kept as Future<void> for API compatibility with the existing
+  /// Kept as Future<void> for API compatibility with existing
   /// ViewModel/UI code.
   static Future<void> stopNfc() async =>
       _invokeVoid('stopNfc');
@@ -88,10 +96,11 @@ class NativeBridge {
 
   /// Changes the active spectral acquisition band.
   ///
-  /// NDVI is deliberately not represented by [SpectralBand]. NDVI is a
-  /// separate preview/analysis mode controlled by [setNdviEnabled].
+  /// NDVI is deliberately not represented by [SpectralBand].
+  /// NDVI is a separate preview/analysis mode controlled by
+  /// [setNdviEnabled].
   ///
-  /// Returns false when the native side rejects the request, the plugin is
+  /// Returns false when native rejects the request, the plugin is
   /// unavailable, or the platform call otherwise fails.
   static Future<bool> setSpectralBand(
     SpectralBand band,
@@ -101,20 +110,28 @@ class NativeBridge {
         band.nativeName,
       );
 
-  /// Changes the capture mode.
+  /// Changes the legacy capture mode.
   ///
-  /// Expected values currently used by LANDCAM:
+  /// Expected values currently used by the legacy camera UI:
   /// - RAW
   /// - PROCESSED
   ///
-  /// Invalid/unknown values are rejected locally so the native engine does
-  /// not receive malformed control commands.
+  /// Advanced Settings should use [applyAdvancedSettings] instead because
+  /// it supports:
+  /// - RAW
+  /// - PROCESSED
+  /// - RAW + PROCESSED
+  ///
+  /// Invalid/unknown values are rejected locally so the native engine
+  /// does not receive malformed control commands.
   static Future<bool> setCaptureMode(
     String mode,
   ) async {
-    final normalized = mode.trim().toUpperCase();
+    final normalized =
+        mode.trim().toUpperCase();
 
-    if (normalized != 'RAW' && normalized != 'PROCESSED') {
+    if (normalized != 'RAW' &&
+        normalized != 'PROCESSED') {
       return false;
     }
 
@@ -124,15 +141,22 @@ class NativeBridge {
     );
   }
 
-  /// Returns the current native capture mode.
+  /// Returns the current native legacy capture mode.
   ///
-  /// Only RAW and PROCESSED are accepted from native. Anything else falls
-  /// back to PROCESSED so malformed/stale native state cannot leak upward.
+  /// Only RAW and PROCESSED are accepted from native.
+  /// Anything else falls back to PROCESSED so malformed or stale
+  /// native state cannot leak upward.
   static Future<String> getCaptureMode() async {
-    final value = await _invokeString('getCaptureMode');
-    final normalized = value.trim().toUpperCase();
+    final value =
+        await _invokeString(
+      'getCaptureMode',
+    );
 
-    if (normalized == 'RAW' || normalized == 'PROCESSED') {
+    final normalized =
+        value.trim().toUpperCase();
+
+    if (normalized == 'RAW' ||
+        normalized == 'PROCESSED') {
       return normalized;
     }
 
@@ -145,8 +169,9 @@ class NativeBridge {
   ///
   ///     NDVI = (NIR - R) / (NIR + R)
   ///
-  /// The native renderer owns the pixel computation and the Flutter side
-  /// only controls the mode and consumes the resulting preview events.
+  /// The native renderer owns the pixel computation and the Flutter
+  /// side only controls the mode and consumes the resulting preview
+  /// events.
   static Future<bool> setNdviEnabled(
     bool enabled,
   ) async =>
@@ -157,7 +182,118 @@ class NativeBridge {
 
   /// Returns whether native realtime NDVI is currently enabled.
   static Future<bool> getNdviEnabled() async =>
-      _invokeBool('getNdviEnabled');
+      _invokeBool(
+        'getNdviEnabled',
+      );
+
+  // ---------------------------------------------------------------------------
+  // Advanced Settings
+  // ---------------------------------------------------------------------------
+
+  /// Applies the complete LANDCAM Advanced Settings configuration
+  /// to the native camera/data pipeline.
+  ///
+  /// The configuration is sent atomically as one payload:
+  ///
+  /// {
+  ///   "captureOutput": "RAW" | "PROCESSED" | "RAW_AND_PROCESSED",
+  ///   "performance": "PERFORMANCE" | "BALANCED" | "HIGH_QUALITY",
+  ///   "performanceConfig": {
+  ///     "previewScale": double,
+  ///     "processingScale": double,
+  ///     "processingEveryNFrames": int
+  ///   }
+  /// }
+  ///
+  /// Keeping this as one native command prevents Flutter and Android
+  /// from entering a partially-applied Advanced Settings state.
+  static Future<bool> applyAdvancedSettings(
+    AdvancedSettings settings,
+  ) async =>
+      _invokeBool(
+        'applyAdvancedSettings',
+        settings.toMap(),
+      );
+
+  /// Applies only the capture-output portion of Advanced Settings.
+  ///
+  /// This is useful when a future UI needs to update capture output
+  /// independently without rebuilding the complete settings object.
+  static Future<bool> setCaptureOutput(
+    CaptureOutputMode mode,
+  ) async =>
+      _invokeBool(
+        'setCaptureOutput',
+        mode.nativeName,
+      );
+
+  /// Applies only the performance portion of Advanced Settings.
+  ///
+  /// The native side receives both the selected mode and its resolved
+  /// performance configuration.
+  static Future<bool> setPerformance(
+    PerformanceMode mode,
+  ) async {
+    final config =
+        PerformanceConfig.fromMode(
+      mode,
+    );
+
+    return _invokeBool(
+      'setPerformance',
+      {
+        'mode': mode.nativeName,
+        'config': config.toMap(),
+      },
+    );
+  }
+
+  /// Returns the current native Advanced Settings payload.
+  ///
+  /// This method is optional for startup synchronization. A failed or
+  /// malformed response returns null rather than leaking a bridge error.
+  static Future<AdvancedSettings?> getAdvancedSettings() async {
+    try {
+      final value =
+          await methods.invokeMapMethod<String, dynamic>(
+        'getAdvancedSettings',
+      );
+
+      if (value == null) {
+        return null;
+      }
+
+      final captureOutput =
+          _captureOutputFromNative(
+        value['captureOutput'],
+      );
+
+      final performance =
+          _performanceFromNative(
+        value['performance'],
+      );
+
+      if (captureOutput == null ||
+          performance == null) {
+        return null;
+      }
+
+      return AdvancedSettings(
+        captureOutput: captureOutput,
+        performance: performance,
+      );
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      return null;
+    } on Exception {
+      return null;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Session commands
+  // ---------------------------------------------------------------------------
 
   /// Disconnects the current camera/network session.
   static Future<void> disconnect() async =>
@@ -169,9 +305,10 @@ class NativeBridge {
 
   /// Executes a native method expected to return bool.
   ///
-  /// Platform/plugin failures are intentionally converted to a safe false
-  /// result. This keeps the Flutter control layer deterministic and prevents
-  /// transient Android bridge failures from escaping as uncaught exceptions.
+  /// Platform/plugin failures are intentionally converted into a safe
+  /// false result. This keeps the Flutter control layer deterministic
+  /// and prevents transient Android bridge failures from escaping as
+  /// uncaught exceptions.
   static Future<bool> _invokeBool(
     String method, [
     Object? arguments,
@@ -202,18 +339,21 @@ class NativeBridge {
         arguments,
       );
     } on MissingPluginException {
-      // Safe no-op: native method is unavailable in this build/runtime.
+      // Safe no-op:
+      // native method is unavailable in this build/runtime.
     } on PlatformException {
-      // Safe no-op: native rejected the command.
+      // Safe no-op:
+      // native rejected the command.
     } on Exception {
-      // Safe no-op: keep bridge failures out of the UI/control plane.
+      // Safe no-op:
+      // keep bridge failures out of the UI/control plane.
     }
   }
 
   /// Executes a native method expected to return String.
   ///
-  /// An empty string is used as the neutral failure value; public getters
-  /// validate the result before exposing it to the rest of the app.
+  /// An empty string is used as the neutral failure value.
+  /// Public getters validate the result before exposing it upward.
   static Future<String> _invokeString(
     String method, [
     Object? arguments,
@@ -230,6 +370,58 @@ class NativeBridge {
       return '';
     } on Exception {
       return '';
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Native enum parsing helpers
+  // ---------------------------------------------------------------------------
+
+  /// Converts a native capture-output identifier into the domain enum.
+  static CaptureOutputMode? _captureOutputFromNative(
+    Object? value,
+  ) {
+    if (value is! String) {
+      return null;
+    }
+
+    switch (value.trim().toUpperCase()) {
+      case 'RAW':
+        return CaptureOutputMode.raw;
+
+      case 'PROCESSED':
+        return CaptureOutputMode.processed;
+
+      case 'RAW_AND_PROCESSED':
+      case 'RAW + PROCESSED':
+        return CaptureOutputMode.rawAndProcessed;
+
+      default:
+        return null;
+    }
+  }
+
+  /// Converts a native performance identifier into the domain enum.
+  static PerformanceMode? _performanceFromNative(
+    Object? value,
+  ) {
+    if (value is! String) {
+      return null;
+    }
+
+    switch (value.trim().toUpperCase()) {
+      case 'PERFORMANCE':
+        return PerformanceMode.performance;
+
+      case 'BALANCED':
+        return PerformanceMode.balanced;
+
+      case 'HIGH_QUALITY':
+      case 'HIGH QUALITY':
+        return PerformanceMode.highQuality;
+
+      default:
+        return null;
     }
   }
 }

@@ -1,33 +1,15 @@
 import 'package:flutter/material.dart';
 
-enum CaptureOutputMode {
-  raw,
-  processed,
-  rawAndProcessed,
-}
-
-enum PerformanceMode {
-  performance,
-  balanced,
-  highQuality,
-}
-
-class AdvancedSettingsResult {
-  final CaptureOutputMode captureOutput;
-  final PerformanceMode performance;
-
-  const AdvancedSettingsResult({
-    required this.captureOutput,
-    required this.performance,
-  });
-}
+import '../models/landcam_models.dart';
 
 class AdvancedSettingsPage extends StatefulWidget {
   const AdvancedSettingsPage({
     super.key,
     required this.dark,
-    this.initialCaptureOutput = CaptureOutputMode.rawAndProcessed,
-    this.initialPerformance = PerformanceMode.balanced,
+    this.initialCaptureOutput =
+        CaptureOutputMode.rawAndProcessed,
+    this.initialPerformance =
+        PerformanceMode.balanced,
   });
 
   final bool dark;
@@ -35,10 +17,12 @@ class AdvancedSettingsPage extends StatefulWidget {
   final PerformanceMode initialPerformance;
 
   @override
-  State<AdvancedSettingsPage> createState() => _AdvancedSettingsPageState();
+  State<AdvancedSettingsPage> createState() =>
+      _AdvancedSettingsPageState();
 }
 
-class _AdvancedSettingsPageState extends State<AdvancedSettingsPage> {
+class _AdvancedSettingsPageState
+    extends State<AdvancedSettingsPage> {
   late CaptureOutputMode _captureOutput;
   late PerformanceMode _performance;
 
@@ -46,17 +30,22 @@ class _AdvancedSettingsPageState extends State<AdvancedSettingsPage> {
   void initState() {
     super.initState();
 
-    _captureOutput = widget.initialCaptureOutput;
-    _performance = widget.initialPerformance;
+    _captureOutput =
+        widget.initialCaptureOutput;
+
+    _performance =
+        widget.initialPerformance;
   }
 
   bool get _hasChanges =>
-      _captureOutput != widget.initialCaptureOutput ||
-      _performance != widget.initialPerformance;
+      _captureOutput !=
+          widget.initialCaptureOutput ||
+      _performance !=
+          widget.initialPerformance;
 
   void _apply() {
     Navigator.of(context).pop(
-      AdvancedSettingsResult(
+      AdvancedSettings(
         captureOutput: _captureOutput,
         performance: _performance,
       ),
@@ -69,9 +58,11 @@ class _AdvancedSettingsPageState extends State<AdvancedSettingsPage> {
       return;
     }
 
-    final discard = await _showConfirmDialog(
+    final discard =
+        await _showConfirmDialog(
       title: 'DISCARD CHANGES?',
-      message: 'Your unsaved advanced settings will be lost.',
+      message:
+          'Your unsaved advanced settings will be lost.',
       confirmLabel: 'DISCARD',
       destructive: true,
     );
@@ -88,7 +79,8 @@ class _AdvancedSettingsPageState extends State<AdvancedSettingsPage> {
       return;
     }
 
-    final reset = await _showConfirmDialog(
+    final reset =
+        await _showConfirmDialog(
       title: 'RESET SETTINGS?',
       message:
           'Capture output and performance will return to the default values.',
@@ -100,8 +92,11 @@ class _AdvancedSettingsPageState extends State<AdvancedSettingsPage> {
     }
 
     setState(() {
-      _captureOutput = CaptureOutputMode.rawAndProcessed;
-      _performance = PerformanceMode.balanced;
+      _captureOutput =
+          CaptureOutputMode.rawAndProcessed;
+
+      _performance =
+          PerformanceMode.balanced;
     });
   }
 
@@ -141,111 +136,157 @@ class _AdvancedSettingsPageState extends State<AdvancedSettingsPage> {
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) {
-        final width = MediaQuery.sizeOf(dialogContext).width;
+        final width =
+            MediaQuery.sizeOf(
+          dialogContext,
+        ).width;
 
         return Dialog(
           backgroundColor: background,
           elevation: 0,
-          insetPadding: const EdgeInsets.symmetric(
+          insetPadding:
+              const EdgeInsets.symmetric(
             horizontal: 18,
             vertical: 24,
           ),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+          shape:
+              RoundedRectangleBorder(
+            borderRadius:
+                BorderRadius.circular(8),
             side: BorderSide(
               color: border,
               width: 1,
             ),
           ),
           child: ConstrainedBox(
-            constraints: BoxConstraints(
+            constraints:
+                BoxConstraints(
               minWidth: 0,
-              maxWidth: width > 520 ? 520 : width - 36,
+              maxWidth:
+                  width > 520
+                      ? 520
+                      : width - 36,
             ),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(
+              padding:
+                  const EdgeInsets.fromLTRB(
                 22,
                 22,
                 22,
                 16,
               ),
               child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize:
+                    MainAxisSize.min,
+                crossAxisAlignment:
+                    CrossAxisAlignment.start,
                 children: [
                   Text(
                     title,
                     style: TextStyle(
                       color: foreground,
                       fontSize: 16,
-                      fontWeight: FontWeight.w900,
+                      fontWeight:
+                          FontWeight.w900,
                       letterSpacing: .55,
                     ),
                   ),
-                  const SizedBox(height: 11),
+                  const SizedBox(
+                    height: 11,
+                  ),
                   Text(
                     message,
                     style: TextStyle(
                       color: secondary,
                       fontSize: 12,
                       height: 1.45,
-                      fontWeight: FontWeight.w500,
+                      fontWeight:
+                          FontWeight.w500,
                     ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(
+                    height: 24,
+                  ),
                   Divider(
                     height: 1,
                     color: border,
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(
+                    height: 12,
+                  ),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
+                    mainAxisAlignment:
+                        MainAxisAlignment.end,
                     children: [
                       TextButton(
                         onPressed: () {
-                          Navigator.of(dialogContext).pop(false);
+                          Navigator.of(
+                            dialogContext,
+                          ).pop(false);
                         },
-                        style: TextButton.styleFrom(
-                          minimumSize: const Size(
+                        style:
+                            TextButton.styleFrom(
+                          minimumSize:
+                              const Size(
                             96,
                             44,
                           ),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                          ),
-                          foregroundColor: secondary,
-                        ),
-                        child: const Text(
-                          'CANCEL',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: .55,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      TextButton(
-                        onPressed: () {
-                          Navigator.of(dialogContext).pop(true);
-                        },
-                        style: TextButton.styleFrom(
-                          minimumSize: const Size(
-                            100,
-                            44,
-                          ),
-                          padding: const EdgeInsets.symmetric(
+                          padding:
+                              const EdgeInsets
+                                  .symmetric(
                             horizontal: 16,
                           ),
                           foregroundColor:
-                              destructive ? danger : accent,
+                              secondary,
+                        ),
+                        child:
+                            const Text(
+                          'CANCEL',
+                          style:
+                              TextStyle(
+                            fontSize: 10,
+                            fontWeight:
+                                FontWeight.w900,
+                            letterSpacing:
+                                .55,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(
+                        width: 8,
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.of(
+                            dialogContext,
+                          ).pop(true);
+                        },
+                        style:
+                            TextButton.styleFrom(
+                          minimumSize:
+                              const Size(
+                            100,
+                            44,
+                          ),
+                          padding:
+                              const EdgeInsets
+                                  .symmetric(
+                            horizontal: 16,
+                          ),
+                          foregroundColor:
+                              destructive
+                                  ? danger
+                                  : accent,
                         ),
                         child: Text(
                           confirmLabel,
-                          style: const TextStyle(
+                          style:
+                              const TextStyle(
                             fontSize: 10,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: .55,
+                            fontWeight:
+                                FontWeight.w900,
+                            letterSpacing:
+                                .55,
                           ),
                         ),
                       ),
@@ -290,7 +331,8 @@ class _AdvancedSettingsPageState extends State<AdvancedSettingsPage> {
 
     return PopScope(
       canPop: !_hasChanges,
-      onPopInvokedWithResult: (didPop, result) {
+      onPopInvokedWithResult:
+          (didPop, result) {
         if (didPop) {
           return;
         }
@@ -304,52 +346,83 @@ class _AdvancedSettingsPageState extends State<AdvancedSettingsPage> {
           foregroundColor: foreground,
           elevation: 0,
           scrolledUnderElevation: 0,
-          surfaceTintColor: Colors.transparent,
-          automaticallyImplyLeading: false,
-          toolbarHeight: _toolbarHeight(context),
+          surfaceTintColor:
+              Colors.transparent,
+          automaticallyImplyLeading:
+              false,
+          toolbarHeight:
+              _toolbarHeight(context),
           titleSpacing: 0,
           leadingWidth: 50,
           leading: IconButton(
             onPressed: _handleBack,
             icon: Icon(
               Icons.arrow_back_rounded,
-              size: _isLandscape(context) ? 20 : 22,
+              size:
+                  _isLandscape(context)
+                      ? 20
+                      : 22,
             ),
           ),
           title: Text(
             'ADVANCED SETTINGS',
             style: TextStyle(
-              fontSize: _isLandscape(context) ? 13 : 14,
-              fontWeight: FontWeight.w900,
+              fontSize:
+                  _isLandscape(context)
+                      ? 13
+                      : 14,
+              fontWeight:
+                  FontWeight.w900,
               letterSpacing: .95,
             ),
           ),
           actions: [
             SizedBox(
-              width: _isLandscape(context) ? 80 : 84,
-              height: _toolbarHeight(context),
+              width:
+                  _isLandscape(context)
+                      ? 80
+                      : 84,
+              height:
+                  _toolbarHeight(context),
               child: Center(
                 child: TextButton(
-                  onPressed: _hasChanges ? _reset : null,
-                  style: TextButton.styleFrom(
-                    foregroundColor: secondary,
-                    disabledForegroundColor: muted.withValues(
+                  onPressed:
+                      _hasChanges
+                          ? _reset
+                          : null,
+                  style:
+                      TextButton.styleFrom(
+                    foregroundColor:
+                        secondary,
+                    disabledForegroundColor:
+                        muted.withValues(
                       alpha: .30,
                     ),
-                    padding: const EdgeInsets.symmetric(
+                    padding:
+                        const EdgeInsets
+                            .symmetric(
                       horizontal: 12,
                       vertical: 8,
                     ),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    minimumSize:
+                        Size.zero,
+                    tapTargetSize:
+                        MaterialTapTargetSize
+                            .shrinkWrap,
                   ),
                   child: Text(
                     'RESET',
-                    textAlign: TextAlign.center,
+                    textAlign:
+                        TextAlign.center,
                     style: TextStyle(
-                      fontSize: _isLandscape(context) ? 9 : 10,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: .65,
+                      fontSize:
+                          _isLandscape(context)
+                              ? 9
+                              : 10,
+                      fontWeight:
+                          FontWeight.w900,
+                      letterSpacing:
+                          .65,
                     ),
                   ),
                 ),
@@ -358,28 +431,42 @@ class _AdvancedSettingsPageState extends State<AdvancedSettingsPage> {
           ],
         ),
         body: OrientationBuilder(
-          builder: (
-            context,
-            orientation,
-          ) {
-            if (orientation == Orientation.landscape) {
+          builder:
+              (
+                context,
+                orientation,
+              ) {
+            if (orientation ==
+                Orientation.landscape) {
               return _LandscapeLayout(
-                background: background,
-                foreground: foreground,
-                secondary: secondary,
-                muted: muted,
-                line: line,
-                accent: accent,
+                background:
+                    background,
+                foreground:
+                    foreground,
+                secondary:
+                    secondary,
+                muted:
+                    muted,
+                line:
+                    line,
+                accent:
+                    accent,
               );
             }
 
             return _PortraitLayout(
-              background: background,
-              foreground: foreground,
-              secondary: secondary,
-              muted: muted,
-              line: line,
-              accent: accent,
+              background:
+                  background,
+              foreground:
+                  foreground,
+              secondary:
+                  secondary,
+              muted:
+                  muted,
+              line:
+                  line,
+              accent:
+                  accent,
             );
           },
         ),
@@ -387,11 +474,18 @@ class _AdvancedSettingsPageState extends State<AdvancedSettingsPage> {
     );
   }
 
-  bool _isLandscape(BuildContext context) =>
-      MediaQuery.orientationOf(context) == Orientation.landscape;
+  bool _isLandscape(
+    BuildContext context,
+  ) =>
+      MediaQuery.orientationOf(context) ==
+      Orientation.landscape;
 
-  double _toolbarHeight(BuildContext context) =>
-      _isLandscape(context) ? 50 : 58;
+  double _toolbarHeight(
+    BuildContext context,
+  ) =>
+      _isLandscape(context)
+          ? 50
+          : 58;
 
   Widget _PortraitLayout({
     required Color background,
@@ -404,18 +498,25 @@ class _AdvancedSettingsPageState extends State<AdvancedSettingsPage> {
     return Column(
       children: [
         Expanded(
-          child: LayoutBuilder(
-            builder: (
-              context,
-              constraints,
-            ) {
-              final wide = constraints.maxWidth >= 700;
+          child:
+              LayoutBuilder(
+            builder:
+                (
+                  context,
+                  constraints,
+                ) {
+              final wide =
+                  constraints.maxWidth >=
+                      700;
 
-              final horizontal = wide ? 28.0 : 18.0;
+              final horizontal =
+                  wide ? 28.0 : 18.0;
 
               return ListView(
-                physics: const ClampingScrollPhysics(),
-                padding: EdgeInsets.fromLTRB(
+                physics:
+                    const ClampingScrollPhysics(),
+                padding:
+                    EdgeInsets.fromLTRB(
                   horizontal,
                   20,
                   horizontal,
@@ -423,127 +524,192 @@ class _AdvancedSettingsPageState extends State<AdvancedSettingsPage> {
                 ),
                 children: [
                   _SectionHeader(
-                    title: 'CAPTURE OUTPUT',
+                    title:
+                        'CAPTURE OUTPUT',
                     description:
                         'Choose which capture results are saved.',
-                    titleColor: foreground,
-                    descriptionColor: secondary,
+                    titleColor:
+                        foreground,
+                    descriptionColor:
+                        secondary,
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(
+                    height: 16,
+                  ),
                   _CaptureOption(
                     title: 'RAW',
                     description:
                         'Original camera frame without crop or processing.',
                     selected:
-                        _captureOutput == CaptureOutputMode.raw,
-                    foreground: foreground,
-                    secondary: secondary,
-                    muted: muted,
-                    border: line,
-                    accent: accent,
-                    minHeight: wide ? 100 : 92,
+                        _captureOutput ==
+                            CaptureOutputMode.raw,
+                    foreground:
+                        foreground,
+                    secondary:
+                        secondary,
+                    muted:
+                        muted,
+                    border:
+                        line,
+                    accent:
+                        accent,
+                    minHeight:
+                        wide ? 100 : 92,
                     onTap: () {
                       setState(() {
-                        _captureOutput = CaptureOutputMode.raw;
+                        _captureOutput =
+                            CaptureOutputMode.raw;
                       });
                     },
                   ),
                   _CaptureOption(
-                    title: 'PROCESSED',
+                    title:
+                        'PROCESSED',
                     description:
                         'Frame after LandCam crop and processing.',
                     selected:
                         _captureOutput ==
-                            CaptureOutputMode.processed,
-                    foreground: foreground,
-                    secondary: secondary,
-                    muted: muted,
-                    border: line,
-                    accent: accent,
-                    minHeight: wide ? 100 : 92,
+                            CaptureOutputMode
+                                .processed,
+                    foreground:
+                        foreground,
+                    secondary:
+                        secondary,
+                    muted:
+                        muted,
+                    border:
+                        line,
+                    accent:
+                        accent,
+                    minHeight:
+                        wide ? 100 : 92,
                     onTap: () {
                       setState(() {
                         _captureOutput =
-                            CaptureOutputMode.processed;
+                            CaptureOutputMode
+                                .processed;
                       });
                     },
                   ),
                   _CaptureOption(
-                    title: 'RAW + PROCESSED',
+                    title:
+                        'RAW + PROCESSED',
                     description:
                         'Save the original frame and the processed result.',
                     selected:
                         _captureOutput ==
-                            CaptureOutputMode.rawAndProcessed,
-                    foreground: foreground,
-                    secondary: secondary,
-                    muted: muted,
-                    border: line,
-                    accent: accent,
-                    minHeight: wide ? 100 : 92,
+                            CaptureOutputMode
+                                .rawAndProcessed,
+                    foreground:
+                        foreground,
+                    secondary:
+                        secondary,
+                    muted:
+                        muted,
+                    border:
+                        line,
+                    accent:
+                        accent,
+                    minHeight:
+                        wide ? 100 : 92,
                     onTap: () {
                       setState(() {
                         _captureOutput =
-                            CaptureOutputMode.rawAndProcessed;
+                            CaptureOutputMode
+                                .rawAndProcessed;
                       });
                     },
                   ),
                   SizedBox(
-                    height: wide ? 32 : 28,
+                    height:
+                        wide ? 32 : 28,
                   ),
                   Divider(
                     height: 1,
                     color: line,
                   ),
                   SizedBox(
-                    height: wide ? 32 : 26,
+                    height:
+                        wide ? 32 : 26,
                   ),
                   _SectionHeader(
-                    title: 'PERFORMANCE',
+                    title:
+                        'PERFORMANCE',
                     description:
                         'Choose whether LandCam prioritizes smooth operation or image quality.',
-                    titleColor: foreground,
-                    descriptionColor: secondary,
+                    titleColor:
+                        foreground,
+                    descriptionColor:
+                        secondary,
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(
+                    height: 18,
+                  ),
                   _PerformanceSelector(
-                    value: _performance,
-                    foreground: foreground,
-                    secondary: secondary,
-                    line: line,
-                    accent: accent,
-                    height: 58,
-                    compact: false,
-                    onChanged: (value) {
+                    value:
+                        _performance,
+                    foreground:
+                        foreground,
+                    secondary:
+                        secondary,
+                    line:
+                        line,
+                    accent:
+                        accent,
+                    height:
+                        58,
+                    compact:
+                        false,
+                    onChanged:
+                        (value) {
                       setState(() {
-                        _performance = value;
+                        _performance =
+                            value;
                       });
                     },
                   ),
-                  const SizedBox(height: 18),
-                  _PerformanceInfo(
-                    value: _performance,
-                    foreground: foreground,
-                    secondary: secondary,
-                    muted: muted,
-                    border: line,
-                    accent: accent,
-                    wide: wide,
-                    compact: false,
+                  const SizedBox(
+                    height: 18,
                   ),
-                  const SizedBox(height: 26),
+                  _PerformanceInfo(
+                    value:
+                        _performance,
+                    foreground:
+                        foreground,
+                    secondary:
+                        secondary,
+                    muted:
+                        muted,
+                    border:
+                        line,
+                    accent:
+                        accent,
+                    wide:
+                        wide,
+                    compact:
+                        false,
+                  ),
+                  const SizedBox(
+                    height: 26,
+                  ),
                 ],
               );
             },
           ),
         ),
         _ApplyBar(
-          background: background,
-          line: line,
-          accent: accent,
-          hasChanges: _hasChanges,
-          landscape: false,
-          onApply: _apply,
+          background:
+              background,
+          line:
+              line,
+          accent:
+              accent,
+          hasChanges:
+              _hasChanges,
+          landscape:
+              false,
+          onApply:
+              _apply,
         ),
       ],
     );
@@ -558,83 +724,128 @@ class _AdvancedSettingsPageState extends State<AdvancedSettingsPage> {
     required Color accent,
   }) {
     return LayoutBuilder(
-      builder: (
-        context,
-        constraints,
-      ) {
-        final width = constraints.maxWidth;
-        final height = constraints.maxHeight;
+      builder:
+          (
+            context,
+            constraints,
+          ) {
+        final width =
+            constraints.maxWidth;
 
-        final narrowLandscape = width < 780;
-        final shortLandscape = height < 380;
+        final height =
+            constraints.maxHeight;
+
+        final narrowLandscape =
+            width < 780;
+
+        final shortLandscape =
+            height < 380;
 
         final paneHorizontal =
-            narrowLandscape ? 12.0 : 18.0;
+            narrowLandscape
+                ? 12.0
+                : 18.0;
 
         final paneTop =
-            shortLandscape ? 8.0 : 14.0;
+            shortLandscape
+                ? 8.0
+                : 14.0;
 
         final paneBottom =
-            shortLandscape ? 6.0 : 10.0;
+            shortLandscape
+                ? 6.0
+                : 10.0;
 
         return Column(
           children: [
             Expanded(
               child: Row(
                 crossAxisAlignment:
-                    CrossAxisAlignment.stretch,
+                    CrossAxisAlignment
+                        .stretch,
                 children: [
                   Expanded(
                     flex: 1,
-                    child: _LandscapeCapturePane(
-                      foreground: foreground,
-                      secondary: secondary,
-                      muted: muted,
-                      line: line,
-                      accent: accent,
-                      padding: EdgeInsets.fromLTRB(
+                    child:
+                        _LandscapeCapturePane(
+                      foreground:
+                          foreground,
+                      secondary:
+                          secondary,
+                      muted:
+                          muted,
+                      line:
+                          line,
+                      accent:
+                          accent,
+                      padding:
+                          EdgeInsets.fromLTRB(
                         paneHorizontal,
                         paneTop,
-                        narrowLandscape ? 8 : 10,
+                        narrowLandscape
+                            ? 8
+                            : 10,
                         paneBottom,
                       ),
-                      short: shortLandscape,
+                      short:
+                          shortLandscape,
                     ),
                   ),
                   Container(
                     width: .8,
-                    margin: EdgeInsets.symmetric(
-                      vertical: shortLandscape ? 8 : 12,
+                    margin:
+                        EdgeInsets.symmetric(
+                      vertical:
+                          shortLandscape
+                              ? 8
+                              : 12,
                     ),
-                    color: line,
+                    color:
+                        line,
                   ),
                   Expanded(
                     flex: 1,
-                    child: _LandscapePerformancePane(
-                      foreground: foreground,
-                      secondary: secondary,
-                      muted: muted,
-                      line: line,
-                      accent: accent,
-                      padding: EdgeInsets.fromLTRB(
-                        narrowLandscape ? 8 : 10,
+                    child:
+                        _LandscapePerformancePane(
+                      foreground:
+                          foreground,
+                      secondary:
+                          secondary,
+                      muted:
+                          muted,
+                      line:
+                          line,
+                      accent:
+                          accent,
+                      padding:
+                          EdgeInsets.fromLTRB(
+                        narrowLandscape
+                            ? 8
+                            : 10,
                         paneTop,
                         paneHorizontal,
                         paneBottom,
                       ),
-                      short: shortLandscape,
+                      short:
+                          shortLandscape,
                     ),
                   ),
                 ],
               ),
             ),
             _ApplyBar(
-              background: background,
-              line: line,
-              accent: accent,
-              hasChanges: _hasChanges,
-              landscape: true,
-              onApply: _apply,
+              background:
+                  background,
+              line:
+                  line,
+              accent:
+                  accent,
+              hasChanges:
+                  _hasChanges,
+              landscape:
+                  true,
+              onApply:
+                  _apply,
             ),
           ],
         );
@@ -654,53 +865,78 @@ class _AdvancedSettingsPageState extends State<AdvancedSettingsPage> {
     const compact = true;
 
     return ListView(
-      physics: const ClampingScrollPhysics(),
-      padding: padding,
+      physics:
+          const ClampingScrollPhysics(),
+      padding:
+          padding,
       children: [
         _SectionHeader(
-          title: 'CAPTURE OUTPUT',
+          title:
+              'CAPTURE OUTPUT',
           description:
               'Choose which capture results are saved.',
-          titleColor: foreground,
-          descriptionColor: secondary,
-          compact: compact,
+          titleColor:
+              foreground,
+          descriptionColor:
+              secondary,
+          compact:
+              compact,
         ),
         SizedBox(
-          height: short ? 6 : 8,
+          height:
+              short ? 6 : 8,
         ),
         _CaptureOption(
-          title: 'RAW',
+          title:
+              'RAW',
           description:
               'Original camera frame without crop or processing.',
           selected:
-              _captureOutput == CaptureOutputMode.raw,
-          foreground: foreground,
-          secondary: secondary,
-          muted: muted,
-          border: line,
-          accent: accent,
-          minHeight: short ? 64 : 70,
-          compact: compact,
+              _captureOutput ==
+                  CaptureOutputMode.raw,
+          foreground:
+              foreground,
+          secondary:
+              secondary,
+          muted:
+              muted,
+          border:
+              line,
+          accent:
+              accent,
+          minHeight:
+              short ? 64 : 70,
+          compact:
+              compact,
           onTap: () {
             setState(() {
-              _captureOutput = CaptureOutputMode.raw;
+              _captureOutput =
+                  CaptureOutputMode.raw;
             });
           },
         ),
         _CaptureOption(
-          title: 'PROCESSED',
+          title:
+              'PROCESSED',
           description:
               'Frame after LandCam crop and processing.',
           selected:
               _captureOutput ==
                   CaptureOutputMode.processed,
-          foreground: foreground,
-          secondary: secondary,
-          muted: muted,
-          border: line,
-          accent: accent,
-          minHeight: short ? 64 : 70,
-          compact: compact,
+          foreground:
+              foreground,
+          secondary:
+              secondary,
+          muted:
+              muted,
+          border:
+              line,
+          accent:
+              accent,
+          minHeight:
+              short ? 64 : 70,
+          compact:
+              compact,
           onTap: () {
             setState(() {
               _captureOutput =
@@ -709,23 +945,32 @@ class _AdvancedSettingsPageState extends State<AdvancedSettingsPage> {
           },
         ),
         _CaptureOption(
-          title: 'RAW + PROCESSED',
+          title:
+              'RAW + PROCESSED',
           description:
               'Save the original frame and the processed result.',
           selected:
               _captureOutput ==
                   CaptureOutputMode.rawAndProcessed,
-          foreground: foreground,
-          secondary: secondary,
-          muted: muted,
-          border: line,
-          accent: accent,
-          minHeight: short ? 64 : 70,
-          compact: compact,
+          foreground:
+              foreground,
+          secondary:
+              secondary,
+          muted:
+              muted,
+          border:
+              line,
+          accent:
+              accent,
+          minHeight:
+              short ? 64 : 70,
+          compact:
+              compact,
           onTap: () {
             setState(() {
               _captureOutput =
-                  CaptureOutputMode.rawAndProcessed;
+                  CaptureOutputMode
+                      .rawAndProcessed;
             });
           },
         ),
@@ -743,53 +988,79 @@ class _AdvancedSettingsPageState extends State<AdvancedSettingsPage> {
     required bool short,
   }) {
     return ListView(
-      physics: const ClampingScrollPhysics(),
-      padding: padding,
+      physics:
+          const ClampingScrollPhysics(),
+      padding:
+          padding,
       children: [
         _SectionHeader(
-          title: 'PERFORMANCE',
+          title:
+              'PERFORMANCE',
           description:
               'Choose whether LandCam prioritizes smooth operation or image quality.',
-          titleColor: foreground,
-          descriptionColor: secondary,
-          compact: true,
+          titleColor:
+              foreground,
+          descriptionColor:
+              secondary,
+          compact:
+              true,
         ),
         SizedBox(
-          height: short ? 6 : 10,
+          height:
+              short ? 6 : 10,
         ),
         _PerformanceSelector(
-          value: _performance,
-          foreground: foreground,
-          secondary: secondary,
-          line: line,
-          accent: accent,
-          height: short ? 48 : 52,
-          compact: true,
-          onChanged: (value) {
+          value:
+              _performance,
+          foreground:
+              foreground,
+          secondary:
+              secondary,
+          line:
+              line,
+          accent:
+              accent,
+          height:
+              short ? 48 : 52,
+          compact:
+              true,
+          onChanged:
+              (value) {
             setState(() {
-              _performance = value;
+              _performance =
+                  value;
             });
           },
         ),
         SizedBox(
-          height: short ? 7 : 10,
+          height:
+              short ? 7 : 10,
         ),
         _PerformanceInfo(
-          value: _performance,
-          foreground: foreground,
-          secondary: secondary,
-          muted: muted,
-          border: line,
-          accent: accent,
-          wide: true,
-          compact: true,
+          value:
+              _performance,
+          foreground:
+              foreground,
+          secondary:
+              secondary,
+          muted:
+              muted,
+          border:
+              line,
+          accent:
+              accent,
+          wide:
+              true,
+          compact:
+              true,
         ),
       ],
     );
   }
 }
 
-class _ApplyBar extends StatelessWidget {
+class _ApplyBar
+    extends StatelessWidget {
   const _ApplyBar({
     required this.background,
     required this.line,
@@ -808,54 +1079,93 @@ class _ApplyBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final activeText = _activeTextOn(accent);
-    final disabledText = _activeTextOn(background);
+    final activeText =
+        _activeTextOn(accent);
+
+    final disabledText =
+        _activeTextOn(background);
 
     return Container(
-      width: double.infinity,
-      padding: EdgeInsets.fromLTRB(
+      width:
+          double.infinity,
+      padding:
+          EdgeInsets.fromLTRB(
         18,
         landscape ? 7 : 10,
         18,
         landscape ? 8 : 16,
       ),
-      decoration: BoxDecoration(
-        color: background,
-        border: Border(
-          top: BorderSide(
-            color: line,
-            width: .8,
+      decoration:
+          BoxDecoration(
+        color:
+            background,
+        border:
+            Border(
+          top:
+              BorderSide(
+            color:
+                line,
+            width:
+                .8,
           ),
         ),
       ),
-      child: SizedBox(
-        height: landscape ? 44 : 52,
-        width: double.infinity,
-        child: FilledButton(
-          onPressed: hasChanges ? onApply : null,
-          style: FilledButton.styleFrom(
-            backgroundColor: accent,
-            disabledBackgroundColor: background,
-            foregroundColor: activeText,
+      child:
+          SizedBox(
+        height:
+            landscape ? 44 : 52,
+        width:
+            double.infinity,
+        child:
+            FilledButton(
+          onPressed:
+              hasChanges
+                  ? onApply
+                  : null,
+          style:
+              FilledButton.styleFrom(
+            backgroundColor:
+                accent,
+            disabledBackgroundColor:
+                background,
+            foregroundColor:
+                activeText,
             disabledForegroundColor:
-                disabledText.withValues(alpha: .45),
-            elevation: 0,
-            side: BorderSide(
-              color: hasChanges ? accent : line,
-              width: .8,
+                disabledText.withValues(
+              alpha: .45,
             ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(5),
+            elevation:
+                0,
+            side:
+                BorderSide(
+              color:
+                  hasChanges
+                      ? accent
+                      : line,
+              width:
+                  .8,
+            ),
+            shape:
+                RoundedRectangleBorder(
+              borderRadius:
+                  BorderRadius.circular(
+                5,
+              ),
             ),
           ),
-          child: Text(
+          child:
+              Text(
             hasChanges
                 ? 'APPLY CHANGES'
                 : 'NO CHANGES',
-            style: TextStyle(
-              fontSize: landscape ? 10 : 11,
-              fontWeight: FontWeight.w900,
-              letterSpacing: .85,
+            style:
+                TextStyle(
+              fontSize:
+                  landscape ? 10 : 11,
+              fontWeight:
+                  FontWeight.w900,
+              letterSpacing:
+                  .85,
             ),
           ),
         ),
@@ -864,7 +1174,8 @@ class _ApplyBar extends StatelessWidget {
   }
 }
 
-class _SectionHeader extends StatelessWidget {
+class _SectionHeader
+    extends StatelessWidget {
   const _SectionHeader({
     required this.title,
     required this.description,
@@ -882,32 +1193,48 @@ class _SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment:
+          CrossAxisAlignment.start,
       children: [
         Text(
           title,
           maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: titleColor,
-            fontSize: compact ? 10.5 : 12,
-            fontWeight: FontWeight.w900,
-            letterSpacing: .9,
+          overflow:
+              TextOverflow.ellipsis,
+          style:
+              TextStyle(
+            color:
+                titleColor,
+            fontSize:
+                compact ? 10.5 : 12,
+            fontWeight:
+                FontWeight.w900,
+            letterSpacing:
+                .9,
           ),
         ),
         SizedBox(
-          height: compact ? 4 : 6,
+          height:
+              compact ? 4 : 6,
         ),
         Text(
           description,
-          maxLines: compact ? 2 : null,
+          maxLines:
+              compact ? 2 : null,
           overflow:
-              compact ? TextOverflow.ellipsis : null,
-          style: TextStyle(
-            color: descriptionColor,
-            fontSize: compact ? 9 : 11,
-            fontWeight: FontWeight.w500,
-            height: 1.3,
+              compact
+                  ? TextOverflow.ellipsis
+                  : null,
+          style:
+              TextStyle(
+            color:
+                descriptionColor,
+            fontSize:
+                compact ? 9 : 11,
+            fontWeight:
+                FontWeight.w500,
+            height:
+                1.3,
           ),
         ),
       ],
@@ -915,7 +1242,8 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-class _CaptureOption extends StatelessWidget {
+class _CaptureOption
+    extends StatelessWidget {
   const _CaptureOption({
     required this.title,
     required this.description,
@@ -948,62 +1276,93 @@ class _CaptureOption extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        child: Container(
-          width: double.infinity,
-          constraints: BoxConstraints(
-            minHeight: minHeight,
+      color:
+          Colors.transparent,
+      child:
+          InkWell(
+        onTap:
+            onTap,
+        child:
+            Container(
+          width:
+              double.infinity,
+          constraints:
+              BoxConstraints(
+            minHeight:
+                minHeight,
           ),
-          padding: EdgeInsets.fromLTRB(
+          padding:
+              EdgeInsets.fromLTRB(
             compact ? 10 : 14,
             compact ? 9 : 15,
             compact ? 8 : 10,
             compact ? 9 : 15,
           ),
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(
-                color: border,
-                width: .8,
+          decoration:
+              BoxDecoration(
+            border:
+                Border(
+              bottom:
+                  BorderSide(
+                color:
+                    border,
+                width:
+                    .8,
               ),
             ),
           ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
+          child:
+              Row(
+            crossAxisAlignment:
+                CrossAxisAlignment.center,
             children: [
               _RadioIndicator(
-                selected: selected,
-                accent: accent,
-                muted: muted,
-                size: compact ? 18 : 20,
-                innerSize: compact ? 7 : 8,
+                selected:
+                    selected,
+                accent:
+                    accent,
+                muted:
+                    muted,
+                size:
+                    compact ? 18 : 20,
+                innerSize:
+                    compact ? 7 : 8,
               ),
               SizedBox(
-                width: compact ? 9 : 14,
+                width:
+                    compact ? 9 : 14,
               ),
               Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child:
+                    Column(
+                  mainAxisSize:
+                      MainAxisSize.min,
+                  crossAxisAlignment:
+                      CrossAxisAlignment.start,
                   children: [
                     Text(
                       title,
-                      maxLines: 1,
+                      maxLines:
+                          1,
                       overflow:
                           TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: foreground,
+                      style:
+                          TextStyle(
+                        color:
+                            foreground,
                         fontSize:
-                            compact ? 11 : 13,
+                            compact
+                                ? 11
+                                : 13,
                         fontWeight:
                             FontWeight.w900,
-                        letterSpacing: .45,
+                        letterSpacing:
+                            .45,
                       ),
                     ),
                     SizedBox(
-                      height: compact ? 3 : 5,
+                      height:
+                          compact ? 3 : 5,
                     ),
                     Text(
                       description,
@@ -1011,12 +1370,17 @@ class _CaptureOption extends StatelessWidget {
                           compact ? 2 : null,
                       overflow:
                           compact
-                              ? TextOverflow.ellipsis
+                              ? TextOverflow
+                                  .ellipsis
                               : null,
-                      style: TextStyle(
-                        color: secondary,
+                      style:
+                          TextStyle(
+                        color:
+                            secondary,
                         fontSize:
-                            compact ? 9 : 11,
+                            compact
+                                ? 9
+                                : 11,
                         fontWeight:
                             FontWeight.w500,
                         height:
@@ -1029,14 +1393,17 @@ class _CaptureOption extends StatelessWidget {
                 ),
               ),
               SizedBox(
-                width: compact ? 7 : 12,
+                width:
+                    compact ? 7 : 12,
               ),
               Icon(
                 selected
                     ? Icons.check_rounded
                     : Icons.chevron_right_rounded,
                 color:
-                    selected ? accent : muted,
+                    selected
+                        ? accent
+                        : muted,
                 size:
                     compact
                         ? 17
@@ -1052,7 +1419,8 @@ class _CaptureOption extends StatelessWidget {
   }
 }
 
-class _RadioIndicator extends StatelessWidget {
+class _RadioIndicator
+    extends StatelessWidget {
   const _RadioIndicator({
     required this.selected,
     required this.accent,
@@ -1070,36 +1438,51 @@ class _RadioIndicator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: selected
-              ? accent
-              : muted.withValues(
-                  alpha: .65,
-                ),
-          width: 1.4,
+      width:
+          size,
+      height:
+          size,
+      decoration:
+          BoxDecoration(
+        shape:
+            BoxShape.circle,
+        border:
+            Border.all(
+          color:
+              selected
+                  ? accent
+                  : muted.withValues(
+                      alpha: .65,
+                    ),
+          width:
+              1.4,
         ),
       ),
-      child: selected
-          ? Center(
-              child: Container(
-                width: innerSize,
-                height: innerSize,
-                decoration: BoxDecoration(
-                  color: accent,
-                  shape: BoxShape.circle,
-                ),
-              ),
-            )
-          : null,
+      child:
+          selected
+              ? Center(
+                  child:
+                      Container(
+                    width:
+                        innerSize,
+                    height:
+                        innerSize,
+                    decoration:
+                        BoxDecoration(
+                      color:
+                          accent,
+                      shape:
+                          BoxShape.circle,
+                    ),
+                  ),
+                )
+              : null,
     );
   }
 }
 
-class _PerformanceSelector extends StatelessWidget {
+class _PerformanceSelector
+    extends StatelessWidget {
   const _PerformanceSelector({
     required this.value,
     required this.foreground,
@@ -1119,75 +1502,125 @@ class _PerformanceSelector extends StatelessWidget {
   final double height;
   final bool compact;
 
-  final ValueChanged<PerformanceMode> onChanged;
+  final ValueChanged<PerformanceMode>
+      onChanged;
 
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(5),
-      child: Container(
-        height: height,
-        decoration: BoxDecoration(
-          border: Border.all(
-            color: line,
-            width: .9,
+      borderRadius:
+          BorderRadius.circular(
+        5,
+      ),
+      child:
+          Container(
+        height:
+            height,
+        decoration:
+            BoxDecoration(
+          border:
+              Border.all(
+            color:
+                line,
+            width:
+                .9,
           ),
-          borderRadius: BorderRadius.circular(5),
+          borderRadius:
+              BorderRadius.circular(
+            5,
+          ),
         ),
-        child: Row(
+        child:
+            Row(
           children: [
             Expanded(
-              child: _PerformanceItem(
-                label: 'PERFORMANCE',
+              child:
+                  _PerformanceItem(
+                label:
+                    'PERFORMANCE',
                 selected:
                     value ==
-                        PerformanceMode.performance,
-                foreground: foreground,
-                secondary: secondary,
-                accent: accent,
-                compact: compact,
-                onTap: () => onChanged(
-                  PerformanceMode.performance,
+                        PerformanceMode
+                            .performance,
+                foreground:
+                    foreground,
+                secondary:
+                    secondary,
+                accent:
+                    accent,
+                compact:
+                    compact,
+                onTap:
+                    () =>
+                        onChanged(
+                  PerformanceMode
+                      .performance,
                 ),
               ),
             ),
             Container(
-              width: .9,
-              height: compact ? 24 : 30,
-              color: line,
+              width:
+                  .9,
+              height:
+                  compact ? 24 : 30,
+              color:
+                  line,
             ),
             Expanded(
-              child: _PerformanceItem(
-                label: 'BALANCED',
+              child:
+                  _PerformanceItem(
+                label:
+                    'BALANCED',
                 selected:
                     value ==
-                        PerformanceMode.balanced,
-                foreground: foreground,
-                secondary: secondary,
-                accent: accent,
-                compact: compact,
-                onTap: () => onChanged(
-                  PerformanceMode.balanced,
+                        PerformanceMode
+                            .balanced,
+                foreground:
+                    foreground,
+                secondary:
+                    secondary,
+                accent:
+                    accent,
+                compact:
+                    compact,
+                onTap:
+                    () =>
+                        onChanged(
+                  PerformanceMode
+                      .balanced,
                 ),
               ),
             ),
             Container(
-              width: .9,
-              height: compact ? 24 : 30,
-              color: line,
+              width:
+                  .9,
+              height:
+                  compact ? 24 : 30,
+              color:
+                  line,
             ),
             Expanded(
-              child: _PerformanceItem(
-                label: 'HIGH QUALITY',
+              child:
+                  _PerformanceItem(
+                label:
+                    'HIGH QUALITY',
                 selected:
                     value ==
-                        PerformanceMode.highQuality,
-                foreground: foreground,
-                secondary: secondary,
-                accent: accent,
-                compact: compact,
-                onTap: () => onChanged(
-                  PerformanceMode.highQuality,
+                        PerformanceMode
+                            .highQuality,
+                foreground:
+                    foreground,
+                secondary:
+                    secondary,
+                accent:
+                    accent,
+                compact:
+                    compact,
+                onTap:
+                    () =>
+                        onChanged(
+                  PerformanceMode
+                      .highQuality,
                 ),
               ),
             ),
@@ -1198,7 +1631,8 @@ class _PerformanceSelector extends StatelessWidget {
   }
 }
 
-class _PerformanceItem extends StatelessWidget {
+class _PerformanceItem
+    extends StatelessWidget {
   const _PerformanceItem({
     required this.label,
     required this.selected,
@@ -1220,51 +1654,77 @@ class _PerformanceItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: selected
-          ? foreground.withValues(
-              alpha: compact ? .08 : .07,
-            )
-          : Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        child: Stack(
-          fit: StackFit.expand,
+      color:
+          selected
+              ? foreground.withValues(
+                  alpha:
+                      compact ? .08 : .07,
+                )
+              : Colors.transparent,
+      child:
+          InkWell(
+        onTap:
+            onTap,
+        child:
+            Stack(
+          fit:
+              StackFit.expand,
           children: [
             Center(
-              child: Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: compact ? 3 : 6,
-                  vertical: compact ? 2 : 4,
+              child:
+                  Padding(
+                padding:
+                    EdgeInsets.symmetric(
+                  horizontal:
+                      compact ? 3 : 6,
+                  vertical:
+                      compact ? 2 : 4,
                 ),
-                child: Text(
+                child:
+                    Text(
                   label,
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
+                  textAlign:
+                      TextAlign.center,
+                  maxLines:
+                      2,
+                  overflow:
+                      TextOverflow.ellipsis,
+                  style:
+                      TextStyle(
                     color:
                         selected
                             ? foreground
                             : secondary,
                     fontSize:
-                        compact ? 8 : 9.5,
+                        compact
+                            ? 8
+                            : 9.5,
                     fontWeight:
                         FontWeight.w900,
                     letterSpacing:
-                        compact ? .15 : .25,
-                    height: 1.05,
+                        compact
+                            ? .15
+                            : .25,
+                    height:
+                        1.05,
                   ),
                 ),
               ),
             ),
             if (selected)
               Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: Container(
-                  height: compact ? 2 : 3,
-                  color: accent,
+                left:
+                    0,
+                right:
+                    0,
+                bottom:
+                    0,
+                child:
+                    Container(
+                  height:
+                      compact ? 2 : 3,
+                  color:
+                      accent,
                 ),
               ),
           ],
@@ -1274,7 +1734,8 @@ class _PerformanceItem extends StatelessWidget {
   }
 }
 
-class _PerformanceInfo extends StatelessWidget {
+class _PerformanceInfo
+    extends StatelessWidget {
   const _PerformanceInfo({
     required this.value,
     required this.foreground,
@@ -1297,53 +1758,30 @@ class _PerformanceInfo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    late String title;
-    late String description;
-    late String preview;
-    late String processing;
-    late String framePolicy;
+    final title =
+        value.title;
 
-    switch (value) {
-      case PerformanceMode.performance:
-        title = 'PERFORMANCE';
+    final description =
+        value.description;
 
-        description =
-            'Prioritizes smoother preview and lower device load. '
-            'Preview and processing may use lower internal quality.';
+    final preview =
+        value.previewLoad;
 
-        preview = 'LOW';
-        processing = 'LOW';
-        framePolicy = 'SPEED';
+    final processing =
+        value.processLoad;
 
-      case PerformanceMode.balanced:
-        title = 'BALANCED';
-
-        description =
-            'Balances preview smoothness, processing load, and image quality. '
-            'Recommended for normal use.';
-
-        preview = 'MEDIUM';
-        processing = 'MEDIUM';
-        framePolicy = 'BALANCED';
-
-      case PerformanceMode.highQuality:
-        title = 'HIGH QUALITY';
-
-        description =
-            'Prioritizes image and processing quality. '
-            'Higher device load and slower processing may occur.';
-
-        preview = 'HIGH';
-        processing = 'HIGH';
-        framePolicy = 'QUALITY';
-    }
+    final framePolicy =
+        value.framePolicy;
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment:
+          CrossAxisAlignment.start,
       children: [
         Container(
-          width: double.infinity,
-          padding: EdgeInsets.symmetric(
+          width:
+              double.infinity,
+          padding:
+              EdgeInsets.symmetric(
             vertical:
                 compact
                     ? 8
@@ -1351,91 +1789,147 @@ class _PerformanceInfo extends StatelessWidget {
                         ? 16
                         : 14,
           ),
-          decoration: BoxDecoration(
-            border: Border(
-              top: BorderSide(
-                color: border,
-                width: .8,
+          decoration:
+              BoxDecoration(
+            border:
+                Border(
+              top:
+                  BorderSide(
+                color:
+                    border,
+                width:
+                    .8,
               ),
-              bottom: BorderSide(
-                color: border,
-                width: .8,
+              bottom:
+                  BorderSide(
+                color:
+                    border,
+                width:
+                    .8,
               ),
             ),
           ),
-          child: Text(
+          child:
+              Text(
             title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: foreground,
+            maxLines:
+                1,
+            overflow:
+                TextOverflow.ellipsis,
+            style:
+                TextStyle(
+              color:
+                  foreground,
               fontSize:
-                  compact ? 10 : 12,
-              fontWeight: FontWeight.w900,
-              letterSpacing: .65,
+                  compact
+                      ? 10
+                      : 12,
+              fontWeight:
+                  FontWeight.w900,
+              letterSpacing:
+                  .65,
             ),
           ),
         ),
         SizedBox(
-          height: compact ? 7 : 12,
+          height:
+              compact ? 7 : 12,
         ),
         Text(
           description,
-          maxLines: compact ? 3 : null,
+          maxLines:
+              compact ? 3 : null,
           overflow:
               compact
                   ? TextOverflow.ellipsis
                   : null,
-          style: TextStyle(
-            color: secondary,
-            fontSize: compact ? 9 : 11,
-            fontWeight: FontWeight.w500,
-            height: compact ? 1.25 : 1.45,
+          style:
+              TextStyle(
+            color:
+                secondary,
+            fontSize:
+                compact ? 9 : 11,
+            fontWeight:
+                FontWeight.w500,
+            height:
+                compact
+                    ? 1.25
+                    : 1.45,
           ),
         ),
         SizedBox(
-          height: compact ? 9 : 16,
+          height:
+              compact ? 9 : 16,
         ),
         Container(
-          width: double.infinity,
-          decoration: BoxDecoration(
-            border: Border(
-              top: BorderSide(
-                color: border,
-                width: .8,
+          width:
+              double.infinity,
+          decoration:
+              BoxDecoration(
+            border:
+                Border(
+              top:
+                  BorderSide(
+                color:
+                    border,
+                width:
+                    .8,
               ),
-              bottom: BorderSide(
-                color: border,
-                width: .8,
+              bottom:
+                  BorderSide(
+                color:
+                    border,
+                width:
+                    .8,
               ),
             ),
           ),
-          child: Column(
+          child:
+              Column(
             children: [
               _TechnicalRow(
-                label: 'PREVIEW LOAD',
-                value: preview,
-                labelColor: muted,
-                valueColor: foreground,
-                border: border,
-                compact: compact,
+                label:
+                    'PREVIEW LOAD',
+                value:
+                    preview,
+                labelColor:
+                    muted,
+                valueColor:
+                    foreground,
+                border:
+                    border,
+                compact:
+                    compact,
               ),
               _TechnicalRow(
-                label: 'PROCESS LOAD',
-                value: processing,
-                labelColor: muted,
-                valueColor: foreground,
-                border: border,
-                compact: compact,
+                label:
+                    'PROCESS LOAD',
+                value:
+                    processing,
+                labelColor:
+                    muted,
+                valueColor:
+                    foreground,
+                border:
+                    border,
+                compact:
+                    compact,
               ),
               _TechnicalRow(
-                label: 'FRAME POLICY',
-                value: framePolicy,
-                labelColor: muted,
-                valueColor: foreground,
-                border: border,
-                last: true,
-                compact: compact,
+                label:
+                    'FRAME POLICY',
+                value:
+                    framePolicy,
+                labelColor:
+                    muted,
+                valueColor:
+                    foreground,
+                border:
+                    border,
+                last:
+                    true,
+                compact:
+                    compact,
               ),
             ],
           ),
@@ -1445,7 +1939,8 @@ class _PerformanceInfo extends StatelessWidget {
   }
 }
 
-class _TechnicalRow extends StatelessWidget {
+class _TechnicalRow
+    extends StatelessWidget {
   const _TechnicalRow({
     required this.label,
     required this.value,
@@ -1467,47 +1962,74 @@ class _TechnicalRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: BoxConstraints(
-        minHeight: compact ? 31 : 42,
+      constraints:
+          BoxConstraints(
+        minHeight:
+            compact ? 31 : 42,
       ),
-      padding: EdgeInsets.symmetric(
-        vertical: compact ? 6 : 10,
+      padding:
+          EdgeInsets.symmetric(
+        vertical:
+            compact ? 6 : 10,
       ),
-      decoration: BoxDecoration(
-        border: last
-            ? null
-            : Border(
-                bottom: BorderSide(
-                  color: border,
-                  width: .7,
-                ),
-              ),
+      decoration:
+          BoxDecoration(
+        border:
+            last
+                ? null
+                : Border(
+                    bottom:
+                        BorderSide(
+                      color:
+                          border,
+                      width:
+                          .7,
+                    ),
+                  ),
       ),
-      child: Row(
+      child:
+          Row(
         children: [
           Expanded(
-            child: Text(
+            child:
+                Text(
               label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: labelColor,
-                fontSize: compact ? 8 : 9,
-                fontWeight: FontWeight.w700,
-                letterSpacing: .45,
+              maxLines:
+                  1,
+              overflow:
+                  TextOverflow.ellipsis,
+              style:
+                  TextStyle(
+                color:
+                    labelColor,
+                fontSize:
+                    compact ? 8 : 9,
+                fontWeight:
+                    FontWeight.w700,
+                letterSpacing:
+                    .45,
               ),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(
+            width: 8,
+          ),
           Text(
             value,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: valueColor,
-              fontSize: compact ? 9 : 10,
-              fontWeight: FontWeight.w900,
-              letterSpacing: .30,
+            maxLines:
+                1,
+            overflow:
+                TextOverflow.ellipsis,
+            style:
+                TextStyle(
+              color:
+                  valueColor,
+              fontSize:
+                  compact ? 9 : 10,
+              fontWeight:
+                  FontWeight.w900,
+              letterSpacing:
+                  .30,
             ),
           ),
         ],

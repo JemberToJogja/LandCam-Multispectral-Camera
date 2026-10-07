@@ -16,6 +16,7 @@ import '../services/native_bridge.dart';
 /// - issue camera/network/capture/NDVI commands
 /// - maintain frame and camera metadata
 /// - maintain diagnostic logs
+/// - maintain Advanced Settings state
 ///
 /// Responsibilities intentionally kept OUT of this class:
 /// - widget construction
@@ -34,23 +35,31 @@ class LandCamViewModel extends ChangeNotifier {
 
   Uint8List? _activeFrame;
 
-  final Set<SpectralBand> _supportedBands = <SpectralBand>{
+  final Set<SpectralBand> _supportedBands =
+      <SpectralBand>{
     SpectralBand.rgb,
     SpectralBand.red,
     SpectralBand.green,
     SpectralBand.blue,
   };
 
-  final List<LogEntry> _logs = <LogEntry>[];
+  final List<LogEntry> _logs =
+      <LogEntry>[];
 
   StreamSubscription<dynamic>? _events;
   Timer? _frameUiTimer;
 
-  CameraLink _link = CameraLink.idle;
-  SpectralBand _band = SpectralBand.rgb;
+  CameraLink _link =
+      CameraLink.idle;
 
-  String _status = 'READY';
-  String? _sourceLabel = SpectralBand.rgb.sourceLabel;
+  SpectralBand _band =
+      SpectralBand.rgb;
+
+  String _status =
+      'READY';
+
+  String? _sourceLabel =
+      SpectralBand.rgb.sourceLabel;
 
   String? _ssid;
   String? _brand;
@@ -60,140 +69,274 @@ class LandCamViewModel extends ChangeNotifier {
   String? _cameraHost;
   int? _cameraPort;
 
-  String _captureMode = 'PROCESSED';
+  // ---------------------------------------------------------------------------
+  // Legacy capture mode
+  // ---------------------------------------------------------------------------
+  //
+  // This remains for compatibility with existing LANDCAM UI/native callers.
+  //
+  // Advanced Settings uses _advancedSettings.captureOutput as the source of
+  // truth for the actual output policy.
+  //
+  // RAW + PROCESSED cannot be represented by this legacy two-state field, so
+  // it remains PROCESSED when that Advanced Setting is active.
+  String _captureMode =
+      'PROCESSED';
+
+  // ---------------------------------------------------------------------------
+  // Advanced Settings
+  // ---------------------------------------------------------------------------
+
+  AdvancedSettings _advancedSettings =
+      AdvancedSettings.defaults;
+
+  // ---------------------------------------------------------------------------
+  // NDVI
+  // ---------------------------------------------------------------------------
 
   double? _ndvi;
-  int _ndviValidPixels = 0;
-  double _ndviNirGain = 1.0;
-  bool _ndviEnabled = false;
 
-  String _previewMode = 'PROCESSED';
-  bool _unifiedSpectralCropAvailable = false;
-  bool _registrationApplied = false;
-  String _registrationModel = '';
+  int _ndviValidPixels =
+      0;
 
-  bool _capturing = false;
-  bool _nfcListening = false;
-  bool _booted = false;
-  bool _supportsLiveView = false;
-  bool _supportsCapture = false;
-  bool _supportsAutofocus = false;
-  bool _dualOpticalRoiAvailable = false;
-  bool _nirActivating = false;
+  double _ndviNirGain =
+      1.0;
 
-  int _frameCount = 0;
+  bool _ndviEnabled =
+      false;
+
+  String _previewMode =
+      'PROCESSED';
+
+  bool _unifiedSpectralCropAvailable =
+      false;
+
+  bool _registrationApplied =
+      false;
+
+  String _registrationModel =
+      '';
+
+  // ---------------------------------------------------------------------------
+  // Runtime flags
+  // ---------------------------------------------------------------------------
+
+  bool _capturing =
+      false;
+
+  bool _nfcListening =
+      false;
+
+  bool _booted =
+      false;
+
+  bool _supportsLiveView =
+      false;
+
+  bool _supportsCapture =
+      false;
+
+  bool _supportsAutofocus =
+      false;
+
+  bool _dualOpticalRoiAvailable =
+      false;
+
+  bool _nirActivating =
+      false;
+
+  int _frameCount =
+      0;
+
   int? _frameWidth;
   int? _frameHeight;
+
   double? _measuredFps;
+
   DateTime? _previousFrameAt;
 
   String? _codec;
   int? _bitDepth;
 
-  bool _disposed = false;
+  bool _disposed =
+      false;
 
-  // Prevent overlapping spectral/NDVI mode commands. Native camera
-  // switching is asynchronous, so rapid consecutive requests must be
-  // serialized on the Flutter side.
-  bool _modeOperationInFlight = false;
-
-  // Preview ownership / stale-frame protection.
+  // ---------------------------------------------------------------------------
+  // Mode operation protection
+  // ---------------------------------------------------------------------------
   //
-  // Native emits a previewGeneration with every preview frame. The floor is
-  // advanced only after a native mode command has been accepted, so frames
+  // Prevent overlapping spectral/NDVI/Advanced Settings mode commands.
+  //
+  // Native camera switching is asynchronous, so rapid consecutive requests
+  // must be serialized on the Flutter side.
+  bool _modeOperationInFlight =
+      false;
+
+  // ---------------------------------------------------------------------------
+  // Preview ownership / stale-frame protection
+  // ---------------------------------------------------------------------------
+  //
+  // Native emits a previewGeneration with every preview frame.
+  // The floor is advanced after an accepted native mode command, so frames
   // produced by the previous mode cannot become the new visible frame.
-  int _previewGenerationFloor = 0;
+  int _previewGenerationFloor =
+      0;
+
   int? _lastCommittedPreviewGeneration;
 
   // ---------------------------------------------------------------------------
   // Public state
   // ---------------------------------------------------------------------------
 
-  Uint8List? get activeFrame => _activeFrame;
+  Uint8List? get activeFrame =>
+      _activeFrame;
 
-  CameraLink get link => _link;
+  CameraLink get link =>
+      _link;
 
-  SpectralBand get band => _band;
+  SpectralBand get band =>
+      _band;
 
-  String get status => _status;
+  String get status =>
+      _status;
 
-  String? get sourceLabel => _sourceLabel;
+  String? get sourceLabel =>
+      _sourceLabel;
 
-  String? get ssid => _ssid;
+  String? get ssid =>
+      _ssid;
 
-  String? get brand => _brand;
+  String? get brand =>
+      _brand;
 
-  String? get model => _model;
+  String? get model =>
+      _model;
 
-  String? get cameraIdentityName => _cameraIdentityName;
+  String? get cameraIdentityName =>
+      _cameraIdentityName;
 
-  String? get protocol => _protocol;
+  String? get protocol =>
+      _protocol;
 
-  String? get cameraHost => _cameraHost;
+  String? get cameraHost =>
+      _cameraHost;
 
-  int? get cameraPort => _cameraPort;
+  int? get cameraPort =>
+      _cameraPort;
 
-  String get captureMode => _captureMode;
+  /// Legacy two-state capture mode.
+  ///
+  /// Possible values:
+  /// - RAW
+  /// - PROCESSED
+  ///
+  /// When Advanced Settings is RAW + PROCESSED, this remains PROCESSED
+  /// for compatibility with existing two-state UI.
+  String get captureMode =>
+      _captureMode;
 
-  double? get ndvi => _ndvi;
+  /// Current Advanced Settings object.
+  AdvancedSettings get advancedSettings =>
+      _advancedSettings;
 
-  int get ndviValidPixels => _ndviValidPixels;
+  /// Current capture output policy.
+  CaptureOutputMode get captureOutput =>
+      _advancedSettings.captureOutput;
 
-  double get ndviNirGain => _ndviNirGain;
+  /// Current performance mode.
+  PerformanceMode get performance =>
+      _advancedSettings.performance;
 
-  bool get ndviEnabled => _ndviEnabled;
+  /// Current resolved performance configuration.
+  PerformanceConfig get performanceConfig =>
+      _advancedSettings.performanceConfig;
 
-  String get previewMode => _previewMode;
+  double? get ndvi =>
+      _ndvi;
+
+  int get ndviValidPixels =>
+      _ndviValidPixels;
+
+  double get ndviNirGain =>
+      _ndviNirGain;
+
+  bool get ndviEnabled =>
+      _ndviEnabled;
+
+  String get previewMode =>
+      _previewMode;
 
   bool get unifiedSpectralCropAvailable =>
       _unifiedSpectralCropAvailable;
 
-  bool get registrationApplied => _registrationApplied;
+  bool get registrationApplied =>
+      _registrationApplied;
 
-  String get registrationModel => _registrationModel;
+  String get registrationModel =>
+      _registrationModel;
 
-  bool get capturing => _capturing;
+  bool get capturing =>
+      _capturing;
 
-  bool get nfcListening => _nfcListening;
+  bool get nfcListening =>
+      _nfcListening;
 
-  bool get booted => _booted;
+  bool get booted =>
+      _booted;
 
-  bool get supportsLiveView => _supportsLiveView;
+  bool get supportsLiveView =>
+      _supportsLiveView;
 
-  bool get supportsCapture => _supportsCapture;
+  bool get supportsCapture =>
+      _supportsCapture;
 
-  bool get supportsAutofocus => _supportsAutofocus;
+  bool get supportsAutofocus =>
+      _supportsAutofocus;
 
   bool get dualOpticalRoiAvailable =>
       _dualOpticalRoiAvailable;
 
-  bool get nirActivating => _nirActivating;
+  bool get nirActivating =>
+      _nirActivating;
 
-  int get frameCount => _frameCount;
+  int get frameCount =>
+      _frameCount;
 
-  int? get frameWidth => _frameWidth;
+  int? get frameWidth =>
+      _frameWidth;
 
-  int? get frameHeight => _frameHeight;
+  int? get frameHeight =>
+      _frameHeight;
 
-  double? get measuredFps => _measuredFps;
+  double? get measuredFps =>
+      _measuredFps;
 
-  String? get codec => _codec;
+  String? get codec =>
+      _codec;
 
-  int? get bitDepth => _bitDepth;
+  int? get bitDepth =>
+      _bitDepth;
 
   List<LogEntry> get logs =>
-      List<LogEntry>.unmodifiable(_logs);
+      List<LogEntry>.unmodifiable(
+        _logs,
+      );
 
   Set<SpectralBand> get supportedBands =>
-      Set<SpectralBand>.unmodifiable(_supportedBands);
+      Set<SpectralBand>.unmodifiable(
+        _supportedBands,
+      );
 
   // ---------------------------------------------------------------------------
   // Derived state
   // ---------------------------------------------------------------------------
 
   bool get hasFrame {
-    final bytes = _activeFrame;
-    return bytes != null && bytes.isNotEmpty;
+    final bytes =
+        _activeFrame;
+
+    return bytes != null &&
+        bytes.isNotEmpty;
   }
 
   bool get cameraReady =>
@@ -211,7 +354,9 @@ class LandCamViewModel extends ChangeNotifier {
   ) {
     if (band != SpectralBand.nir) {
       return _supportsLiveView &&
-          _supportedBands.contains(band) &&
+          _supportedBands.contains(
+            band,
+          ) &&
           _link == CameraLink.ready;
     }
 
@@ -225,11 +370,16 @@ class LandCamViewModel extends ChangeNotifier {
 
   String? get cameraDisplayName {
     final identity =
-        _cameraIdentityName?.trim() ?? '';
+        _cameraIdentityName?.trim() ??
+            '';
+
     final brand =
-        _brand?.trim() ?? '';
+        _brand?.trim() ??
+            '';
+
     final model =
-        _model?.trim() ?? '';
+        _model?.trim() ??
+            '';
 
     if (identity.isNotEmpty) {
       if (model.isNotEmpty &&
@@ -269,14 +419,15 @@ class LandCamViewModel extends ChangeNotifier {
     return '$_cameraHost:$_cameraPort';
   }
 
-  String get logsText => _logs
-      .map(
-        (entry) =>
-            '${entry.time}  '
-            '${entry.level.padRight(5)}  '
-            '${entry.message}',
-      )
-      .join('\n');
+  String get logsText =>
+      _logs
+          .map(
+            (entry) =>
+                '${entry.time}  '
+                '${entry.level.padRight(5)}  '
+                '${entry.message}',
+          )
+          .join('\n');
 
   // ---------------------------------------------------------------------------
   // Lifecycle
@@ -286,11 +437,13 @@ class LandCamViewModel extends ChangeNotifier {
   ///
   /// Call this exactly once from the owning View.
   void start() {
-    if (_disposed || _booted) {
+    if (_disposed ||
+        _booted) {
       return;
     }
 
-    _events = NativeBridge.eventStream.listen(
+    _events =
+        NativeBridge.eventStream.listen(
       _handleNativeEvent,
       onError: (
         Object error,
@@ -309,11 +462,13 @@ class LandCamViewModel extends ChangeNotifier {
   }
 
   Future<void> boot() async {
-    if (_disposed || _booted) {
+    if (_disposed ||
+        _booted) {
       return;
     }
 
-    _booted = true;
+    _booted =
+        true;
 
     _addLog(
       'INFO',
@@ -333,19 +488,74 @@ class LandCamViewModel extends ChangeNotifier {
         'Native initialize: $initialized',
       );
 
-      final mode =
-          await NativeBridge.getCaptureMode();
+      // -----------------------------------------------------------------------
+      // Advanced Settings synchronization
+      // -----------------------------------------------------------------------
+      //
+      // New native versions expose getAdvancedSettings().
+      // Older native versions may not, so we retain the legacy capture-mode
+      // fallback.
+      final nativeSettings =
+          await NativeBridge.getAdvancedSettings();
 
       if (_disposed) {
         return;
       }
 
-      _captureMode =
-          mode.trim().toUpperCase() == 'RAW'
-              ? 'RAW'
-              : 'PROCESSED';
+      if (nativeSettings != null) {
+        _advancedSettings =
+            nativeSettings;
+
+        _syncLegacyCaptureModeFromAdvancedSettings();
+
+        _addLog(
+          'INFO',
+          'Advanced Settings restored: '
+          '${_advancedSettings.captureOutput.title} / '
+          '${_advancedSettings.performance.title}',
+        );
+      } else {
+        final mode =
+            await NativeBridge.getCaptureMode();
+
+        if (_disposed) {
+          return;
+        }
+
+        final normalized =
+            mode
+                .trim()
+                .toUpperCase();
+
+        if (normalized == 'RAW') {
+          _advancedSettings =
+              _advancedSettings.copyWith(
+            captureOutput:
+                CaptureOutputMode.raw,
+          );
+        } else {
+          _advancedSettings =
+              _advancedSettings.copyWith(
+            captureOutput:
+                CaptureOutputMode.processed,
+          );
+        }
+
+        _syncLegacyCaptureModeFromAdvancedSettings();
+
+        _addLog(
+          'INFO',
+          'Advanced Settings native state unavailable; '
+          'legacy capture mode used as fallback: '
+          '${_advancedSettings.captureOutput.title}',
+        );
+      }
 
       _notify();
+
+      // -----------------------------------------------------------------------
+      // NDVI synchronization
+      // -----------------------------------------------------------------------
 
       final enabled =
           await NativeBridge.getNdviEnabled();
@@ -354,7 +564,9 @@ class LandCamViewModel extends ChangeNotifier {
         return;
       }
 
-      _ndviEnabled = enabled;
+      _ndviEnabled =
+          enabled;
+
       _previewMode =
           enabled
               ? 'NDVI'
@@ -367,6 +579,10 @@ class LandCamViewModel extends ChangeNotifier {
 
       _notify();
 
+      // -----------------------------------------------------------------------
+      // NFC
+      // -----------------------------------------------------------------------
+
       final nfcReady =
           await NativeBridge.startNfc();
 
@@ -374,7 +590,8 @@ class LandCamViewModel extends ChangeNotifier {
         return;
       }
 
-      _nfcListening = nfcReady;
+      _nfcListening =
+          nfcReady;
 
       _addLog(
         'INFO',
@@ -392,6 +609,8 @@ class LandCamViewModel extends ChangeNotifier {
         'Native startup failed: '
         '${e.code}: ${e.message}',
       );
+
+      _notify();
     } catch (e) {
       if (_disposed) {
         return;
@@ -401,6 +620,156 @@ class LandCamViewModel extends ChangeNotifier {
         'ERROR',
         'Native startup failed: $e',
       );
+
+      _notify();
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Advanced Settings
+  // ---------------------------------------------------------------------------
+
+  /// Applies the complete Advanced Settings configuration.
+  ///
+  /// The ViewModel updates its local state ONLY after native accepts the
+  /// complete configuration. This prevents Flutter and Android from entering
+  /// a split-brain configuration.
+  ///
+  /// Returns null on success, otherwise a user-facing error string.
+  Future<String?> applyAdvancedSettings(
+    AdvancedSettings settings,
+  ) async {
+    if (_disposed) {
+      return null;
+    }
+
+    if (settings ==
+        _advancedSettings) {
+      return null;
+    }
+
+    if (_modeOperationInFlight) {
+      return 'ANOTHER MODE CHANGE IS IN PROGRESS';
+    }
+
+    _modeOperationInFlight =
+        true;
+
+    try {
+      final accepted =
+          await NativeBridge.applyAdvancedSettings(
+        settings,
+      );
+
+      if (_disposed) {
+        return null;
+      }
+
+      if (!accepted) {
+        _addLog(
+          'ERROR',
+          'Advanced Settings rejected by native',
+        );
+
+        return 'ADVANCED SETTINGS REJECTED';
+      }
+
+      _advancedSettings =
+          settings;
+
+      _syncLegacyCaptureModeFromAdvancedSettings();
+
+      /*
+       * A complete settings transaction can affect the preview pipeline.
+       * Advance the local preview boundary so frames from the old processing
+       * policy cannot overwrite the new policy.
+       */
+      _advancePreviewGenerationFloor();
+
+      _status =
+          'SETTINGS APPLIED';
+
+      _addLog(
+        'INFO',
+        'Advanced Settings applied: '
+        '${settings.captureOutput.title} / '
+        '${settings.performance.title}',
+      );
+
+      _notify();
+
+      return null;
+    } catch (e) {
+      if (_disposed) {
+        return null;
+      }
+
+      _addLog(
+        'ERROR',
+        'Advanced Settings failed: $e',
+      );
+
+      _notify();
+
+      return 'ADVANCED SETTINGS ERROR';
+    } finally {
+      _modeOperationInFlight =
+          false;
+
+      _notify();
+    }
+  }
+
+  /// Applies only the capture-output portion of Advanced Settings.
+  ///
+  /// Useful when older UI code needs to change only capture output.
+  Future<String?> setCaptureOutput(
+    CaptureOutputMode mode,
+  ) async {
+    return applyAdvancedSettings(
+      _advancedSettings.copyWith(
+        captureOutput: mode,
+      ),
+    );
+  }
+
+  /// Applies only the performance portion of Advanced Settings.
+  Future<String?> setPerformanceMode(
+    PerformanceMode mode,
+  ) async {
+    return applyAdvancedSettings(
+      _advancedSettings.copyWith(
+        performance: mode,
+      ),
+    );
+  }
+
+  /// Restores the domain defaults.
+  ///
+  /// This is the same configuration used by Advanced Settings RESET.
+  Future<String?> resetAdvancedSettings() async {
+    return applyAdvancedSettings(
+      AdvancedSettings.defaults,
+    );
+  }
+
+  /// Synchronizes the legacy two-state capture mode with the new output
+  /// configuration.
+  ///
+  /// RAW + PROCESSED has no exact representation in the old field, so it is
+  /// intentionally represented as PROCESSED for backwards compatibility.
+  void _syncLegacyCaptureModeFromAdvancedSettings() {
+    switch (_advancedSettings.captureOutput) {
+      case CaptureOutputMode.raw:
+        _captureMode =
+            'RAW';
+        break;
+
+      case CaptureOutputMode.processed:
+      case CaptureOutputMode.rawAndProcessed:
+        _captureMode =
+            'PROCESSED';
+        break;
     }
   }
 
@@ -411,12 +780,14 @@ class LandCamViewModel extends ChangeNotifier {
   void _handleNativeEvent(
     dynamic raw,
   ) {
-    if (_disposed || raw is! Map) {
+    if (_disposed ||
+        raw is! Map) {
       return;
     }
 
     final type =
-        raw['type']?.toString() ?? '';
+        raw['type']?.toString() ??
+            '';
 
     final data =
         raw['data'];
@@ -455,7 +826,8 @@ class LandCamViewModel extends ChangeNotifier {
 
     switch (type) {
       case 'ready':
-        _status = 'READY';
+        _status =
+            'READY';
         break;
 
       case 'nfcDetected':
@@ -471,20 +843,31 @@ class LandCamViewModel extends ChangeNotifier {
         break;
 
       case 'wifiConnecting':
-        _link = CameraLink.wifi;
-        _status = 'CONNECTING WIFI';
+        _link =
+            CameraLink.wifi;
+
+        _status =
+            'CONNECTING WIFI';
+
         _ssid =
             data?.toString() ??
-            _ssid;
+                _ssid;
+
         _clearActiveFrame();
+
         break;
 
       case 'wifiConnected':
-        _link = CameraLink.camera;
-        _status = 'NETWORK READY';
+        _link =
+            CameraLink.camera;
+
+        _status =
+            'NETWORK READY';
+
         _ssid =
             data?.toString() ??
-            _ssid;
+                _ssid;
+
         break;
 
       case 'networkInfo':
@@ -525,14 +908,22 @@ class LandCamViewModel extends ChangeNotifier {
 
       case 'liveviewActive':
         if (data == true) {
-          _link = CameraLink.camera;
-          _status = 'LIVE VIEW ACTIVE';
+          _link =
+              CameraLink.camera;
+
+          _status =
+              'LIVE VIEW ACTIVE';
         }
+
         break;
 
       case 'firstLiveviewFrame':
-        _link = CameraLink.ready;
-        _status = 'CAMERA READY';
+        _link =
+            CameraLink.ready;
+
+        _status =
+            'CAMERA READY';
+
         break;
 
       case 'spectralBandChanged':
@@ -559,62 +950,103 @@ class LandCamViewModel extends ChangeNotifier {
         );
         break;
 
+      case 'advancedSettingsChanged':
+        _handleAdvancedSettingsChanged(
+          data,
+        );
+        break;
+
+      case 'performanceChanged':
+        _handlePerformanceChanged(
+          data,
+        );
+        break;
+
+      case 'captureOutputChanged':
+        _handleCaptureOutputChanged(
+          data,
+        );
+        break;
+
       case 'captureSaved':
-        _capturing = false;
-        _status = 'CAPTURE SAVED';
+        _capturing =
+            false;
+
+        _status =
+            'CAPTURE SAVED';
 
         if (data is Map) {
           final savedBand =
               data['band']?.toString() ??
-              _band.nativeName;
+                  _band.nativeName;
 
           final fileName =
               data['fileName']?.toString() ??
-              '';
+                  '';
 
           final raw =
               data['raw'] == true;
+
+          final processed =
+              data['processed'] == true;
+
+          final output =
+              data['output']
+                      ?.toString() ??
+                  '';
 
           _addLog(
             'INFO',
             'Saved '
             '${raw ? 'RAW ' : ''}'
+            '${processed ? 'PROCESSED ' : ''}'
             '$savedBand'
+            '${output.isEmpty ? '' : ' [$output]'}'
             '${fileName.isEmpty ? '' : ' $fileName'}',
           );
         }
+
         break;
 
       case 'shutterAck':
-        _capturing = false;
+        _capturing =
+            false;
 
         if (_status !=
             'CAPTURE SAVED') {
-          _status = 'CAPTURE COMPLETE';
+          _status =
+              'CAPTURE COMPLETE';
         }
 
         HapticFeedback.heavyImpact();
+
         break;
 
       case 'captureError':
-        _capturing = false;
-        _status = 'CAPTURE ERROR';
+        _capturing =
+            false;
+
+        _status =
+            'CAPTURE ERROR';
 
         _addLog(
           'ERROR',
           data?.toString() ??
               'CAPTURE ERROR',
         );
+
         break;
 
       case 'autofocusMode':
-        _supportsAutofocus = true;
+        _supportsAutofocus =
+            true;
 
         _addLog(
           'INFO',
           'Continuous autofocus: '
           '${data?.toString() ?? 'ACTIVE'}',
         );
+
         break;
 
       case 'nirError':
@@ -645,8 +1077,13 @@ class LandCamViewModel extends ChangeNotifier {
 
       case 'disconnected':
         _resetCameraState();
-        _link = CameraLink.idle;
-        _status = 'DISCONNECTED';
+
+        _link =
+            CameraLink.idle;
+
+        _status =
+            'DISCONNECTED';
+
         break;
 
       case 'systemStatus':
@@ -656,7 +1093,8 @@ class LandCamViewModel extends ChangeNotifier {
         break;
 
       case 'nfcUnavailable':
-        _nfcListening = false;
+        _nfcListening =
+            false;
         break;
 
       case 'wifiPermission':
@@ -666,6 +1104,7 @@ class LandCamViewModel extends ChangeNotifier {
             'WIFI PERMISSION NOT GRANTED',
           );
         }
+
         break;
 
       case 'engineWarning':
@@ -687,14 +1126,181 @@ class LandCamViewModel extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------------------
+  // Native Advanced Settings event handlers
+  // ---------------------------------------------------------------------------
+
+  void _handleAdvancedSettingsChanged(
+    dynamic data,
+  ) {
+    if (data is! Map) {
+      return;
+    }
+
+    final captureOutput =
+        _captureOutputFromNative(
+      data['captureOutput'],
+    );
+
+    final performance =
+        _performanceFromNative(
+      data['performance'],
+    );
+
+    var next =
+        _advancedSettings;
+
+    if (captureOutput != null) {
+      next =
+          next.copyWith(
+        captureOutput:
+            captureOutput,
+      );
+    }
+
+    if (performance != null) {
+      next =
+          next.copyWith(
+        performance:
+            performance,
+      );
+    }
+
+    if (next !=
+        _advancedSettings) {
+      _advancedSettings =
+          next;
+
+      _syncLegacyCaptureModeFromAdvancedSettings();
+
+      _advancePreviewGenerationFloor();
+
+      _addLog(
+        'INFO',
+        'Native Advanced Settings changed: '
+        '${_advancedSettings.captureOutput.title} / '
+        '${_advancedSettings.performance.title}',
+      );
+    }
+  }
+
+  void _handleCaptureOutputChanged(
+    dynamic data,
+  ) {
+    final rawValue =
+        data is Map
+            ? data['captureOutput'] ??
+                data['mode']
+            : data;
+
+    final captureOutput =
+        _captureOutputFromNative(
+      rawValue,
+    );
+
+    if (captureOutput == null) {
+      return;
+    }
+
+    _advancedSettings =
+        _advancedSettings.copyWith(
+      captureOutput:
+          captureOutput,
+    );
+
+    _syncLegacyCaptureModeFromAdvancedSettings();
+
+    _advancePreviewGenerationFloor();
+  }
+
+  void _handlePerformanceChanged(
+    dynamic data,
+  ) {
+    final rawValue =
+        data is Map
+            ? data['performance'] ??
+                data['mode']
+            : data;
+
+    final performance =
+        _performanceFromNative(
+      rawValue,
+    );
+
+    if (performance == null) {
+      return;
+    }
+
+    _advancedSettings =
+        _advancedSettings.copyWith(
+      performance:
+          performance,
+    );
+
+    _addLog(
+      'INFO',
+      'Performance mode: '
+      '${performance.title}',
+    );
+  }
+
+  CaptureOutputMode? _captureOutputFromNative(
+    dynamic value,
+  ) {
+    if (value is! String) {
+      return null;
+    }
+
+    switch (value.trim().toUpperCase()) {
+      case 'RAW':
+        return CaptureOutputMode.raw;
+
+      case 'PROCESSED':
+        return CaptureOutputMode.processed;
+
+      case 'RAW_AND_PROCESSED':
+      case 'RAW + PROCESSED':
+        return CaptureOutputMode.rawAndProcessed;
+
+      default:
+        return null;
+    }
+  }
+
+  PerformanceMode? _performanceFromNative(
+    dynamic value,
+  ) {
+    if (value is! String) {
+      return null;
+    }
+
+    switch (value.trim().toUpperCase()) {
+      case 'PERFORMANCE':
+        return PerformanceMode.performance;
+
+      case 'BALANCED':
+        return PerformanceMode.balanced;
+
+      case 'HIGH_QUALITY':
+      case 'HIGH QUALITY':
+        return PerformanceMode.highQuality;
+
+      default:
+        return null;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Native event handlers
   // ---------------------------------------------------------------------------
 
   void _handleNfcDetected(
     dynamic data,
   ) {
-    _link = CameraLink.nfc;
-    _status = 'NFC DETECTED';
+    _link =
+        CameraLink.nfc;
+
+    _status =
+        'NFC DETECTED';
 
     if (data is! Map) {
       return;
@@ -705,7 +1311,8 @@ class LandCamViewModel extends ChangeNotifier {
 
     if (ssid != null &&
         ssid.isNotEmpty) {
-      _ssid = ssid;
+      _ssid =
+          ssid;
     }
   }
 
@@ -718,7 +1325,7 @@ class LandCamViewModel extends ChangeNotifier {
 
     _cameraHost =
         data['host']?.toString() ??
-        _cameraHost;
+            _cameraHost;
 
     _cameraPort =
         _parseInt(
@@ -730,8 +1337,11 @@ class LandCamViewModel extends ChangeNotifier {
   void _handleCameraEndpointFound(
     dynamic data,
   ) {
-    _link = CameraLink.camera;
-    _status = 'CAMERA FOUND';
+    _link =
+        CameraLink.camera;
+
+    _status =
+        'CAMERA FOUND';
 
     if (data is! Map) {
       return;
@@ -739,7 +1349,7 @@ class LandCamViewModel extends ChangeNotifier {
 
     _cameraHost =
         data['host']?.toString() ??
-        _cameraHost;
+            _cameraHost;
 
     _cameraPort =
         _parseInt(
@@ -749,14 +1359,17 @@ class LandCamViewModel extends ChangeNotifier {
 
     _protocol =
         data['protocol']?.toString() ??
-        _protocol;
+            _protocol;
   }
 
   void _handleCameraIdentified(
     dynamic data,
   ) {
-    _link = CameraLink.camera;
-    _status = 'CAMERA IDENTIFIED';
+    _link =
+        CameraLink.camera;
+
+    _status =
+        'CAMERA IDENTIFIED';
 
     if (data is! Map) {
       return;
@@ -764,15 +1377,15 @@ class LandCamViewModel extends ChangeNotifier {
 
     _brand =
         data['brand']?.toString() ??
-        _brand;
+            _brand;
 
     _model =
         data['model']?.toString() ??
-        _model;
+            _model;
 
     _cameraHost =
         data['host']?.toString() ??
-        _cameraHost;
+            _cameraHost;
 
     _cameraPort =
         _parseInt(
@@ -782,14 +1395,17 @@ class LandCamViewModel extends ChangeNotifier {
 
     _protocol =
         data['protocol']?.toString() ??
-        _protocol;
+            _protocol;
   }
 
   void _handleCameraIdentity(
     dynamic data,
   ) {
-    _link = CameraLink.camera;
-    _status = 'CAMERA IDENTIFIED';
+    _link =
+        CameraLink.camera;
+
+    _status =
+        'CAMERA IDENTIFIED';
 
     if (data is! Map) {
       return;
@@ -797,25 +1413,26 @@ class LandCamViewModel extends ChangeNotifier {
 
     _cameraIdentityName =
         data['name']?.toString() ??
-        _cameraIdentityName;
+            _cameraIdentityName;
 
     _model =
         data['model']?.toString() ??
-        _model;
+            _model;
 
     _protocol =
         data['protocol']?.toString() ??
-        _protocol;
+            _protocol;
   }
 
   void _handleCameraProbe(
     dynamic data,
   ) {
-    _link = CameraLink.camera;
+    _link =
+        CameraLink.camera;
 
     final probe =
         data?.toString() ??
-        '';
+            '';
 
     if (probe ==
         'DISCOVERY_STARTED') {
@@ -844,7 +1461,7 @@ class LandCamViewModel extends ChangeNotifier {
 
     final bands =
         data['bands'] ??
-        data['spectralBands'];
+            data['spectralBands'];
 
     final nir =
         data['nir'] == true;
@@ -857,7 +1474,8 @@ class LandCamViewModel extends ChangeNotifier {
 
     final realNir =
         nir ||
-        data['realNirAvailable'] == true ||
+        data['realNirAvailable'] ==
+            true ||
         dualOpticalRoi ||
         unifiedCrop;
 
@@ -865,9 +1483,11 @@ class LandCamViewModel extends ChangeNotifier {
         realNir;
 
     _unifiedSpectralCropAvailable =
-        unifiedCrop || realNir;
+        unifiedCrop ||
+        realNir;
 
-    if (data['registrationModel'] != null) {
+    if (data['registrationModel'] !=
+        null) {
       _registrationModel =
           data['registrationModel']
               .toString();
@@ -922,6 +1542,7 @@ class LandCamViewModel extends ChangeNotifier {
                 SpectralBand.nir,
               );
             }
+
             break;
         }
       }
@@ -976,15 +1597,15 @@ class LandCamViewModel extends ChangeNotifier {
 
     _brand =
         data['brand']?.toString() ??
-        _brand;
+            _brand;
 
     _model =
         data['model']?.toString() ??
-        _model;
+            _model;
 
     _protocol =
         data['protocol']?.toString() ??
-        _protocol;
+            _protocol;
 
     final nirSource =
         data['nirSource']?.toString();
@@ -1027,13 +1648,14 @@ class LandCamViewModel extends ChangeNotifier {
 
     final bitDepth =
         _parseInt(
-      data['bitDepth'] ??
-          data['rawBitDepth'],
-    );
+          data['bitDepth'] ??
+              data['rawBitDepth'],
+        );
 
     if (bitDepth != null &&
         bitDepth > 0) {
-      _bitDepth = bitDepth;
+      _bitDepth =
+          bitDepth;
     }
   }
 
@@ -1057,17 +1679,20 @@ class LandCamViewModel extends ChangeNotifier {
 
     if (width != null &&
         width > 0) {
-      _frameWidth = width;
+      _frameWidth =
+          width;
     }
 
     if (height != null &&
         height > 0) {
-      _frameHeight = height;
+      _frameHeight =
+          height;
     }
 
     if (fps != null &&
         fps > 0) {
-      _measuredFps = fps;
+      _measuredFps =
+          fps;
     }
 
     final codec =
@@ -1075,7 +1700,8 @@ class LandCamViewModel extends ChangeNotifier {
 
     if (codec != null &&
         codec.isNotEmpty) {
-      _codec = codec;
+      _codec =
+          codec;
     }
   }
 
@@ -1091,7 +1717,8 @@ class LandCamViewModel extends ChangeNotifier {
             ? data['enabled'] == true
             : data == true;
 
-    _ndviEnabled = enabled;
+    _ndviEnabled =
+        enabled;
 
     _previewMode =
         enabled
@@ -1099,9 +1726,14 @@ class LandCamViewModel extends ChangeNotifier {
             : 'PROCESSED';
 
     if (!enabled) {
-      _ndvi = null;
-      _ndviValidPixels = 0;
-      _ndviNirGain = 1.0;
+      _ndvi =
+          null;
+
+      _ndviValidPixels =
+          0;
+
+      _ndviNirGain =
+          1.0;
 
       _sourceLabel =
           'UNIFIED SPECTRAL CROP';
@@ -1109,11 +1741,9 @@ class LandCamViewModel extends ChangeNotifier {
       _sourceLabel =
           'UNIFIED NDVI CROP';
 
-      // IMPORTANT:
-      //
-      // Do NOT clear _activeFrame here. Mode changes must hold the last
-      // successfully rendered frame until the first valid frame belonging to
-      // the new mode arrives. This prevents a blank flash during switching.
+      // Do NOT clear _activeFrame here.
+      // Mode changes must hold the last successfully rendered frame until
+      // the first valid frame belonging to the new mode arrives.
     }
   }
 
@@ -1136,10 +1766,11 @@ class LandCamViewModel extends ChangeNotifier {
     }
 
     _ndvi =
-        value.clamp(
-          -1.0,
-          1.0,
-        );
+        value
+            .clamp(
+              -1.0,
+              1.0,
+            );
 
     _ndviValidPixels =
         _parseInt(
@@ -1155,7 +1786,8 @@ class LandCamViewModel extends ChangeNotifier {
     if (nirGain != null &&
         nirGain.isFinite &&
         nirGain > 0) {
-      _ndviNirGain = nirGain;
+      _ndviNirGain =
+          nirGain;
     }
 
     if (data['unifiedSpectralCrop'] ==
@@ -1172,7 +1804,8 @@ class LandCamViewModel extends ChangeNotifier {
 
     if (data['registrationApplied'] ==
         true) {
-      _registrationApplied = true;
+      _registrationApplied =
+          true;
     }
 
     final registrationModel =
@@ -1185,7 +1818,9 @@ class LandCamViewModel extends ChangeNotifier {
           registrationModel;
     }
 
-    _previewMode = 'NDVI';
+    _previewMode =
+        'NDVI';
+
     _sourceLabel =
         'UNIFIED NDVI CROP';
   }
@@ -1226,7 +1861,7 @@ class LandCamViewModel extends ChangeNotifier {
 
     _addLog(
       'INFO',
-      'Capture mode: $_captureMode',
+      'Legacy capture mode: $_captureMode',
     );
   }
 
@@ -1252,11 +1887,9 @@ class LandCamViewModel extends ChangeNotifier {
       return;
     }
 
-    _band = band;
+    _band =
+        band;
 
-    // NDVI tetap menjadi mode presentation ketika aktif.
-    // UI akan menonaktifkan highlight seluruh spectral band
-    // selama _ndviEnabled == true.
     _sourceLabel =
         _ndviEnabled
             ? 'UNIFIED NDVI CROP'
@@ -1270,8 +1903,6 @@ class LandCamViewModel extends ChangeNotifier {
     _nirActivating =
         band == SpectralBand.nir;
 
-    // Keep the last committed frame visible while the newly requested
-    // spectral mode acquires its first valid frame.
     _status =
         band == SpectralBand.nir
             ? 'NIR ACQUIRING'
@@ -1293,16 +1924,16 @@ class LandCamViewModel extends ChangeNotifier {
             'PROCESSED';
 
     final isRawPreview =
-        previewMode == 'RAW';
+        previewMode ==
+            'RAW';
 
     final isNdviPreview =
-        previewMode == 'NDVI';
+        previewMode ==
+            'NDVI';
 
     /*
-     * A mode command is transactional from the Flutter side. While it is in
-     * flight, do not commit ANY preview frame. The native engine is already
-     * invalidating its own generation; waiting for the command result here
-     * prevents a frame from the previous mode winning a tiny race window.
+     * A mode command is transactional from the Flutter side.
+     * While it is in flight, do not commit ANY preview frame.
      */
     if (_modeOperationInFlight) {
       return;
@@ -1313,11 +1944,9 @@ class LandCamViewModel extends ChangeNotifier {
      *
      * NDVI ON  -> only NDVI frames are legal.
      * NDVI OFF -> only RAW/PROCESSED spectral frames are legal.
-     *
-     * Critically, a stale NDVI frame is never allowed to turn NDVI back on,
-     * and a stale RGB frame is never allowed to turn NDVI off.
      */
-    if (isNdviPreview != _ndviEnabled) {
+    if (isNdviPreview !=
+        _ndviEnabled) {
       return;
     }
 
@@ -1333,7 +1962,8 @@ class LandCamViewModel extends ChangeNotifier {
     }
 
     final effectiveBand =
-        band ?? _band;
+        band ??
+        _band;
 
     if (!isRawPreview &&
         !isNdviPreview &&
@@ -1348,23 +1978,32 @@ class LandCamViewModel extends ChangeNotifier {
     }
 
     /*
-     * GPU NDVI intentionally carries bytes=null because the image is rendered
-     * directly into the native/Flutter SurfaceTexture. Accept its metadata,
-     * but do NOT replace the byte-backed activeFrame with null.
+     * GPU NDVI can carry bytes=null because the image is rendered directly
+     * into the native/Flutter SurfaceTexture.
      */
     final gpuTexture =
-        data['gpuTexture'] == true;
+        data['gpuTexture'] ==
+            true;
 
     if (isNdviPreview &&
         gpuTexture) {
-      if (!_acceptPreviewGeneration(data)) {
+      if (!_acceptPreviewGeneration(
+        data,
+      )) {
         return;
       }
 
-      _previewMode = 'NDVI';
-      _sourceLabel = 'UNIFIED NDVI CROP';
-      _link = CameraLink.ready;
-      _status = 'NDVI READY';
+      _previewMode =
+          'NDVI';
+
+      _sourceLabel =
+          'UNIFIED NDVI CROP';
+
+      _link =
+          CameraLink.ready;
+
+      _status =
+          'NDVI READY';
 
       _readCommonMetadata(
         data,
@@ -1388,12 +2027,9 @@ class LandCamViewModel extends ChangeNotifier {
       return;
     }
 
-    /*
-     * Do generation validation immediately before committing the bytes.
-     * Once accepted, the generation becomes the last visible generation and
-     * any older/out-of-order frame is rejected.
-     */
-    if (!_acceptPreviewGeneration(data)) {
+    if (!_acceptPreviewGeneration(
+      data,
+    )) {
       return;
     }
 
@@ -1437,7 +2073,8 @@ class LandCamViewModel extends ChangeNotifier {
 
     if (!isRawPreview &&
         !isNdviPreview &&
-        band == SpectralBand.nir) {
+        band ==
+            SpectralBand.nir) {
       if (!_dualOpticalRoiAvailable) {
         return;
       }
@@ -1446,21 +2083,28 @@ class LandCamViewModel extends ChangeNotifier {
         SpectralBand.nir,
       );
 
-      _nirActivating = false;
+      _nirActivating =
+          false;
+
       _dualOpticalRoiAvailable =
           true;
     }
 
     if (isNdviPreview) {
-      _previewMode = 'NDVI';
+      _previewMode =
+          'NDVI';
+
       _sourceLabel =
           'UNIFIED NDVI CROP';
     } else if (isRawPreview) {
-      _previewMode = 'RAW';
+      _previewMode =
+          'RAW';
+
       _sourceLabel =
           'FULL COMPOSITE • UNPROCESSED';
     } else {
-      _previewMode = 'PROCESSED';
+      _previewMode =
+          'PROCESSED';
 
       _sourceLabel =
           unified
@@ -1469,14 +2113,17 @@ class LandCamViewModel extends ChangeNotifier {
                   effectiveBand.sourceLabel;
     }
 
-    _activeFrame = bytes;
+    _activeFrame =
+        bytes;
 
     if (isRawPreview) {
-      _captureMode = 'RAW';
+      _captureMode =
+          'RAW';
     }
 
     final nativeCaptureMode =
-        data['captureMode']?.toString();
+        data['captureMode']
+            ?.toString();
 
     if (nativeCaptureMode != null &&
         nativeCaptureMode.isNotEmpty) {
@@ -1485,14 +2132,17 @@ class LandCamViewModel extends ChangeNotifier {
               .trim()
               .toUpperCase();
 
-      if (normalized == 'RAW' ||
-          normalized == 'PROCESSED') {
+      if (normalized ==
+              'RAW' ||
+          normalized ==
+              'PROCESSED') {
         _captureMode =
             normalized;
       }
     }
 
     _frameCount++;
+
     _updateFps();
 
     _readCommonMetadata(
@@ -1503,7 +2153,8 @@ class LandCamViewModel extends ChangeNotifier {
       data,
     );
 
-    _link = CameraLink.ready;
+    _link =
+        CameraLink.ready;
 
     _status =
         isRawPreview
@@ -1530,7 +2181,8 @@ class LandCamViewModel extends ChangeNotifier {
 
     if (status != null &&
         status.isNotEmpty) {
-      _status = status;
+      _status =
+          status;
     }
 
     final band =
@@ -1541,7 +2193,8 @@ class LandCamViewModel extends ChangeNotifier {
 
     if (band != null &&
         band != _band) {
-      _band = band;
+      _band =
+          band;
 
       _sourceLabel =
           _ndviEnabled
@@ -1552,15 +2205,11 @@ class LandCamViewModel extends ChangeNotifier {
           _ndviEnabled
               ? 'NDVI'
               : 'PROCESSED';
-
-      // Keep the last frame visible while native acquires the frame for the
-      // new mode. The preview handler will atomically replace it once the
-      // new mode's frame is valid.
     }
 
     _protocol =
         data['protocol']?.toString() ??
-        _protocol;
+            _protocol;
 
     if (data['dualOpticalRoi'] ==
             true ||
@@ -1595,20 +2244,23 @@ class LandCamViewModel extends ChangeNotifier {
         data['registrationModel']
             ?.toString();
 
-    if (statusRegistrationModel != null &&
-        statusRegistrationModel.isNotEmpty) {
+    if (statusRegistrationModel !=
+            null &&
+        statusRegistrationModel
+            .isNotEmpty) {
       _registrationModel =
           statusRegistrationModel;
     }
 
     if (data['registrationApplied'] ==
         true) {
-      _registrationApplied = true;
+      _registrationApplied =
+          true;
     }
 
     _cameraHost =
         data['host']?.toString() ??
-        _cameraHost;
+            _cameraHost;
 
     _cameraPort =
         _parseInt(
@@ -1630,7 +2282,7 @@ class LandCamViewModel extends ChangeNotifier {
   ) {
     final warning =
         data?.toString() ??
-        'Native warning';
+            'Native warning';
 
     _addLog(
       'WARN',
@@ -1640,12 +2292,15 @@ class LandCamViewModel extends ChangeNotifier {
     final lower =
         warning.toLowerCase();
 
-    if (_band == SpectralBand.nir &&
+    if (_band ==
+            SpectralBand.nir &&
         (lower.contains('nir') ||
             lower.contains(
               'infrared',
             )) &&
-        (lower.contains('failed') ||
+        (lower.contains(
+              'failed',
+            ) ||
             lower.contains(
               'not available',
             ) ||
@@ -1670,17 +2325,8 @@ class LandCamViewModel extends ChangeNotifier {
 
   /// Changes the active spectral band.
   ///
-  /// SINGLE SELECT RULE:
-  ///
+  /// Single-select rule:
   /// RGB / R / G / B / NIR are mutually exclusive with NDVI.
-  ///
-  /// When NDVI is active and the user selects a spectral band:
-  /// 1. Native NDVI is disabled.
-  /// 2. NDVI UI state is cleared.
-  /// 3. The selected spectral band becomes active.
-  ///
-  /// Returns a user-facing message when the request should result
-  /// in a presentation-layer notification.
   Future<String?> selectBand(
     SpectralBand band,
   ) async {
@@ -1695,8 +2341,11 @@ class LandCamViewModel extends ChangeNotifier {
       return null;
     }
 
-    if (!isBandEnabled(band)) {
-      if (band == SpectralBand.nir &&
+    if (!isBandEnabled(
+      band,
+    )) {
+      if (band ==
+              SpectralBand.nir &&
           !_dualOpticalRoiAvailable) {
         return 'NIR OPTICAL ROI NOT AVAILABLE';
       }
@@ -1704,30 +2353,26 @@ class LandCamViewModel extends ChangeNotifier {
       return null;
     }
 
-    _modeOperationInFlight = true;
+    _modeOperationInFlight =
+        true;
 
     final previousBand =
         _band;
+
     final previousSourceLabel =
         _sourceLabel;
+
     final wasNdviEnabled =
         _ndviEnabled;
 
     try {
       HapticFeedback.selectionClick();
 
-      /*
-       * -----------------------------------------------------------------------
-       * PHASE A — leave NDVI, if necessary.
-       *
-       * We keep the last visible NDVI frame on screen while native performs
-       * the switch. No preview event is allowed to commit while this operation
-       * is in flight.
-       * -----------------------------------------------------------------------
-       */
       if (wasNdviEnabled) {
         final accepted =
-            await NativeBridge.setNdviEnabled(false);
+            await NativeBridge.setNdviEnabled(
+          false,
+        );
 
         if (_disposed) {
           return null;
@@ -1745,24 +2390,27 @@ class LandCamViewModel extends ChangeNotifier {
 
         _advancePreviewGenerationFloor();
 
-        _ndviEnabled = false;
-        _previewMode = 'PROCESSED';
-        _ndvi = null;
-        _ndviValidPixels = 0;
-        _ndviNirGain = 1.0;
+        _ndviEnabled =
+            false;
+
+        _previewMode =
+            'PROCESSED';
+
+        _ndvi =
+            null;
+
+        _ndviValidPixels =
+            0;
+
+        _ndviNirGain =
+            1.0;
+
         _sourceLabel =
             'UNIFIED SPECTRAL CROP';
       }
 
-      /*
-       * -----------------------------------------------------------------------
-       * PHASE B — request exactly one spectral band.
-       *
-       * Do NOT clear _activeFrame. The previous valid image stays on screen
-       * until this new band actually produces its first frame.
-       * -----------------------------------------------------------------------
-       */
-      _band = band;
+      _band =
+          band;
 
       _sourceLabel =
           band.sourceLabel;
@@ -1771,7 +2419,8 @@ class LandCamViewModel extends ChangeNotifier {
           'PROCESSED';
 
       _nirActivating =
-          band == SpectralBand.nir;
+          band ==
+              SpectralBand.nir;
 
       _status =
           '${band.title} ACQUIRING';
@@ -1788,12 +2437,6 @@ class LandCamViewModel extends ChangeNotifier {
       }
 
       if (!ok) {
-        /*
-         * Roll the Dart-side band state back to the last known good spectral
-         * selection. If the previous mode was NDVI, attempt to restore it so
-         * native and Flutter do not remain split-brain after a rejected band
-         * request.
-         */
         _band =
             previousBand;
 
@@ -1807,26 +2450,40 @@ class LandCamViewModel extends ChangeNotifier {
                 ? 'NDVI'
                 : 'PROCESSED';
 
-        _nirActivating = false;
+        _nirActivating =
+            false;
 
         if (wasNdviEnabled) {
           final restored =
-              await NativeBridge.setNdviEnabled(true);
+              await NativeBridge.setNdviEnabled(
+            true,
+          );
 
           if (!_disposed &&
               restored) {
             _advancePreviewGenerationFloor();
 
-            _ndviEnabled = true;
-            _previewMode = 'NDVI';
+            _ndviEnabled =
+                true;
+
+            _previewMode =
+                'NDVI';
+
             _sourceLabel =
                 'UNIFIED NDVI CROP';
-            _status = 'NDVI RESTORED';
+
+            _status =
+                'NDVI RESTORED';
           } else if (!_disposed) {
-            _ndviEnabled = false;
-            _previewMode = 'PROCESSED';
+            _ndviEnabled =
+                false;
+
+            _previewMode =
+                'PROCESSED';
+
             _sourceLabel =
                 previousSourceLabel;
+
             _status =
                 '${band.title} REQUEST REJECTED';
           }
@@ -1861,36 +2518,55 @@ class LandCamViewModel extends ChangeNotifier {
               ? 'NDVI'
               : 'PROCESSED';
 
-      _nirActivating = false;
+      _nirActivating =
+          false;
 
       if (wasNdviEnabled) {
         try {
           final restored =
-              await NativeBridge.setNdviEnabled(true);
+              await NativeBridge.setNdviEnabled(
+            true,
+          );
 
           if (!_disposed &&
               restored) {
             _advancePreviewGenerationFloor();
 
-            _ndviEnabled = true;
-            _previewMode = 'NDVI';
+            _ndviEnabled =
+                true;
+
+            _previewMode =
+                'NDVI';
+
             _sourceLabel =
                 'UNIFIED NDVI CROP';
-            _status = 'NDVI RESTORED';
+
+            _status =
+                'NDVI RESTORED';
           } else if (!_disposed) {
-            _ndviEnabled = false;
-            _previewMode = 'PROCESSED';
+            _ndviEnabled =
+                false;
+
+            _previewMode =
+                'PROCESSED';
+
             _sourceLabel =
                 previousSourceLabel;
+
             _status =
                 '${band.title} ERROR';
           }
         } catch (_) {
           if (!_disposed) {
-            _ndviEnabled = false;
-            _previewMode = 'PROCESSED';
+            _ndviEnabled =
+                false;
+
+            _previewMode =
+                'PROCESSED';
+
             _sourceLabel =
                 previousSourceLabel;
+
             _status =
                 '${band.title} ERROR';
           }
@@ -1910,24 +2586,44 @@ class LandCamViewModel extends ChangeNotifier {
 
       return '${band.title} ERROR';
     } finally {
-      _modeOperationInFlight = false;
+      _modeOperationInFlight =
+          false;
+
       _notify();
     }
   }
 
-  /// Captures an image using the active capture mode.
+  /// Captures an image using the currently applied Advanced Settings.
+  ///
+  /// The native side is responsible for deciding whether to save:
+  /// - RAW
+  /// - PROCESSED
+  /// - RAW + PROCESSED
+  ///
+  /// Flutter deliberately does not capture the camera twice for
+  /// RAW + PROCESSED.
   Future<void> capture() async {
     if (_disposed ||
         !captureReady) {
       return;
     }
 
-    _capturing = true;
+    _capturing =
+        true;
 
     _status =
-        _captureMode == 'RAW'
-            ? 'CAPTURING RAW'
-            : 'CAPTURING ${_band.title}';
+        switch (
+          _advancedSettings.captureOutput
+        ) {
+          CaptureOutputMode.raw =>
+            'CAPTURING RAW',
+
+          CaptureOutputMode.processed =>
+            'CAPTURING ${_band.title}',
+
+          CaptureOutputMode.rawAndProcessed =>
+            'CAPTURING RAW + PROCESSED',
+        };
 
     HapticFeedback.mediumImpact();
 
@@ -1940,7 +2636,9 @@ class LandCamViewModel extends ChangeNotifier {
         return;
       }
 
-      _capturing = false;
+      _capturing =
+          false;
+
       _status =
           'CAPTURE ERROR';
 
@@ -1955,16 +2653,7 @@ class LandCamViewModel extends ChangeNotifier {
 
   /// Toggles native realtime NDVI mode.
   ///
-  /// SINGLE SELECT RULE:
-  ///
-  /// When NDVI becomes enabled, the UI treats NDVI as the only active
-  /// selection. The current spectral band is retained internally because
-  /// native NDVI still uses RGB + NIR processing, but it is not highlighted.
-  ///
-  /// When NDVI becomes disabled, the current spectral band becomes active
-  /// again.
-  ///
-  /// Returns a user-facing message when the request is rejected.
+  /// NDVI remains mutually exclusive with the spectral preview selection.
   Future<String?> toggleNdvi() async {
     if (_disposed ||
         _modeOperationInFlight) {
@@ -1976,18 +2665,13 @@ class LandCamViewModel extends ChangeNotifier {
       return 'NDVI REQUIRES RGB + NIR OPTICAL ROI';
     }
 
-    _modeOperationInFlight = true;
+    _modeOperationInFlight =
+        true;
 
     final next =
         !_ndviEnabled;
 
     try {
-      /*
-       * Native owns the actual mode transition. While the command is in
-       * flight, frame events are intentionally ignored by
-       * _handleProcessedFrameEvent(). This creates an atomic presentation
-       * boundary between the old and new preview modes.
-       */
       final accepted =
           await NativeBridge.setNdviEnabled(
         next,
@@ -2018,30 +2702,19 @@ class LandCamViewModel extends ChangeNotifier {
               ? 'NDVI'
               : 'PROCESSED';
 
-      _ndvi = null;
-      _ndviValidPixels = 0;
-      _ndviNirGain = 1.0;
+      _ndvi =
+          null;
+
+      _ndviValidPixels =
+          0;
+
+      _ndviNirGain =
+          1.0;
 
       _sourceLabel =
           next
               ? 'UNIFIED NDVI CROP'
               : 'UNIFIED SPECTRAL CROP';
-
-      /*
-       * IMPORTANT:
-       *
-       * Never clear _activeFrame here.
-       *
-       * ON:
-       *   keep the previous frame until the first real NDVI frame arrives.
-       *
-       * OFF:
-       *   keep the last NDVI frame until the first valid spectral frame
-       *   arrives.
-       *
-       * This completely removes the blank-flash/old-frame race at the
-       * presentation boundary.
-       */
 
       _status =
           next
@@ -2079,57 +2752,35 @@ class LandCamViewModel extends ChangeNotifier {
     }
   }
 
-  /// Toggles RAW / PROCESSED capture mode.
+  /// Toggles the legacy RAW / PROCESSED capture mode.
   ///
-  /// Returns null on success or a user-facing message on failure.
+  /// This method is retained for existing UI compatibility.
+  ///
+  /// It also updates Advanced Settings so the legacy control and the new
+  /// settings model do not drift apart.
+  ///
+  /// RAW + PROCESSED is intentionally not toggled by this two-state control.
   Future<String?> toggleCaptureMode() async {
-    if (_disposed) {
+    if (_disposed ||
+        _modeOperationInFlight) {
       return null;
     }
 
     final next =
-        _captureMode == 'RAW'
-            ? 'PROCESSED'
-            : 'RAW';
+        _captureMode ==
+                'RAW'
+            ? CaptureOutputMode.processed
+            : CaptureOutputMode.raw;
 
-    try {
-      final ok =
-          await NativeBridge.setCaptureMode(
-        next,
-      );
+    final message =
+        await applyAdvancedSettings(
+      _advancedSettings.copyWith(
+        captureOutput:
+            next,
+      ),
+    );
 
-      if (_disposed) {
-        return null;
-      }
-
-      if (!ok) {
-        return 'CAPTURE MODE REJECTED';
-      }
-
-      _captureMode = next;
-
-      _addLog(
-        'INFO',
-        'Capture mode: $next',
-      );
-
-      _notify();
-
-      return null;
-    } catch (e) {
-      if (_disposed) {
-        return null;
-      }
-
-      _addLog(
-        'ERROR',
-        'Capture mode failed: $e',
-      );
-
-      _notify();
-
-      return 'CAPTURE MODE ERROR';
-    }
+    return message;
   }
 
   // ---------------------------------------------------------------------------
@@ -2148,7 +2799,8 @@ class LandCamViewModel extends ChangeNotifier {
       return false;
     }
 
-    _nfcListening = ok;
+    _nfcListening =
+        ok;
 
     _notify();
 
@@ -2206,9 +2858,14 @@ class LandCamViewModel extends ChangeNotifier {
     _previewMode =
         'PROCESSED';
 
-    _ndvi = null;
-    _ndviValidPixels = 0;
-    _ndviNirGain = 1.0;
+    _ndvi =
+        null;
+
+    _ndviValidPixels =
+        0;
+
+    _ndviNirGain =
+        1.0;
 
     _unifiedSpectralCropAvailable =
         false;
@@ -2237,8 +2894,6 @@ class LandCamViewModel extends ChangeNotifier {
   void _setConnectionError(
     String status,
   ) {
-    // Invalidate the presentation boundary before clearing the disconnected
-    // frame so late events from the old session cannot become visible.
     _advancePreviewGenerationFloor();
 
     _link =
@@ -2259,9 +2914,14 @@ class LandCamViewModel extends ChangeNotifier {
     _previewMode =
         'PROCESSED';
 
-    _ndvi = null;
-    _ndviValidPixels = 0;
-    _ndviNirGain = 1.0;
+    _ndvi =
+        null;
+
+    _ndviValidPixels =
+        0;
+
+    _ndviNirGain =
+        1.0;
 
     _unifiedSpectralCropAvailable =
         false;
@@ -2276,9 +2936,10 @@ class LandCamViewModel extends ChangeNotifier {
   }
 
   void _resetCameraState() {
-    // Any frame arriving from the previous camera/session becomes stale.
     _advancePreviewGenerationFloor();
-    _lastCommittedPreviewGeneration = null;
+
+    _lastCommittedPreviewGeneration =
+        null;
 
     _capturing =
         false;
@@ -2286,13 +2947,23 @@ class LandCamViewModel extends ChangeNotifier {
     _nirActivating =
         false;
 
-    _brand = null;
-    _model = null;
+    _brand =
+        null;
+
+    _model =
+        null;
+
     _cameraIdentityName =
         null;
-    _protocol = null;
-    _cameraHost = null;
-    _cameraPort = null;
+
+    _protocol =
+        null;
+
+    _cameraHost =
+        null;
+
+    _cameraPort =
+        null;
 
     _supportsLiveView =
         false;
@@ -2320,10 +2991,17 @@ class LandCamViewModel extends ChangeNotifier {
         },
       );
 
-    _ndvi = null;
-    _ndviValidPixels = 0;
-    _ndviNirGain = 1.0;
-    _ndviEnabled = false;
+    _ndvi =
+        null;
+
+    _ndviValidPixels =
+        0;
+
+    _ndviNirGain =
+        1.0;
+
+    _ndviEnabled =
+        false;
 
     _previewMode =
         'PROCESSED';
@@ -2405,10 +3083,6 @@ class LandCamViewModel extends ChangeNotifier {
 
   /// Advances the local minimum preview generation after a native mode
   /// command has been accepted.
-  ///
-  /// The native engine owns the real generation counter. Flutter therefore
-  /// treats this value only as a LOWER BOUND. If native performs additional
-  /// internal invalidations, a newer generation is still accepted.
   void _advancePreviewGenerationFloor() {
     final next =
         _previewGenerationFloor + 1;
@@ -2417,17 +3091,15 @@ class LandCamViewModel extends ChangeNotifier {
         _lastCommittedPreviewGeneration;
 
     _previewGenerationFloor =
-        lastCommitted != null &&
-                lastCommitted + 1 > next
+        lastCommitted !=
+                    null &&
+                lastCommitted + 1 >
+                    next
             ? lastCommitted + 1
             : next;
   }
 
   /// Validates the generation attached by native to a preview event.
-  ///
-  /// Old/out-of-order frames are rejected. Missing generation metadata is
-  /// tolerated for backward compatibility, while the strict mode ownership
-  /// checks in _handleProcessedFrameEvent still remain active.
   bool _acceptPreviewGeneration(
     Map data,
   ) {
@@ -2451,7 +3123,8 @@ class LandCamViewModel extends ChangeNotifier {
         _lastCommittedPreviewGeneration;
 
     if (lastCommitted != null &&
-        generation < lastCommitted) {
+        generation <
+            lastCommitted) {
       return false;
     }
 
@@ -2469,18 +3142,23 @@ class LandCamViewModel extends ChangeNotifier {
       ) {
         'RGB' =>
           SpectralBand.rgb,
+
         'R' ||
         'RED' =>
           SpectralBand.red,
+
         'G' ||
         'GREEN' =>
           SpectralBand.green,
+
         'B' ||
         'BLUE' =>
           SpectralBand.blue,
+
         'NIR' ||
         'NEAR_INFRARED' =>
           SpectralBand.nir,
+
         _ =>
           null,
       };
@@ -2589,10 +3267,8 @@ class LandCamViewModel extends ChangeNotifier {
     _measuredFps =
         _measuredFps == null
             ? instant
-            : (_measuredFps! *
-                    .82) +
-                (instant *
-                    .18);
+            : (_measuredFps! * .82) +
+                (instant * .18);
   }
 
   // ---------------------------------------------------------------------------
@@ -2649,6 +3325,13 @@ class LandCamViewModel extends ChangeNotifier {
       return;
     }
 
+    /*
+     * Performance mode remains native-controlled for the actual camera/
+     * processing workload. This timer only throttles Flutter UI rebuilds.
+     *
+     * The current 120 ms cadence is intentionally stable so the UI does not
+     * rebuild once for every high-frequency native frame event.
+     */
     _frameUiTimer =
         Timer(
       const Duration(
@@ -2682,10 +3365,12 @@ class LandCamViewModel extends ChangeNotifier {
         true;
 
     _frameUiTimer?.cancel();
+
     _frameUiTimer =
         null;
 
     _events?.cancel();
+
     _events =
         null;
 

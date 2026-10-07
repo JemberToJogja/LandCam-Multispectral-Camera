@@ -22,16 +22,21 @@ import 'landcam_widgets.dart';
 /// Camera state and native event processing belong to
 /// [LandCamViewModel].
 class LandCamPage extends StatefulWidget {
-  const LandCamPage({super.key});
+  const LandCamPage({
+    super.key,
+  });
 
   @override
-  State<LandCamPage> createState() => _LandCamPageState();
+  State<LandCamPage> createState() =>
+      _LandCamPageState();
 }
 
-class _LandCamPageState extends State<LandCamPage> {
+class _LandCamPageState
+    extends State<LandCamPage> {
   late final LandCamViewModel _viewModel;
 
-  final GlobalKey<ScaffoldMessengerState> _messengerKey =
+  final GlobalKey<
+      ScaffoldMessengerState> _messengerKey =
       GlobalKey<ScaffoldMessengerState>();
 
   bool _dark = true;
@@ -40,7 +45,8 @@ class _LandCamPageState extends State<LandCamPage> {
   void initState() {
     super.initState();
 
-    _viewModel = LandCamViewModel();
+    _viewModel =
+        LandCamViewModel();
 
     _viewModel.start();
   }
@@ -52,23 +58,35 @@ class _LandCamPageState extends State<LandCamPage> {
   Future<void> _onBandSelected(
     SpectralBand band,
   ) async {
-    final message = await _viewModel.selectBand(band);
+    final message =
+        await _viewModel.selectBand(
+      band,
+    );
 
-    if (!mounted || message == null || message.isEmpty) {
+    if (!mounted ||
+        message == null ||
+        message.isEmpty) {
       return;
     }
 
-    _showToast(message);
+    _showToast(
+      message,
+    );
   }
 
   Future<void> _onToggleNdvi() async {
-    final message = await _viewModel.toggleNdvi();
+    final message =
+        await _viewModel.toggleNdvi();
 
-    if (!mounted || message == null || message.isEmpty) {
+    if (!mounted ||
+        message == null ||
+        message.isEmpty) {
       return;
     }
 
-    _showToast(message);
+    _showToast(
+      message,
+    );
   }
 
   Future<void> _onCapture() async {
@@ -87,12 +105,22 @@ class _LandCamPageState extends State<LandCamPage> {
     await showModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withValues(alpha: .78),
-      builder: (sheetContext) {
+      backgroundColor:
+          Colors.transparent,
+      barrierColor:
+          Colors.black.withValues(
+        alpha: .78,
+      ),
+      builder: (
+        sheetContext,
+      ) {
         return SettingsSheet(
           dark: _dark,
-          captureMode: _viewModel.captureMode,
+
+          // Legacy two-state capture control remains available in the
+          // existing settings sheet.
+          captureMode:
+              _viewModel.captureMode,
 
           onTheme: () {
             if (!mounted) {
@@ -104,25 +132,33 @@ class _LandCamPageState extends State<LandCamPage> {
             });
 
             if (sheetContext.mounted) {
-              Navigator.of(sheetContext).pop();
+              Navigator.of(
+                sheetContext,
+              ).pop();
             }
           },
 
           onCaptureMode: () async {
             final message =
-                await _viewModel.toggleCaptureMode();
+                await _viewModel
+                    .toggleCaptureMode();
 
             if (!mounted) {
               return;
             }
 
-            if (message != null && message.isNotEmpty) {
-              _showToast(message);
+            if (message != null &&
+                message.isNotEmpty) {
+              _showToast(
+                message,
+              );
               return;
             }
 
             if (sheetContext.mounted) {
-              Navigator.of(sheetContext).pop();
+              Navigator.of(
+                sheetContext,
+              ).pop();
             }
           },
 
@@ -130,7 +166,9 @@ class _LandCamPageState extends State<LandCamPage> {
             await _toggleOrientation();
 
             if (sheetContext.mounted) {
-              Navigator.of(sheetContext).pop();
+              Navigator.of(
+                sheetContext,
+              ).pop();
             }
           },
 
@@ -139,18 +177,60 @@ class _LandCamPageState extends State<LandCamPage> {
               return;
             }
 
-            Navigator.of(sheetContext).pop();
+            Navigator.of(
+              sheetContext,
+            ).pop();
 
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => AdvancedSettingsPage(
-                  dark: _dark,
-                ),
-              ),
+            unawaited(
+              _openAdvancedSettings(),
             );
           },
         );
       },
+    );
+  }
+
+  /// Opens Advanced Settings using the current ViewModel state.
+  ///
+  /// The page edits a local draft. Nothing is applied to the running
+  /// camera/native pipeline until the user taps APPLY CHANGES.
+  Future<void> _openAdvancedSettings() async {
+    if (!mounted) {
+      return;
+    }
+
+    final result =
+        await Navigator.of(context).push<AdvancedSettings>(
+      MaterialPageRoute(
+        builder: (_) =>
+            AdvancedSettingsPage(
+          dark: _dark,
+          initialCaptureOutput:
+              _viewModel.captureOutput,
+          initialPerformance:
+              _viewModel.performance,
+        ),
+      ),
+    );
+
+    if (!mounted ||
+        result == null) {
+      return;
+    }
+
+    final message =
+        await _viewModel.applyAdvancedSettings(
+      result,
+    );
+
+    if (!mounted ||
+        message == null ||
+        message.isEmpty) {
+      return;
+    }
+
+    _showToast(
+      message,
     );
   }
 
@@ -167,26 +247,43 @@ class _LandCamPageState extends State<LandCamPage> {
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withValues(alpha: .78),
-      builder: (sheetContext) {
+      backgroundColor:
+          Colors.transparent,
+      barrierColor:
+          Colors.black.withValues(
+        alpha: .78,
+      ),
+      builder: (
+        sheetContext,
+      ) {
         return ConnectionSheet(
           dark: _dark,
 
-          link: _viewModel.link,
-          status: _viewModel.status,
+          link:
+              _viewModel.link,
+          status:
+              _viewModel.status,
 
-          ssid: _viewModel.ssid,
-          brand: _viewModel.brand,
-          model: _viewModel.model,
-          identityName: _viewModel.cameraIdentityName,
-          protocol: _viewModel.protocol,
-          host: _viewModel.cameraHost,
-          port: _viewModel.cameraPort,
+          ssid:
+              _viewModel.ssid,
+          brand:
+              _viewModel.brand,
+          model:
+              _viewModel.model,
+          identityName:
+              _viewModel.cameraIdentityName,
+          protocol:
+              _viewModel.protocol,
+          host:
+              _viewModel.cameraHost,
+          port:
+              _viewModel.cameraPort,
 
-          logs: _viewModel.logs,
+          logs:
+              _viewModel.logs,
 
-          nfcListening: _viewModel.nfcListening,
+          nfcListening:
+              _viewModel.nfcListening,
           supportsLiveView:
               _viewModel.supportsLiveView,
           supportsCapture:
@@ -194,29 +291,39 @@ class _LandCamPageState extends State<LandCamPage> {
           supportsAutofocus:
               _viewModel.supportsAutofocus,
           dualOpticalRoiAvailable:
-              _viewModel.dualOpticalRoiAvailable,
+              _viewModel
+                  .dualOpticalRoiAvailable,
 
-          currentBand: _viewModel.band,
-          sourceLabel: _viewModel.sourceLabel,
+          currentBand:
+              _viewModel.band,
+          sourceLabel:
+              _viewModel.sourceLabel,
 
-          frameWidth: _viewModel.frameWidth,
-          frameHeight: _viewModel.frameHeight,
-          bitDepth: _viewModel.bitDepth,
+          frameWidth:
+              _viewModel.frameWidth,
+          frameHeight:
+              _viewModel.frameHeight,
+          bitDepth:
+              _viewModel.bitDepth,
 
           onStartNfc: () async {
-            await _viewModel.startNfc();
+            await _viewModel
+                .startNfc();
           },
 
           onScan: () async {
-            await _viewModel.scanNetwork();
+            await _viewModel
+                .scanNetwork();
           },
 
           onReconnect: () async {
-            await _viewModel.reconnect();
+            await _viewModel
+                .reconnect();
           },
 
           onRefresh: () async {
-            await _viewModel.refreshLiveview();
+            await _viewModel
+                .refreshLiveview();
           },
 
           onClear: () {
@@ -226,26 +333,35 @@ class _LandCamPageState extends State<LandCamPage> {
           onCopy: () async {
             await Clipboard.setData(
               ClipboardData(
-                text: _viewModel.logsText,
+                text:
+                    _viewModel.logsText,
               ),
             );
 
             if (sheetContext.mounted) {
-              ScaffoldMessenger.of(sheetContext)
+              ScaffoldMessenger.of(
+                sheetContext,
+              )
                 ..hideCurrentSnackBar()
                 ..showSnackBar(
                   const SnackBar(
-                    content: Text('LOG COPIED'),
+                    content:
+                        Text(
+                      'LOG COPIED',
+                    ),
                   ),
                 );
             }
           },
 
           onDisconnect: () async {
-            await _viewModel.disconnect();
+            await _viewModel
+                .disconnect();
 
             if (sheetContext.mounted) {
-              Navigator.of(sheetContext).pop();
+              Navigator.of(
+                sheetContext,
+              ).pop();
             }
           },
         );
@@ -263,17 +379,25 @@ class _LandCamPageState extends State<LandCamPage> {
     }
 
     final orientation =
-        MediaQuery.orientationOf(context);
+        MediaQuery.orientationOf(
+      context,
+    );
 
-    await SystemChrome.setPreferredOrientations(
-      orientation == Orientation.portrait
+    await SystemChrome
+        .setPreferredOrientations(
+      orientation ==
+              Orientation.portrait
           ? const [
-              DeviceOrientation.landscapeLeft,
-              DeviceOrientation.landscapeRight,
+              DeviceOrientation
+                  .landscapeLeft,
+              DeviceOrientation
+                  .landscapeRight,
             ]
           : const [
-              DeviceOrientation.portraitUp,
-              DeviceOrientation.portraitDown,
+              DeviceOrientation
+                  .portraitUp,
+              DeviceOrientation
+                  .portraitDown,
             ],
     );
   }
@@ -282,8 +406,11 @@ class _LandCamPageState extends State<LandCamPage> {
   // Transient UI
   // ---------------------------------------------------------------------------
 
-  void _showToast(String message) {
-    if (!mounted || message.isEmpty) {
+  void _showToast(
+    String message,
+  ) {
+    if (!mounted ||
+        message.isEmpty) {
       return;
     }
 
@@ -298,17 +425,26 @@ class _LandCamPageState extends State<LandCamPage> {
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
-          duration: const Duration(
+          duration:
+              const Duration(
             milliseconds: 1100,
           ),
-          behavior: SnackBarBehavior.floating,
-          content: Text(
+          behavior:
+              SnackBarBehavior
+                  .floating,
+          content:
+              Text(
             message,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.1,
+            textAlign:
+                TextAlign.center,
+            style:
+                const TextStyle(
+              fontSize:
+                  11,
+              fontWeight:
+                  FontWeight.w800,
+              letterSpacing:
+                  1.1,
             ),
           ),
         ),
@@ -320,89 +456,137 @@ class _LandCamPageState extends State<LandCamPage> {
   // ---------------------------------------------------------------------------
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+    BuildContext context,
+  ) {
     return Theme(
-      data: _buildTheme(_dark),
-      child: ScaffoldMessenger(
-        key: _messengerKey,
-        child: ListenableBuilder(
-          listenable: _viewModel,
-          builder: (context, _) {
+      data:
+          _buildTheme(
+        _dark,
+      ),
+      child:
+          ScaffoldMessenger(
+        key:
+            _messengerKey,
+        child:
+            ListenableBuilder(
+          listenable:
+              _viewModel,
+          builder:
+              (
+            context,
+            _,
+          ) {
             return LandCamHome(
-              frame: _viewModel.activeFrame,
+              frame:
+                  _viewModel
+                      .activeFrame,
 
-              link: _viewModel.link,
-              status: _viewModel.status,
-              sourceLabel: _viewModel.sourceLabel,
+              link:
+                  _viewModel
+                      .link,
+              status:
+                  _viewModel
+                      .status,
+              sourceLabel:
+                  _viewModel
+                      .sourceLabel,
 
-              dark: _dark,
+              dark:
+                  _dark,
 
-              capturing: _viewModel.capturing,
+              capturing:
+                  _viewModel
+                      .capturing,
 
-              currentBand: _viewModel.band,
+              currentBand:
+                  _viewModel
+                      .band,
               supportedBands:
-                  _viewModel.supportedBands,
+                  _viewModel
+                      .supportedBands,
 
               frameCount:
-                  _viewModel.frameCount,
+                  _viewModel
+                      .frameCount,
               frameWidth:
-                  _viewModel.frameWidth,
+                  _viewModel
+                      .frameWidth,
               frameHeight:
-                  _viewModel.frameHeight,
+                  _viewModel
+                      .frameHeight,
               fps:
-                  _viewModel.measuredFps,
+                  _viewModel
+                      .measuredFps,
               codec:
-                  _viewModel.codec,
+                  _viewModel
+                      .codec,
 
               cameraName:
-                  _viewModel.cameraDisplayName,
+                  _viewModel
+                      .cameraDisplayName,
               cameraEndpoint:
-                  _viewModel.cameraEndpoint,
+                  _viewModel
+                      .cameraEndpoint,
 
               captureMode:
-                  _viewModel.captureMode,
+                  _viewModel
+                      .captureMode,
 
               ndviEnabled:
-                  _viewModel.ndviEnabled,
+                  _viewModel
+                      .ndviEnabled,
               ndvi:
-                  _viewModel.ndvi,
+                  _viewModel
+                      .ndvi,
               ndviValidPixels:
-                  _viewModel.ndviValidPixels,
+                  _viewModel
+                      .ndviValidPixels,
 
               supportsCapture:
-                  _viewModel.supportsCapture,
+                  _viewModel
+                      .supportsCapture,
 
               nirActivating:
-                  _viewModel.nirActivating,
+                  _viewModel
+                      .nirActivating,
 
               bandEnabled:
-                  _viewModel.isBandEnabled,
+                  _viewModel
+                      .isBandEnabled,
 
-              onBand: (band) {
+              onBand:
+                  (band) {
                 unawaited(
-                  _onBandSelected(band),
+                  _onBandSelected(
+                    band,
+                  ),
                 );
               },
 
-              onNdvi: () {
+              onNdvi:
+                  () {
                 unawaited(
                   _onToggleNdvi(),
                 );
               },
 
-              onConnection: () {
+              onConnection:
+                  () {
                 unawaited(
                   _openConnectionPanel(),
                 );
               },
 
-              onSettings: () {
+              onSettings:
+                  () {
                 unawaited(
                   _openSettingsPanel(),
                 );
               },
 
-              onCapture: () {
+              onCapture:
+                  () {
                 unawaited(
                   _onCapture(),
                 );
@@ -418,64 +602,115 @@ class _LandCamPageState extends State<LandCamPage> {
   // Theme
   // ---------------------------------------------------------------------------
 
-  ThemeData _buildTheme(bool dark) {
-    final background = dark
-        ? const Color(0xFF0A0D0B)
-        : const Color(0xFFF2F5F3);
+  ThemeData _buildTheme(
+    bool dark,
+  ) {
+    final background =
+        dark
+            ? const Color(
+                0xFF0A0D0B,
+              )
+            : const Color(
+                0xFFF2F5F3,
+              );
 
-    final foreground = dark
-        ? const Color(0xFFF2F6F3)
-        : const Color(0xFF111612);
+    final foreground =
+        dark
+            ? const Color(
+                0xFFF2F6F3,
+              )
+            : const Color(
+                0xFF111612,
+              );
 
-    const accent = Color(0xFF55D98B);
+    const accent =
+        Color(0xFF55D98B);
 
-    final scheme = dark
-        ? ColorScheme.dark(
-            primary: accent,
-            onPrimary: Colors.black,
-            secondary: accent,
-            onSecondary: Colors.black,
-            surface: const Color(0xFF101512),
-            onSurface: foreground,
-            error: const Color(0xFFE56B6F),
-            onError: Colors.white,
-          )
-        : ColorScheme.light(
-            primary: const Color(0xFF1D7E4B),
-            onPrimary: Colors.white,
-            secondary: const Color(0xFF1D7E4B),
-            onSecondary: Colors.white,
-            surface: Colors.white,
-            onSurface: foreground,
-            error: const Color(0xFFB64045),
-            onError: Colors.white,
-          );
+    final scheme =
+        dark
+            ? ColorScheme.dark(
+                primary:
+                    accent,
+                onPrimary:
+                    Colors.black,
+                secondary:
+                    accent,
+                onSecondary:
+                    Colors.black,
+                surface:
+                    Color(
+                  0xFF101512,
+                ),
+                onSurface:
+                    foreground,
+                error:
+                    Color(
+                  0xFFE56B6F,
+                ),
+                onError:
+                    Colors.white,
+              )
+            : ColorScheme.light(
+                primary:
+                    Color(
+                  0xFF1D7E4B,
+                ),
+                onPrimary:
+                    Colors.white,
+                secondary:
+                    Color(
+                  0xFF1D7E4B,
+                ),
+                onSecondary:
+                    Colors.white,
+                surface:
+                    Colors.white,
+                onSurface:
+                    foreground,
+                error:
+                    Color(
+                  0xFFB64045,
+                ),
+                onError:
+                    Colors.white,
+              );
 
     return ThemeData(
-      useMaterial3: true,
+      useMaterial3:
+          true,
 
       brightness:
           dark
               ? Brightness.dark
               : Brightness.light,
 
-      colorScheme: scheme,
+      colorScheme:
+          scheme,
 
-      scaffoldBackgroundColor: background,
-      canvasColor: background,
-      cardColor: background,
+      scaffoldBackgroundColor:
+          background,
 
-      fontFamily: 'Roboto',
+      canvasColor:
+          background,
 
-      dividerColor: foreground.withValues(
+      cardColor:
+          background,
+
+      fontFamily:
+          'Roboto',
+
+      dividerColor:
+          foreground.withValues(
         alpha: .10,
       ),
 
-      splashColor: accent.withValues(
+      splashColor:
+          accent.withValues(
         alpha: .10,
       ),
 
-      highlightColor: accent.withValues(
+      highlightColor:
+          accent.withValues(
         alpha: .05,
       ),
 
@@ -483,15 +718,23 @@ class _LandCamPageState extends State<LandCamPage> {
           SnackBarThemeData(
         backgroundColor:
             dark
-                ? const Color(0xFFE8EEE9)
-                : const Color(0xFF111612),
+                ? const Color(
+                    0xFFE8EEE9,
+                  )
+                : const Color(
+                    0xFF111612,
+                  ),
 
         contentTextStyle:
             TextStyle(
           color:
               dark
-                  ? const Color(0xFF111612)
-                  : const Color(0xFFF2F5F3),
+                  ? const Color(
+                      0xFF111612,
+                    )
+                  : const Color(
+                      0xFFF2F5F3,
+                    ),
           fontWeight:
               FontWeight.w800,
           fontSize:
@@ -499,12 +742,15 @@ class _LandCamPageState extends State<LandCamPage> {
         ),
 
         behavior:
-            SnackBarBehavior.floating,
+            SnackBarBehavior
+                .floating,
 
         shape:
             RoundedRectangleBorder(
           borderRadius:
-              BorderRadius.circular(7),
+              BorderRadius.circular(
+            7,
+          ),
         ),
       ),
 
@@ -516,7 +762,10 @@ class _LandCamPageState extends State<LandCamPage> {
             RoundedRectangleBorder(
           borderRadius:
               BorderRadius.vertical(
-            top: Radius.circular(14),
+            top:
+                Radius.circular(
+              14,
+            ),
           ),
         ),
       ),
@@ -544,12 +793,17 @@ class _LandCamPageState extends State<LandCamPage> {
     _viewModel.dispose();
 
     unawaited(
-      SystemChrome.setPreferredOrientations(
+      SystemChrome
+          .setPreferredOrientations(
         const [
-          DeviceOrientation.portraitUp,
-          DeviceOrientation.portraitDown,
-          DeviceOrientation.landscapeLeft,
-          DeviceOrientation.landscapeRight,
+          DeviceOrientation
+              .portraitUp,
+          DeviceOrientation
+              .portraitDown,
+          DeviceOrientation
+              .landscapeLeft,
+          DeviceOrientation
+              .landscapeRight,
         ],
       ),
     );

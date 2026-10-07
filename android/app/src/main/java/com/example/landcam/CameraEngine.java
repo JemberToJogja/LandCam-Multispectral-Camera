@@ -64,6 +64,7 @@ import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletionService;
 import java.util.concurrent.ExecutorCompletionService;
@@ -514,7 +515,29 @@ public class CameraEngine {
 
     private static final String CAPTURE_MODE_PROCESSED = "PROCESSED";
     private static final String CAPTURE_MODE_RAW = "RAW";
+    private static final String CAPTURE_MODE_BOTH = "RAW + PROCESSED";
+
+    private static final String PERFORMANCE_PERFORMANCE = "PERFORMANCE";
+    private static final String PERFORMANCE_BALANCED = "BALANCED";
+    private static final String PERFORMANCE_HIGH_QUALITY = "HIGH QUALITY";
+
     private volatile String captureMode = CAPTURE_MODE_PROCESSED;
+    private volatile String performanceMode = PERFORMANCE_BALANCED;
+
+    /*
+     * Advanced Settings are native-owned configuration. CameraEngine is the
+     * single source of truth for capture output and performance workload.
+     */
+    private volatile double previewScale = 0.75d;
+    private volatile double processingScale = 0.75d;
+    private volatile int processingEveryNFrames = 1;
+
+    /*
+     * Counts normal (non-NDVI) preview processing jobs. NDVI has its own
+     * renderer cadence and is intentionally excluded.
+     */
+    private final AtomicLong previewProcessingSequence =
+            new AtomicLong(0L);
 
     private static final long NDVI_EVENT_INTERVAL_MS = 150L;
     private volatile boolean ndviEnabled = false;
@@ -765,6 +788,7 @@ public class CameraEngine {
 
         activeSpectralBand = band;
         spectralGeneration.incrementAndGet();
+        previewProcessingSequence.set(0L);
 
         /*
          * Every spectral selection is a new preview generation. Any normal
@@ -793,26 +817,223 @@ public class CameraEngine {
         return true;
     }
 
-    public boolean setCaptureMode(String rawMode) {
-        String mode = rawMode == null
-                ? ""
-                : rawMode.trim().toUpperCase(Locale.US);
+    public synchronized boolean setCaptureMode(String rawMode) {
+        String mode = normalizeCaptureOutput(rawMode);
 
-        if (!CAPTURE_MODE_RAW.equals(mode)
-                && !CAPTURE_MODE_PROCESSED.equals(mode)) {
+        if (mode == null) {
             return false;
         }
 
         captureMode = mode;
+        previewGeneration.incrementAndGet();
+        previewProcessingSequence.set(0L);
 
-        HashMap<String, Object> data = new HashMap<>();
+        HashMap<String, Object> data =
+                new HashMap<>();
+
         data.put("mode", captureMode);
+        data.put("captureOutput", captureMode);
+
         sendEvent("captureModeChanged", data);
+        sendAdvancedSettingsState();
+
         return true;
     }
 
     public String getCaptureMode() {
         return captureMode;
+    }
+
+    public synchronized boolean setCaptureOutput(String rawCaptureOutput) {
+        return setCaptureMode(rawCaptureOutput);
+    }
+
+    public synchronized boolean setPerformance(String rawPerformance) {
+        String mode = normalizePerformanceMode(rawPerformance);
+
+        if (mode == null) {
+            return false;
+        }
+
+        performanceMode = mode;
+        applyPerformancePreset();
+
+        previewGeneration.incrementAndGet();
+        previewProcessingSequence.set(0L);
+
+        sendAdvancedSettingsState();
+        return true;
+    }
+
+    public synchronized boolean setPerformance(
+            String rawPerformance,
+            Map<?, ?> ignoredPerformanceConfig
+    ) {
+        return setPerformance(rawPerformance);
+    }
+
+    public synchronized boolean applyAdvancedSettings(
+            String rawCaptureOutput,
+            String rawPerformance
+    ) {
+        return applyAdvancedSettings(
+                rawCaptureOutput,
+                rawPerformance,
+                null
+        );
+    }
+
+    public synchronized boolean applyAdvancedSettings(
+            String rawCaptureOutput,
+            String rawPerformance,
+            Map<?, ?> ignoredPerformanceConfig
+    ) {
+        String mode = normalizeCaptureOutput(rawCaptureOutput);
+        String performance = normalizePerformanceMode(rawPerformance);
+
+        if (mode == null || performance == null) {
+            return false;
+        }
+
+        captureMode = mode;
+        performanceMode = performance;
+        applyPerformancePreset();
+
+        previewGeneration.incrementAndGet();
+        previewProcessingSequence.set(0L);
+
+        HashMap<String, Object> data =
+                new HashMap<>();
+        data.put("mode", captureMode);
+        data.put("captureOutput", captureMode);
+
+        sendEvent("captureModeChanged", data);
+        sendAdvancedSettingsState();
+
+        return true;
+    }
+
+    public synchronized Map<String, Object> getAdvancedSettings() {
+        return new HashMap<>(performanceConfigMap());
+    }
+
+    private String normalizeCaptureOutput(String rawMode) {
+        if (rawMode == null) {
+            return null;
+        }
+
+        String mode =
+                rawMode
+                        .trim()
+                        .toUpperCase(Locale.US)
+                        .replace("_", " ")
+                        .replace("+", " + ")
+                        .replaceAll("\\s+", " ")
+                        .trim();
+
+        if (CAPTURE_MODE_RAW.equals(mode)) {
+            return CAPTURE_MODE_RAW;
+        }
+
+        if (CAPTURE_MODE_PROCESSED.equals(mode)) {
+            return CAPTURE_MODE_PROCESSED;
+        }
+
+        if ("RAW + PROCESSED".equals(mode)
+                || "RAW PROCESSED".equals(mode)
+                || "BOTH".equals(mode)) {
+            return CAPTURE_MODE_BOTH;
+        }
+
+        return null;
+    }
+
+    private String normalizePerformanceMode(String rawPerformance) {
+        if (rawPerformance == null) {
+            return null;
+        }
+
+        String mode =
+                rawPerformance
+                        .trim()
+                        .toUpperCase(Locale.US)
+                        .replace("_", " ")
+                        .replaceAll("\\s+", " ");
+
+        if (PERFORMANCE_PERFORMANCE.equals(mode)) {
+            return PERFORMANCE_PERFORMANCE;
+        }
+
+        if (PERFORMANCE_BALANCED.equals(mode)) {
+            return PERFORMANCE_BALANCED;
+        }
+
+        if (PERFORMANCE_HIGH_QUALITY.equals(mode)
+                || "HIGH RESOLUTION".equals(mode)
+                || "QUALITY".equals(mode)) {
+            return PERFORMANCE_HIGH_QUALITY;
+        }
+
+        return null;
+    }
+
+    private void applyPerformancePreset() {
+        if (PERFORMANCE_PERFORMANCE.equals(performanceMode)) {
+            previewScale = 0.50d;
+            processingScale = 0.50d;
+            processingEveryNFrames = 2;
+            return;
+        }
+
+        if (PERFORMANCE_HIGH_QUALITY.equals(performanceMode)) {
+            previewScale = 1.00d;
+            processingScale = 1.00d;
+            processingEveryNFrames = 1;
+            return;
+        }
+
+        previewScale = 0.75d;
+        processingScale = 0.75d;
+        processingEveryNFrames = 1;
+    }
+
+    private Map<String, Object> performanceConfigMap() {
+        HashMap<String, Object> result =
+                new HashMap<>();
+
+        result.put("captureOutput", captureMode);
+        result.put("captureMode", captureMode);
+        result.put("performance", performanceMode);
+        result.put("performanceMode", performanceMode);
+        result.put("previewScale", previewScale);
+        result.put("processingScale", processingScale);
+        result.put("processingEveryNFrames", processingEveryNFrames);
+
+        result.put(
+                "previewPolicy",
+                previewScale >= 0.999d
+                        ? "SOURCE"
+                        : (previewScale <= 0.50d ? "LOW" : "MEDIUM")
+        );
+        result.put(
+                "processingPolicy",
+                processingScale >= 0.999d
+                        ? "SOURCE"
+                        : (processingScale <= 0.50d ? "LOW" : "MEDIUM")
+        );
+        result.put(
+                "framePolicy",
+                processingEveryNFrames > 1 ? "SKIP" : "FULL"
+        );
+
+        return result;
+    }
+
+    private void sendAdvancedSettingsState() {
+        sendEvent(
+                "advancedSettingsChanged",
+                new HashMap<String, Object>(performanceConfigMap())
+        );
     }
 
     public boolean setNdviEnabled(boolean enabled) {
@@ -837,6 +1058,7 @@ public class CameraEngine {
          */
         ndviEnabled = enabled;
         previewGeneration.incrementAndGet();
+        previewProcessingSequence.set(0L);
 
         lastNdviEventAt = 0L;
         lastNdviPreviewAt = 0L;
@@ -3582,6 +3804,7 @@ public class CameraEngine {
          * still finishing work from the previous stream must self-invalidate.
          */
         previewGeneration.incrementAndGet();
+        previewProcessingSequence.set(0L);
 
         isStreaming.set(true);
         firstFrameSent = false;
@@ -4143,6 +4366,31 @@ public class CameraEngine {
         final long framePreviewGeneration =
                 previewGeneration.get();
 
+        /*
+         * Apply frame cadence before BitmapFactory decode for the normal
+         * processed preview path. This is where PERFORMANCE mode actually
+         * reduces CPU/memory pressure rather than merely dropping completed
+         * results. RAW preview and NDVI keep their own cadence/ownership.
+         */
+        if (!ndviEnabled
+                && !CAPTURE_MODE_RAW.equals(captureMode)) {
+
+            final long processingSequence =
+                    previewProcessingSequence.incrementAndGet();
+
+            final int frameCadence =
+                    Math.max(
+                            1,
+                            processingEveryNFrames
+                    );
+
+            if (frameCadence > 1
+                    && ((processingSequence - 1L)
+                    % frameCadence) != 0L) {
+                return;
+            }
+        }
+
         BitmapFactory.Options options =
                 new BitmapFactory.Options();
         options.inPreferredConfig =
@@ -4362,19 +4610,36 @@ public class CameraEngine {
                     return;
                 }
 
+                byte[] previewJpeg =
+                        buildScaledPreviewJpeg(
+                                source,
+                                previewScale
+                        );
+
+                if (previewJpeg == null
+                        || previewJpeg.length == 0) {
+                    return;
+                }
+
                 lastFrameBytes =
-                        compositeJpeg;
+                        previewJpeg;
 
                 emitPreviewFrame(
-                        compositeJpeg,
+                        previewJpeg,
                         activeSpectralBand == null
                                 ? "RGB"
                                 : activeSpectralBand,
                         "FULL_COMPOSITE",
                         false,
                         "RAW",
-                        source.getWidth(),
-                        source.getHeight(),
+                        scaledDimension(
+                                source.getWidth(),
+                                previewScale
+                        ),
+                        scaledDimension(
+                                source.getHeight(),
+                                previewScale
+                        ),
                         null,
                         framePreviewGeneration
                 );
@@ -6121,6 +6386,18 @@ public class CameraEngine {
             Bitmap source,
             String band
     ) {
+        return processCompositeForBand(
+                source,
+                band,
+                processingScale
+        );
+    }
+
+    private byte[] processCompositeForBand(
+            Bitmap source,
+            String band,
+            double requestedProcessingScale
+    ) {
 
         Rect unified =
                 unifiedRgbRect();
@@ -6145,7 +6422,8 @@ public class CameraEngine {
             return buildUnifiedNirJpeg(
                     source,
                     unified,
-                    IMAGE_JPEG_QUALITY
+                    IMAGE_JPEG_QUALITY,
+                    requestedProcessingScale
             );
         }
 
@@ -6161,6 +6439,9 @@ public class CameraEngine {
         Bitmap result =
                 crop;
 
+        Bitmap scaledResult =
+                null;
+
         try {
             if ("R".equals(band)) {
                 result = channelBitmap(crop, 0);
@@ -6170,12 +6451,23 @@ public class CameraEngine {
                 result = channelBitmap(crop, 2);
             }
 
+            scaledResult =
+                    scaleBitmap(
+                            result,
+                            requestedProcessingScale
+                    );
+
             return bitmapToJpeg(
-                    result,
+                    scaledResult,
                     IMAGE_JPEG_QUALITY
             );
 
         } finally {
+            if (scaledResult != null
+                    && scaledResult != result
+                    && !scaledResult.isRecycled()) {
+                scaledResult.recycle();
+            }
             if (result != crop
                     && result != null
                     && !result.isRecycled()) {
@@ -6242,6 +6534,20 @@ public class CameraEngine {
             Bitmap source,
             Rect unified,
             int quality
+    ) {
+        return buildUnifiedNirJpeg(
+                source,
+                unified,
+                quality,
+                processingScale
+        );
+    }
+
+    private byte[] buildUnifiedNirJpeg(
+            Bitmap source,
+            Rect unified,
+            int quality,
+            double requestedProcessingScale
     ) {
         final int outputWidth =
                 unified.width();
@@ -6328,12 +6634,27 @@ public class CameraEngine {
                         Bitmap.Config.ARGB_8888
                 );
 
+        Bitmap scaledOutput =
+                null;
+
         try {
+            scaledOutput =
+                    scaleBitmap(
+                            output,
+                            requestedProcessingScale
+                    );
+
             return bitmapToJpeg(
-                    output,
+                    scaledOutput,
                     quality
             );
         } finally {
+            if (scaledOutput != null
+                    && scaledOutput != output
+                    && !scaledOutput.isRecycled()) {
+                scaledOutput.recycle();
+            }
+
             if (!output.isRecycled()) {
                 output.recycle();
             }
@@ -6408,6 +6729,99 @@ public class CameraEngine {
         );
         canvas.drawBitmap(source, 0f, 0f, paint);
         return output;
+    }
+
+    private byte[] buildScaledPreviewJpeg(
+            Bitmap source,
+            double scale
+    ) {
+        if (source == null || source.isRecycled()) {
+            return null;
+        }
+
+        Bitmap scaled =
+                scaleBitmap(
+                        source,
+                        scale
+                );
+
+        try {
+            return bitmapToJpeg(
+                    scaled,
+                    IMAGE_JPEG_QUALITY
+            );
+        } finally {
+            if (scaled != source
+                    && scaled != null
+                    && !scaled.isRecycled()) {
+                scaled.recycle();
+            }
+        }
+    }
+
+    private Bitmap scaleBitmap(
+            Bitmap source,
+            double scale
+    ) {
+        if (source == null
+                || source.isRecycled()) {
+            return null;
+        }
+
+        int width =
+                scaledDimension(
+                        source.getWidth(),
+                        scale
+                );
+
+        int height =
+                scaledDimension(
+                        source.getHeight(),
+                        scale
+                );
+
+        if (width == source.getWidth()
+                && height == source.getHeight()) {
+            return source;
+        }
+
+        return Bitmap.createScaledBitmap(
+                source,
+                width,
+                height,
+                true
+        );
+    }
+
+    private int scaledDimension(
+            int dimension,
+            double scale
+    ) {
+        if (dimension <= 0) {
+            return 1;
+        }
+
+        double safeScale =
+                Double.isNaN(scale)
+                        || Double.isInfinite(scale)
+                        ? 1.0d
+                        : scale;
+
+        safeScale =
+                Math.max(
+                        0.25d,
+                        Math.min(
+                                1.0d,
+                                safeScale
+                        )
+                );
+
+        return Math.max(
+                1,
+                (int) Math.round(
+                        dimension * safeScale
+                )
+        );
     }
 
     private byte[] bitmapToJpeg(Bitmap bitmap, int quality) {
@@ -6831,43 +7245,69 @@ public class CameraEngine {
     private void takePicture() {
 
         executor.execute(() -> {
-            Network network = currentNetwork;
-            CameraEndpoint endpoint = currentEndpoint();
-            byte[] fallbackFrame = lastCompositeFrameBytes;
+            Network network =
+                    currentNetwork;
 
-            if (network == null || endpoint == null) {
-                sendEvent("captureError", "CAMERA NOT READY");
+            CameraEndpoint endpoint =
+                    currentEndpoint();
+
+            byte[] fallbackFrame =
+                    lastCompositeFrameBytes;
+
+            if (network == null
+                    || endpoint == null) {
+                sendEvent(
+                        "captureError",
+                        "CAMERA NOT READY"
+                );
                 return;
             }
 
-            final String requestedMode = getCaptureMode();
+            final String requestedMode =
+                    captureMode;
+
+            final String requestedPerformance =
+                    performanceMode;
+
+            final double requestedProcessingScale =
+                    processingScale;
 
             try {
-                JSONObject response = callApiAt(
-                        network,
-                        endpoint,
-                        "actTakePicture",
-                        new JSONArray(),
-                        API_CONNECT_TIMEOUT_MS,
-                        API_READ_TIMEOUT_MS
-                );
+                JSONObject response =
+                        callApiAt(
+                                network,
+                                endpoint,
+                                "actTakePicture",
+                                new JSONArray(),
+                                API_CONNECT_TIMEOUT_MS,
+                                API_READ_TIMEOUT_MS
+                        );
 
                 if (hasApiError(response)) {
                     throw new IllegalStateException(
-                            "SHUTTER FAILED: " + apiErrorDescription(response)
+                            "SHUTTER FAILED: "
+                                    + apiErrorDescription(response)
                     );
                 }
 
-                String imageUrl = findFirstImageUrl(response);
-                byte[] composite = null;
+                String imageUrl =
+                        findFirstImageUrl(response);
 
-                if (imageUrl != null && !imageUrl.isEmpty()) {
+                byte[] composite =
+                        null;
+
+                if (imageUrl != null
+                        && !imageUrl.isEmpty()) {
                     try {
-                        composite = downloadBytes(
-                                network,
-                                normalizeStreamUrl(imageUrl, endpoint),
-                                15000
-                        );
+                        composite =
+                                downloadBytes(
+                                        network,
+                                        normalizeStreamUrl(
+                                                imageUrl,
+                                                endpoint
+                                        ),
+                                        15000
+                                );
                     } catch (Exception e) {
                         log(
                                 "WARN",
@@ -6877,141 +7317,241 @@ public class CameraEngine {
                     }
                 }
 
-                if (composite == null || composite.length == 0) {
-                    composite = fallbackFrame;
+                if (composite == null
+                        || composite.length == 0) {
+                    composite =
+                            fallbackFrame;
                 }
 
-                if (composite == null || composite.length == 0) {
-                    throw new IllegalStateException("NO CAPTURE IMAGE AVAILABLE");
+                if (composite == null
+                        || composite.length == 0) {
+                    throw new IllegalStateException(
+                            "NO CAPTURE IMAGE AVAILABLE"
+                    );
                 }
 
-                Bitmap source = BitmapFactory.decodeByteArray(
-                        composite,
-                        0,
-                        composite.length
-                );
+                Bitmap source =
+                        BitmapFactory.decodeByteArray(
+                                composite,
+                                0,
+                                composite.length
+                        );
 
                 if (source == null) {
-                    throw new IllegalStateException("CAPTURE IMAGE DECODE FAILED");
+                    throw new IllegalStateException(
+                            "CAPTURE IMAGE DECODE FAILED"
+                    );
                 }
 
-                String band = activeSpectralBand == null
-                        ? "RGB"
-                        : activeSpectralBand;
-
                 try {
-                    String fileName;
-                    HashMap<String, Object> data = new HashMap<>();
+                    String band =
+                            activeSpectralBand == null
+                                    ? "RGB"
+                                    : activeSpectralBand;
 
-                    if (CAPTURE_MODE_RAW.equals(requestedMode)) {
-                        // RAW here means the full camera composite JPEG.
-                        // No crop, channel isolation, grayscale conversion or
-                        // NDVI rendering is applied before saving.
-                        fileName = saveToGallery(composite, "RAW");
-                        data.put("band", "COMPOSITE");
-                        data.put("source", "FULL_COMPOSITE");
-                        data.put("processed", false);
-                        data.put("width", source.getWidth());
-                        data.put("height", source.getHeight());
-                    } else {
-                        ensureDualOpticalCalibration(source);
+                    boolean saveRaw =
+                            CAPTURE_MODE_RAW.equals(requestedMode)
+                                    || CAPTURE_MODE_BOTH.equals(requestedMode);
 
-                        final byte[] processed;
-                        final String savedBand;
-                        final Rect unified = unifiedRgbRect();
+                    boolean saveProcessed =
+                            CAPTURE_MODE_PROCESSED.equals(requestedMode)
+                                    || CAPTURE_MODE_BOTH.equals(requestedMode);
+
+                    String rawFileName =
+                            null;
+
+                    String processedFileName =
+                            null;
+
+                    String processedBand =
+                            null;
+
+                    HashMap<String, Object> data =
+                            new HashMap<>();
+
+                    /*
+                     * RAW is the exact camera-returned composite. The original
+                     * bytes are preserved and are never resized or processed.
+                     */
+                    if (saveRaw) {
+                        rawFileName =
+                                saveToGallery(
+                                        composite,
+                                        "RAW"
+                                );
+                    }
+
+                    if (saveProcessed) {
+                        ensureDualOpticalCalibration(
+                                source
+                        );
+
+                        byte[] processed;
 
                         if (ndviEnabled) {
-                            processed = buildNdviJpeg(
-                                    source,
-                                    false
-                            );
-                            savedBand = "NDVI";
+                            /*
+                             * NDVI already owns a dedicated capture renderer.
+                             * Keep its established full-quality capture path.
+                             */
+                            processed =
+                                    buildNdviJpeg(
+                                            source,
+                                            false
+                                    );
+                            processedBand =
+                                    "NDVI";
                         } else {
                             processed =
                                     processCompositeForBand(
                                             source,
-                                            band
+                                            band,
+                                            requestedProcessingScale
                                     );
-                            savedBand = band;
+                            processedBand =
+                                    band;
                         }
 
                         if (processed == null
                                 || processed.length == 0) {
                             throw new IllegalStateException(
                                     "FAILED TO BUILD UNIFIED "
-                                            + savedBand
+                                            + processedBand
                                             + " CROP"
                             );
                         }
 
-                        fileName =
+                        processedFileName =
                                 saveToGallery(
                                         processed,
-                                        savedBand
+                                        processedBand
                                 );
+                    }
 
-                        data.put(
-                                "band",
-                                savedBand
-                        );
-                        data.put(
-                                "source",
-                                ndviEnabled
-                                        ? "UNIFIED_RGB_NIR_REGISTERED_NDVI"
-                                        : "UNIFIED_DUAL_OPTICAL_CROP"
-                        );
-                        data.put(
-                                "processed",
-                                true
-                        );
-                        data.put(
-                                "unifiedSpectralCrop",
-                                true
-                        );
-                        data.put(
-                                "registrationApplied",
-                                true
-                        );
-                        data.put(
-                                "registrationModel",
-                                "CENTERED_AFFINE"
-                        );
-                        data.put(
-                                "width",
-                                unified == null
-                                        ? source.getWidth()
-                                        : unified.width()
-                        );
-                        data.put(
-                                "height",
-                                unified == null
-                                        ? source.getHeight()
-                                        : unified.height()
-                        );
-                        data.put(
-                                "nirGain",
-                                lastNdviNirGain
+                    if (rawFileName == null
+                            && processedFileName == null) {
+                        throw new IllegalStateException(
+                                "NO CAPTURE OUTPUT WAS SAVED"
                         );
                     }
 
-                    data.put("fileName", fileName);
-                    data.put("captureMode", requestedMode);
+                    /*
+                     * Preserve legacy fileName semantics: prefer the processed
+                     * file when both outputs were requested.
+                     */
+                    String fileName =
+                            processedFileName != null
+                                    ? processedFileName
+                                    : rawFileName;
+
+                    data.put(
+                            "fileName",
+                            fileName
+                    );
+                    data.put(
+                            "captureMode",
+                            requestedMode
+                    );
+                    data.put(
+                            "output",
+                            requestedMode
+                    );
+                    data.put(
+                            "raw",
+                            rawFileName != null
+                    );
+                    data.put(
+                            "processed",
+                            processedFileName != null
+                    );
+                    data.put(
+                            "rawFileName",
+                            rawFileName
+                    );
+                    data.put(
+                            "processedFileName",
+                            processedFileName
+                    );
+                    data.put(
+                            "performance",
+                            requestedPerformance
+                    );
+                    data.put(
+                            "processingScale",
+                            requestedProcessingScale
+                    );
+                    data.put(
+                            "band",
+                            processedBand != null
+                                    ? processedBand
+                                    : "COMPOSITE"
+                    );
+                    data.put(
+                            "source",
+                            processedFileName != null
+                                    ? (
+                                            ndviEnabled
+                                                    ? "UNIFIED_RGB_NIR_REGISTERED_NDVI"
+                                                    : "UNIFIED_DUAL_OPTICAL_CROP"
+                                    )
+                                    : "FULL_COMPOSITE"
+                    );
+                    data.put(
+                            "unifiedSpectralCrop",
+                            processedFileName != null
+                    );
+                    data.put(
+                            "registrationApplied",
+                            processedFileName != null
+                    );
+                    data.put(
+                            "registrationModel",
+                            processedFileName != null
+                                    ? "CENTERED_AFFINE"
+                                    : "NONE"
+                    );
+                    data.put(
+                            "width",
+                            source.getWidth()
+                    );
+                    data.put(
+                            "height",
+                            source.getHeight()
+                    );
+                    data.put(
+                            "nirGain",
+                            lastNdviNirGain
+                    );
+
                     if (!Double.isNaN(lastNdviValue)) {
-                        data.put("ndvi", lastNdviValue);
+                        data.put(
+                                "ndvi",
+                                lastNdviValue
+                        );
                     }
 
-                    sendEvent("captureSaved", data);
-                    sendEvent("shutterAck", data);
+                    sendEvent(
+                            "captureSaved",
+                            data
+                    );
+                    sendEvent(
+                            "shutterAck",
+                            data
+                    );
 
                 } finally {
                     source.recycle();
                 }
 
             } catch (Exception e) {
-                Log.e(TAG, "Capture failed", e);
+                Log.e(
+                        TAG,
+                        "Capture failed",
+                        e
+                );
                 sendEvent(
                         "captureError",
-                        "CAPTURE FAILED: " + safeMessage(e)
+                        "CAPTURE FAILED: "
+                                + safeMessage(e)
                 );
             }
         });
@@ -7784,6 +8324,7 @@ public class CameraEngine {
          * previewGeneration to self-terminate after the current call returns.
          */
         previewGeneration.incrementAndGet();
+        previewProcessingSequence.set(0L);
 
         isStreaming.set(
                 false
