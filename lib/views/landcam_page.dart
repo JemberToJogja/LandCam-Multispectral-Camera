@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../models/landcam_models.dart';
 import '../viewmodels/landcam_view_model.dart';
+import 'advanced_settings_page.dart';
 import 'landcam_sheets.dart';
 import 'landcam_widgets.dart';
 
@@ -94,11 +95,17 @@ class _LandCamPageState extends State<LandCamPage> {
           captureMode: _viewModel.captureMode,
 
           onTheme: () {
+            if (!mounted) {
+              return;
+            }
+
             setState(() {
               _dark = !_dark;
             });
 
-            Navigator.of(sheetContext).pop();
+            if (sheetContext.mounted) {
+              Navigator.of(sheetContext).pop();
+            }
           },
 
           onCaptureMode: () async {
@@ -125,6 +132,22 @@ class _LandCamPageState extends State<LandCamPage> {
             if (sheetContext.mounted) {
               Navigator.of(sheetContext).pop();
             }
+          },
+
+          onAdvancedSettings: () {
+            if (!mounted) {
+              return;
+            }
+
+            Navigator.of(sheetContext).pop();
+
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => AdvancedSettingsPage(
+                  dark: _dark,
+                ),
+              ),
+            );
           },
         );
       },
@@ -264,7 +287,8 @@ class _LandCamPageState extends State<LandCamPage> {
       return;
     }
 
-    final messenger = _messengerKey.currentState;
+    final messenger =
+        _messengerKey.currentState;
 
     if (messenger == null) {
       return;
@@ -431,7 +455,9 @@ class _LandCamPageState extends State<LandCamPage> {
       useMaterial3: true,
 
       brightness:
-          dark ? Brightness.dark : Brightness.light,
+          dark
+              ? Brightness.dark
+              : Brightness.light,
 
       colorScheme: scheme,
 
@@ -453,41 +479,58 @@ class _LandCamPageState extends State<LandCamPage> {
         alpha: .05,
       ),
 
-      snackBarTheme: SnackBarThemeData(
-        backgroundColor: dark
-            ? const Color(0xFFE8EEE9)
-            : const Color(0xFF111612),
+      snackBarTheme:
+          SnackBarThemeData(
+        backgroundColor:
+            dark
+                ? const Color(0xFFE8EEE9)
+                : const Color(0xFF111612),
 
-        contentTextStyle: TextStyle(
-          color: dark
-              ? const Color(0xFF111612)
-              : const Color(0xFFF2F5F3),
-          fontWeight: FontWeight.w800,
-          fontSize: 10,
+        contentTextStyle:
+            TextStyle(
+          color:
+              dark
+                  ? const Color(0xFF111612)
+                  : const Color(0xFFF2F5F3),
+          fontWeight:
+              FontWeight.w800,
+          fontSize:
+              10,
         ),
 
-        behavior: SnackBarBehavior.floating,
+        behavior:
+            SnackBarBehavior.floating,
 
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(7),
+        shape:
+            RoundedRectangleBorder(
+          borderRadius:
+              BorderRadius.circular(7),
         ),
       ),
 
       bottomSheetTheme:
           const BottomSheetThemeData(
-        surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(
+        surfaceTintColor:
+            Colors.transparent,
+        shape:
+            RoundedRectangleBorder(
+          borderRadius:
+              BorderRadius.vertical(
             top: Radius.circular(14),
           ),
         ),
       ),
 
-      appBarTheme: AppBarTheme(
-        backgroundColor: background,
-        foregroundColor: foreground,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
+      appBarTheme:
+          AppBarTheme(
+        backgroundColor:
+            background,
+        foregroundColor:
+            foreground,
+        surfaceTintColor:
+            Colors.transparent,
+        elevation:
+            0,
       ),
     );
   }

@@ -64,7 +64,6 @@ class LandCamHome extends StatelessWidget {
   final String? previewMode;
 
   /// True when native is presenting NDVI directly through a SurfaceTexture.
-  /// Optional so existing callers remain source-compatible.
   final bool ndviGpuActive;
 
   /// Flutter texture registry ID supplied by the native layer.
@@ -82,8 +81,7 @@ class LandCamHome extends StatelessWidget {
   final VoidCallback onCapture;
 
   bool get _hasByteFrame =>
-      frame != null &&
-      frame!.isNotEmpty;
+      frame != null && frame!.isNotEmpty;
 
   bool get _hasGpuNdvi =>
       ndviEnabled &&
@@ -96,115 +94,65 @@ class LandCamHome extends StatelessWidget {
       (_hasByteFrame || _hasGpuNdvi);
 
   @override
-  Widget build(
-    BuildContext context,
-  ) {
+  Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor:
-          _uiBackground(dark),
+      backgroundColor: _uiBackground(dark),
       body: SafeArea(
         child: OrientationBuilder(
-          builder: (
-            context,
-            orientation,
-          ) {
-            if (
-                orientation ==
-                    Orientation.landscape
-            ) {
+          builder: (context, orientation) {
+            if (orientation == Orientation.landscape) {
               return Row(
                 children: [
                   SizedBox(
-                    width:
-                        108,
-                    child:
-                        _LandscapeControlRail(
-                      dark:
-                          dark,
-                      link:
-                          link,
-                      status:
-                          status,
-                      currentBand:
-                          currentBand,
-                      ndviEnabled:
-                          ndviEnabled,
-                      nirActivating:
-                          nirActivating,
-                      bandEnabled:
-                          bandEnabled,
-                      onBand:
-                          onBand,
-                      onNdvi:
-                          onNdvi,
-                      onConnection:
-                          onConnection,
-                      onSettings:
-                          onSettings,
+                    width: 108,
+                    child: _LandscapeControlRail(
+                      dark: dark,
+                      link: link,
+                      status: status,
+                      currentBand: currentBand,
+                      ndviEnabled: ndviEnabled,
+                      nirActivating: nirActivating,
+                      bandEnabled: bandEnabled,
+                      onBand: onBand,
+                      onNdvi: onNdvi,
+                      onConnection: onConnection,
+                      onSettings: onSettings,
                     ),
                   ),
                   Expanded(
-                    child:
-                        Center(
-                      child:
-                          ConstrainedBox(
-                        constraints:
-                            const BoxConstraints(
-                          maxWidth:
-                              920,
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxWidth: 920,
                         ),
-                        child:
-                            Padding(
-                          padding:
-                              const EdgeInsets.all(
-                            10,
-                          ),
-                          child:
-                              _CameraPreview(
-                            frame:
-                                frame,
-                            link:
-                                link,
-                            dark:
-                                dark,
-                            currentBand:
-                                currentBand,
-                            frameCount:
-                                frameCount,
-                            fps:
-                                fps,
-                            captureMode:
-                                captureMode,
-                            ndviEnabled:
-                                ndviEnabled,
-                            previewMode:
-                                previewMode,
-                            ndviGpuActive:
-                                ndviGpuActive,
-                            ndviTextureId:
-                                ndviTextureId,
-                            ndvi:
-                                ndvi,
-                            nirActivating:
-                                nirActivating,
+                        child: Padding(
+                          padding: const EdgeInsets.all(10),
+                          child: _CameraPreview(
+                            frame: frame,
+                            link: link,
+                            dark: dark,
+                            currentBand: currentBand,
+                            frameCount: frameCount,
+                            fps: fps,
+                            captureMode: captureMode,
+                            ndviEnabled: ndviEnabled,
+                            previewMode: previewMode,
+                            ndviGpuActive: ndviGpuActive,
+                            ndviTextureId: ndviTextureId,
+                            ndvi: ndvi,
+                            nirActivating: nirActivating,
                           ),
                         ),
                       ),
                     ),
                   ),
                   SizedBox(
-                    width:
-                        108,
-                    child:
-                        _LandscapeShutterRail(
-                      dark:
-                          dark,
-                      ready:
-                          _ready,
-                      capturing:
-                          capturing,
-                      onCapture:
-                          onCapture,
+                    width: 108,
+                    child: _LandscapeShutterRail(
+                      dark: dark,
+                      ready: _ready,
+                      capturing: capturing,
+                      onCapture: onCapture,
                     ),
                   ),
                 ],
@@ -212,105 +160,64 @@ class LandCamHome extends StatelessWidget {
             }
 
             return Column(
-              crossAxisAlignment:
-                  CrossAxisAlignment
-                      .stretch,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _PortraitHeader(
-                  dark:
-                      dark,
-                  link:
-                      link,
-                  status:
-                      status,
-                  cameraName:
-                      cameraName,
-                  cameraEndpoint:
-                      cameraEndpoint,
-                  onConnection:
-                      onConnection,
-                  onSettings:
-                      onSettings,
+                  dark: dark,
+                  link: link,
+                  status: status,
+                  cameraName: cameraName,
+                  cameraEndpoint: cameraEndpoint,
+                  onConnection: onConnection,
+                  onSettings: onSettings,
                 ),
                 _PortraitControlBar(
-                  dark:
-                      dark,
-                  currentBand:
-                      currentBand,
-                  link:
-                      link,
-                  ndviEnabled:
-                      ndviEnabled,
-                  nirActivating:
-                      nirActivating,
-                  bandEnabled:
-                      bandEnabled,
-                  onBand:
-                      onBand,
-                  onNdvi:
-                      onNdvi,
+                  dark: dark,
+                  currentBand: currentBand,
+                  link: link,
+                  ndviEnabled: ndviEnabled,
+                  nirActivating: nirActivating,
+                  bandEnabled: bandEnabled,
+                  onBand: onBand,
+                  onNdvi: onNdvi,
                 ),
                 Expanded(
-                  child:
-                      Center(
-                    child:
-                        Padding(
-                      padding:
-                          const EdgeInsets.fromLTRB(
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(
                         8,
                         8,
                         8,
                         6,
                       ),
-                      child:
-                          ConstrainedBox(
-                        constraints:
-                            const BoxConstraints(
-                          maxWidth:
-                              920,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxWidth: 920,
                         ),
-                        child:
-                            _CameraPreview(
-                          frame:
-                              frame,
-                          link:
-                              link,
-                          dark:
-                              dark,
-                          currentBand:
-                              currentBand,
-                          frameCount:
-                              frameCount,
-                          fps:
-                              fps,
-                          captureMode:
-                              captureMode,
-                          ndviEnabled:
-                              ndviEnabled,
-                          previewMode:
-                              previewMode,
-                          ndviGpuActive:
-                              ndviGpuActive,
-                          ndviTextureId:
-                              ndviTextureId,
-                          ndvi:
-                              ndvi,
-                          nirActivating:
-                              nirActivating,
+                        child: _CameraPreview(
+                          frame: frame,
+                          link: link,
+                          dark: dark,
+                          currentBand: currentBand,
+                          frameCount: frameCount,
+                          fps: fps,
+                          captureMode: captureMode,
+                          ndviEnabled: ndviEnabled,
+                          previewMode: previewMode,
+                          ndviGpuActive: ndviGpuActive,
+                          ndviTextureId: ndviTextureId,
+                          ndvi: ndvi,
+                          nirActivating: nirActivating,
                         ),
                       ),
                     ),
                   ),
                 ),
                 _PortraitShutterBar(
-                  dark:
-                      dark,
-                  ready:
-                      _ready,
-                  capturing:
-                      capturing,
-                  onCapture:
-                      onCapture,
+                  dark: dark,
+                  ready: _ready,
+                  capturing: capturing,
+                  onCapture: onCapture,
                 ),
               ],
             );
@@ -321,8 +228,7 @@ class LandCamHome extends StatelessWidget {
   }
 }
 
-class _PortraitHeader
-    extends StatelessWidget {
+class _PortraitHeader extends StatelessWidget {
   const _PortraitHeader({
     required this.dark,
     required this.link,
@@ -342,185 +248,105 @@ class _PortraitHeader
   final VoidCallback onSettings;
 
   @override
-  Widget build(
-    BuildContext context,
-  ) {
-    final foreground =
-        _uiForeground(dark);
-
-    final secondary =
-        _uiSecondary(dark);
+  Widget build(BuildContext context) {
+    final foreground = _uiForeground(dark);
+    final secondary = _uiSecondary(dark);
 
     return Container(
-      constraints:
-          const BoxConstraints(
-        minHeight:
-            66,
-        maxHeight:
-            78,
+      constraints: const BoxConstraints(
+        minHeight: 68,
+        maxHeight: 78,
       ),
-      padding:
-          const EdgeInsets.fromLTRB(
+      padding: const EdgeInsets.fromLTRB(
         12,
         8,
         12,
         8,
       ),
-      decoration:
-          BoxDecoration(
-        color:
-            _uiSurface(dark),
-        border:
-            Border(
-          bottom:
-              BorderSide(
-            color:
-                _uiBorder(dark),
+      decoration: BoxDecoration(
+        color: _uiSurface(dark),
+        border: Border(
+          bottom: BorderSide(
+            color: _uiBorder(dark),
           ),
         ),
       ),
-      child:
-          Row(
+      child: Row(
         children: [
-          _MonoBrandMark(
-            dark:
-                dark,
-          ),
-          const SizedBox(
-            width:
-                10,
-          ),
+          _MonoBrandMark(dark: dark),
+          const SizedBox(width: 10),
           Expanded(
-            child:
-                Column(
-              mainAxisAlignment:
-                  MainAxisAlignment.center,
-              crossAxisAlignment:
-                  CrossAxisAlignment.start,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   'LANDCAM',
-                  maxLines:
-                      1,
-                  overflow:
-                      TextOverflow.ellipsis,
-                  style:
-                      TextStyle(
-                    color:
-                        foreground,
-                    fontSize:
-                        14,
-                    fontWeight:
-                        FontWeight.w900,
-                    letterSpacing:
-                        1.8,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: foreground,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.8,
                   ),
                 ),
-                const SizedBox(
-                  height:
-                      3,
-                ),
+                const SizedBox(height: 4),
                 Row(
                   children: [
                     _StatusIndicator(
-                      link:
-                          link,
-                      dark:
-                          dark,
+                      link: link,
+                      dark: dark,
                     ),
-                    const SizedBox(
-                      width:
-                          6,
-                    ),
+                    const SizedBox(width: 6),
                     Flexible(
-                      child:
-                          Text(
-                        cameraName ==
-                                null
+                      child: Text(
+                        cameraName == null
                             ? status
                             : '$cameraName  •  $status',
-                        maxLines:
-                            1,
-                        overflow:
-                            TextOverflow.ellipsis,
-                        style:
-                            TextStyle(
-                          color:
-                              secondary,
-                          fontSize:
-                              8,
-                          fontWeight:
-                              FontWeight.w800,
-                          letterSpacing:
-                              .75,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: secondary,
+                          fontSize: 8.5,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: .65,
                         ),
                       ),
                     ),
                   ],
                 ),
-                if (
-                    cameraEndpoint !=
-                        null
-                ) ...[
-                  const SizedBox(
-                    height:
-                        2,
-                  ),
+                if (cameraEndpoint != null) ...[
+                  const SizedBox(height: 2),
                   Text(
                     cameraEndpoint!,
-                    maxLines:
-                        1,
-                    overflow:
-                        TextOverflow.ellipsis,
-                    style:
-                        TextStyle(
-                      color:
-                          secondary.withValues(
-                        alpha:
-                            .8,
-                      ),
-                      fontFamily:
-                          'monospace',
-                      fontSize:
-                          7,
-                      letterSpacing:
-                          .4,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: secondary.withValues(alpha: .78),
+                      fontFamily: 'monospace',
+                      fontSize: 7.5,
+                      letterSpacing: .35,
                     ),
                   ),
                 ],
               ],
             ),
           ),
-          const SizedBox(
-            width:
-                6,
-          ),
+          const SizedBox(width: 8),
           _IconButton(
-            dark:
-                dark,
-            icon:
-                Icons.link_rounded,
-            tooltip:
-                'CONNECTION',
-            onTap:
-                onConnection,
-            active:
-                link ==
-                    CameraLink.ready,
+            dark: dark,
+            icon: Icons.link_rounded,
+            tooltip: 'CONNECTION',
+            onTap: onConnection,
+            active: link == CameraLink.ready,
           ),
-          const SizedBox(
-            width:
-                5,
-          ),
+          const SizedBox(width: 6),
           _IconButton(
-            dark:
-                dark,
-            icon:
-                Icons.settings_outlined,
-            tooltip:
-                'SETTINGS',
-            onTap:
-                onSettings,
+            dark: dark,
+            icon: Icons.settings_outlined,
+            tooltip: 'SETTINGS',
+            onTap: onSettings,
           ),
         ],
       ),
@@ -528,8 +354,7 @@ class _PortraitHeader
   }
 }
 
-class _PortraitControlBar
-    extends StatelessWidget {
+class _PortraitControlBar extends StatelessWidget {
   const _PortraitControlBar({
     required this.dark,
     required this.currentBand,
@@ -551,106 +376,63 @@ class _PortraitControlBar
   final VoidCallback onNdvi;
 
   @override
-  Widget build(
-    BuildContext context,
-  ) {
+  Widget build(BuildContext context) {
     return Container(
-      height:
-          56,
-      padding:
-          const EdgeInsets.fromLTRB(
+      height: 56,
+      padding: const EdgeInsets.fromLTRB(
         8,
         6,
         8,
         6,
       ),
-      decoration:
-          BoxDecoration(
-        color:
-            _uiSurface(dark),
-        border:
-            Border(
-          bottom:
-              BorderSide(
-            color:
-                _uiBorder(dark),
+      decoration: BoxDecoration(
+        color: _uiSurface(dark),
+        border: Border(
+          bottom: BorderSide(
+            color: _uiBorder(dark),
           ),
         ),
       ),
-      child:
-          Row(
+      child: Row(
         children: [
-          for (
-            final band
-            in SpectralBand.values
-          )
+          for (final band in SpectralBand.values)
             Expanded(
-              child:
-                  Padding(
-                padding:
-                    const EdgeInsets.symmetric(
-                  horizontal:
-                      2,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 2,
                 ),
-                child:
-                    _InlineControlButton(
-                  dark:
-                      dark,
-                  label:
-                      band.shortLabel,
+                child: _InlineControlButton(
+                  dark: dark,
+                  label: band.shortLabel,
                   active:
-                      !ndviEnabled &&
-                      band ==
-                          currentBand,
-                  enabled:
-                      bandEnabled(
-                    band,
-                  ),
+                      !ndviEnabled && band == currentBand,
+                  enabled: bandEnabled(band),
                   busy:
-                      band ==
-                              SpectralBand
-                                  .nir &&
-                          nirActivating,
-                  accent:
-                      _spectralAccent(
+                      band == SpectralBand.nir &&
+                      nirActivating,
+                  accent: _spectralAccent(
                     dark,
                     band,
                   ),
-                  onTap:
-                      () => onBand(
-                    band,
-                  ),
+                  onTap: () => onBand(band),
                 ),
               ),
             ),
           Expanded(
-            child:
-                Padding(
-              padding:
-                  const EdgeInsets.symmetric(
-                horizontal:
-                    2,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 2,
               ),
-              child:
-                  _InlineControlButton(
-                dark:
-                    dark,
-                icon:
-                    Icons.analytics_outlined,
-                label:
-                    'NDVI',
-                active:
-                    ndviEnabled,
+              child: _InlineControlButton(
+                dark: dark,
+                icon: Icons.analytics_outlined,
+                label: 'NDVI',
+                active: ndviEnabled,
                 enabled:
-                    link ==
-                            CameraLink.ready &&
-                        bandEnabled(
-                          SpectralBand.nir,
-                        ),
-                accent:
-                    _uiAccent(dark),
-                onTap:
-                    onNdvi,
+                    link == CameraLink.ready &&
+                    bandEnabled(SpectralBand.nir),
+                accent: _uiAccent(dark),
+                onTap: onNdvi,
               ),
             ),
           ),
@@ -660,8 +442,7 @@ class _PortraitControlBar
   }
 }
 
-class _PortraitShutterBar
-    extends StatelessWidget {
+class _PortraitShutterBar extends StatelessWidget {
   const _PortraitShutterBar({
     required this.dark,
     required this.ready,
@@ -675,44 +456,30 @@ class _PortraitShutterBar
   final VoidCallback onCapture;
 
   @override
-  Widget build(
-    BuildContext context,
-  ) =>
-      Container(
-        height:
-            96,
-        decoration:
-            BoxDecoration(
-          color:
-              _uiSurface(dark),
-          border:
-              Border(
-            top:
-                BorderSide(
-              color:
-                  _uiBorder(dark),
-            ),
+  Widget build(BuildContext context) {
+    return Container(
+      height: 96,
+      decoration: BoxDecoration(
+        color: _uiSurface(dark),
+        border: Border(
+          top: BorderSide(
+            color: _uiBorder(dark),
           ),
         ),
-        child:
-            Center(
-          child:
-              _ShutterButton(
-            dark:
-                dark,
-            ready:
-                ready,
-            capturing:
-                capturing,
-            onTap:
-                onCapture,
-          ),
+      ),
+      child: Center(
+        child: _ShutterButton(
+          dark: dark,
+          ready: ready,
+          capturing: capturing,
+          onTap: onCapture,
         ),
-      );
+      ),
+    );
+  }
 }
 
-class _LandscapeControlRail
-    extends StatelessWidget {
+class _LandscapeControlRail extends StatelessWidget {
   const _LandscapeControlRail({
     required this.dark,
     required this.link,
@@ -740,159 +507,85 @@ class _LandscapeControlRail
   final VoidCallback onSettings;
 
   @override
-  Widget build(
-    BuildContext context,
-  ) {
+  Widget build(BuildContext context) {
     return Container(
-      padding:
-          const EdgeInsets.all(
-        7,
-      ),
-      decoration:
-          BoxDecoration(
-        color:
-            _uiSurface(dark),
-        border:
-            Border(
-          right:
-              BorderSide(
-            color:
-                _uiBorder(dark),
+      padding: const EdgeInsets.all(7),
+      decoration: BoxDecoration(
+        color: _uiSurface(dark),
+        border: Border(
+          right: BorderSide(
+            color: _uiBorder(dark),
           ),
         ),
       ),
-      child:
-          Column(
+      child: Column(
         children: [
           _MonoBrandMark(
-            dark:
-                dark,
-            compact:
-                true,
+            dark: dark,
+            compact: true,
           ),
-          const SizedBox(
-            height:
-                7,
-          ),
+          const SizedBox(height: 8),
           _RailActionButton(
-            dark:
-                dark,
-            icon:
-                Icons.link_rounded,
-            label:
-                'LINK',
-            active:
-                link ==
-                    CameraLink.ready,
-            onTap:
-                onConnection,
+            dark: dark,
+            icon: Icons.link_rounded,
+            label: 'LINK',
+            active: link == CameraLink.ready,
+            onTap: onConnection,
           ),
-          const SizedBox(
-            height:
-                5,
-          ),
+          const SizedBox(height: 6),
           _RailActionButton(
-            dark:
-                dark,
-            icon:
-                Icons.settings_outlined,
-            label:
-                'SETTINGS',
-            onTap:
-                onSettings,
+            dark: dark,
+            icon: Icons.settings_outlined,
+            label: 'SETTINGS',
+            onTap: onSettings,
           ),
-          const SizedBox(
-            height:
-                9,
-          ),
+          const SizedBox(height: 10),
           Expanded(
-            child:
-                ListView(
-              physics:
-                  const ClampingScrollPhysics(),
+            child: ListView(
+              physics: const ClampingScrollPhysics(),
               children: [
-                for (
-                  final band
-                  in SpectralBand.values
-                )
+                for (final band in SpectralBand.values)
                   Padding(
-                    padding:
-                        const EdgeInsets.only(
-                      bottom:
-                          5,
+                    padding: const EdgeInsets.only(
+                      bottom: 6,
                     ),
-                    child:
-                        _RailBandButton(
-                      dark:
-                          dark,
-                      band:
-                          band,
+                    child: _RailBandButton(
+                      dark: dark,
+                      band: band,
                       active:
-                          !ndviEnabled &&
-                          band ==
-                              currentBand,
-                      available:
-                          bandEnabled(
-                        band,
-                      ),
+                          !ndviEnabled && band == currentBand,
+                      available: bandEnabled(band),
                       busy:
-                          band ==
-                                  SpectralBand
-                                      .nir &&
-                              nirActivating,
-                      onTap:
-                          () => onBand(
-                        band,
-                      ),
+                          band == SpectralBand.nir &&
+                          nirActivating,
+                      onTap: () => onBand(band),
                     ),
                   ),
               ],
             ),
           ),
-          const SizedBox(
-            height:
-                5,
-          ),
+          const SizedBox(height: 6),
           _RailActionButton(
-            dark:
-                dark,
-            icon:
-                Icons.analytics_outlined,
-            label:
-                'NDVI',
-            active:
-                ndviEnabled,
+            dark: dark,
+            icon: Icons.analytics_outlined,
+            label: 'NDVI',
+            active: ndviEnabled,
             enabled:
-                link ==
-                        CameraLink.ready &&
-                    bandEnabled(
-                      SpectralBand.nir,
-                    ),
-            onTap:
-                onNdvi,
+                link == CameraLink.ready &&
+                bandEnabled(SpectralBand.nir),
+            onTap: onNdvi,
           ),
-          const SizedBox(
-            height:
-                5,
-          ),
+          const SizedBox(height: 6),
           Text(
             status,
-            maxLines:
-                2,
-            overflow:
-                TextOverflow.ellipsis,
-            textAlign:
-                TextAlign.center,
-            style:
-                TextStyle(
-              color:
-                  _uiSecondary(dark),
-              fontSize:
-                  7,
-              fontWeight:
-                  FontWeight.w800,
-              letterSpacing:
-                  .6,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: _uiSecondary(dark),
+              fontSize: 7,
+              fontWeight: FontWeight.w800,
+              letterSpacing: .5,
             ),
           ),
         ],
@@ -901,8 +594,7 @@ class _LandscapeControlRail
   }
 }
 
-class _LandscapeShutterRail
-    extends StatelessWidget {
+class _LandscapeShutterRail extends StatelessWidget {
   const _LandscapeShutterRail({
     required this.dark,
     required this.ready,
@@ -916,51 +608,35 @@ class _LandscapeShutterRail
   final VoidCallback onCapture;
 
   @override
-  Widget build(
-    BuildContext context,
-  ) =>
-      Container(
-        padding:
-            const EdgeInsets.all(
-          10,
-        ),
-        decoration:
-            BoxDecoration(
-          color:
-              _uiSurface(dark),
-          border:
-              Border(
-            left:
-                BorderSide(
-              color:
-                  _uiBorder(dark),
-            ),
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: _uiSurface(dark),
+        border: Border(
+          left: BorderSide(
+            color: _uiBorder(dark),
           ),
         ),
-        child:
-            Column(
-          children: [
-            const Spacer(),
-            _ShutterButton(
-              dark:
-                  dark,
-              ready:
-                  ready,
-              capturing:
-                  capturing,
-              onTap:
-                  onCapture,
-              compact:
-                  true,
-            ),
-            const Spacer(),
-          ],
-        ),
-      );
+      ),
+      child: Column(
+        children: [
+          const Spacer(),
+          _ShutterButton(
+            dark: dark,
+            ready: ready,
+            capturing: capturing,
+            onTap: onCapture,
+            compact: true,
+          ),
+          const Spacer(),
+        ],
+      ),
+    );
+  }
 }
 
-class _InlineControlButton
-    extends StatelessWidget {
+class _InlineControlButton extends StatelessWidget {
   const _InlineControlButton({
     required this.dark,
     required this.label,
@@ -982,140 +658,76 @@ class _InlineControlButton
   final Color? accent;
 
   @override
-  Widget build(
-    BuildContext context,
-  ) {
-    final controlAccent =
-        accent ??
-            _uiAccent(dark);
+  Widget build(BuildContext context) {
+    final controlAccent = accent ?? _uiAccent(dark);
+
+    final background =
+        active
+            ? controlAccent
+            : _uiSurfaceAlt(dark);
+
+    final foreground =
+        active
+            ? _activeTextOn(controlAccent)
+            : _uiForeground(dark);
 
     return Opacity(
-      opacity:
-          enabled
-              ? 1
-              : .35,
-      child:
-          Material(
-        color:
-            Colors.transparent,
-        child:
-            InkWell(
-          borderRadius:
-              BorderRadius.circular(
-            6,
-          ),
-          onTap:
-              enabled
-                  ? onTap
-                  : null,
-          child:
-              AnimatedContainer(
-            duration:
-                const Duration(
-              milliseconds:
-                  140,
+      opacity: enabled ? 1 : .34,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(5),
+          onTap: enabled ? onTap : null,
+          child: AnimatedContainer(
+            duration: const Duration(
+              milliseconds: 120,
             ),
-            height:
-                double.infinity,
-            decoration:
-                BoxDecoration(
-              color:
-                  active
-                      ? controlAccent.withValues(
-                          alpha:
-                              dark
-                                  ? .14
-                                  : .09,
-                        )
-                      : _uiSurfaceAlt(
-                          dark,
-                        ),
-              border:
-                  Border.all(
+            height: double.infinity,
+            decoration: BoxDecoration(
+              color: background,
+              border: Border.all(
                 color:
                     active
                         ? controlAccent
-                        : _uiBorderStrong(
-                            dark,
-                          ),
-                width:
-                    active
-                        ? 1.2
-                        : 1,
+                        : _uiBorderStrong(dark),
+                width: active ? 1.2 : 1,
               ),
-              borderRadius:
-                  BorderRadius.circular(
-                6,
-              ),
+              borderRadius: BorderRadius.circular(5),
             ),
-            child:
-                Row(
+            child: Row(
               mainAxisAlignment:
                   MainAxisAlignment.center,
               children: [
                 if (busy)
                   SizedBox(
-                    width:
-                        11,
-                    height:
-                        11,
-                    child:
-                        CircularProgressIndicator(
-                      strokeWidth:
-                          1.6,
-                      color:
-                          controlAccent,
+                    width: 11,
+                    height: 11,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.6,
+                      color: foreground,
                     ),
                   )
-                else if (
-                    icon !=
-                        null
-                )
+                else if (icon != null)
                   Icon(
                     icon,
-                    size:
-                        13,
-                    color:
-                        active
-                            ? controlAccent
-                            : _uiForeground(
-                                dark,
-                              ),
+                    size: 13,
+                    color: foreground,
                   ),
-                if (
-                    icon != null ||
-                    busy
-                )
-                  const SizedBox(
-                    width:
-                        4,
-                  ),
+                if (icon != null || busy)
+                  const SizedBox(width: 4),
                 Flexible(
-                  child:
-                      FittedBox(
-                    fit:
-                        BoxFit.scaleDown,
-                    child:
-                        Text(
-                          label,
-                          maxLines:
-                              1,
-                          style:
-                              TextStyle(
-                            color:
-                                active
-                                    ? controlAccent
-                                    : _uiForeground(
-                                        dark,
-                                      ),
-                            fontSize:
-                                8,
-                            fontWeight:
-                                FontWeight.w800,
-                            letterSpacing:
-                                .55,
-                          ),
-                        ),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      style: TextStyle(
+                        color: foreground,
+                        fontSize: 8,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: .55,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -1127,8 +739,7 @@ class _InlineControlButton
   }
 }
 
-class _RailBandButton
-    extends StatelessWidget {
+class _RailBandButton extends StatelessWidget {
   const _RailBandButton({
     required this.dark,
     required this.band,
@@ -1146,130 +757,75 @@ class _RailBandButton
   final bool busy;
 
   @override
-  Widget build(
-    BuildContext context,
-  ) =>
-      Opacity(
-        opacity:
-            available
-                ? 1
-                : .30,
-        child:
-            Material(
-          color:
-              Colors.transparent,
-          child:
-              InkWell(
-            borderRadius:
-                BorderRadius.circular(
-              6,
+  Widget build(BuildContext context) {
+    final accent = _spectralAccent(
+      dark,
+      band,
+    );
+
+    final foreground =
+        active
+            ? _activeTextOn(accent)
+            : _uiForeground(dark);
+
+    return Opacity(
+      opacity: available ? 1 : .30,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(5),
+          onTap: available ? onTap : null,
+          child: AnimatedContainer(
+            duration: const Duration(
+              milliseconds: 120,
             ),
-            onTap:
-                available
-                    ? onTap
-                    : null,
-            child:
-                AnimatedContainer(
-              duration:
-                  const Duration(
-                milliseconds:
-                    140,
-              ),
-              width:
-                  double.infinity,
-              height:
-                  37,
-              padding:
-                  const EdgeInsets.symmetric(
-                horizontal:
-                    8,
-              ),
-              alignment:
-                  Alignment.center,
-              decoration:
-                  BoxDecoration(
+            width: double.infinity,
+            height: 38,
+            padding: const EdgeInsets.symmetric(
+              horizontal: 8,
+            ),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color:
+                  active
+                      ? accent
+                      : _uiSurfaceAlt(dark),
+              border: Border.all(
                 color:
                     active
-                        ? _spectralAccent(
-                            dark,
-                            band,
-                          ).withValues(
-                            alpha:
-                                dark
-                                    ? .14
-                                    : .09,
-                          )
-                        : _uiSurfaceAlt(
-                            dark,
-                          ),
-                border:
-                    Border.all(
-                  color:
-                      active
-                          ? _spectralAccent(
-                              dark,
-                              band,
-                            )
-                          : _uiBorderStrong(
-                              dark,
-                            ),
-                  width:
-                      active
-                          ? 1.2
-                          : 1,
-                ),
-                borderRadius:
-                    BorderRadius.circular(
-                  6,
-                ),
+                        ? accent
+                        : _uiBorderStrong(dark),
+                width: active ? 1.2 : 1,
               ),
-              child:
-                  busy
-                      ? SizedBox(
-                          width:
-                              13,
-                          height:
-                              13,
-                          child:
-                              CircularProgressIndicator(
-                            strokeWidth:
-                                1.6,
-                            color:
-                                _spectralAccent(
-                              dark,
-                              band,
-                            ),
-                          ),
-                        )
-                      : Text(
-                          band.shortLabel,
-                          style:
-                              TextStyle(
-                            color:
-                                active
-                                    ? _spectralAccent(
-                                        dark,
-                                        band,
-                                      )
-                                    : _uiForeground(
-                                        dark,
-                                      ),
-                            fontSize:
-                                9,
-                            fontWeight:
-                                FontWeight.w800,
-                            letterSpacing:
-                                .6,
-                          ),
-                        ),
+              borderRadius: BorderRadius.circular(5),
             ),
+            child:
+                busy
+                    ? SizedBox(
+                      width: 13,
+                      height: 13,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 1.6,
+                        color: foreground,
+                      ),
+                    )
+                    : Text(
+                      band.shortLabel,
+                      style: TextStyle(
+                        color: foreground,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: .6,
+                      ),
+                    ),
           ),
         ),
-      );
+      ),
+    );
+  }
 }
 
-class _RailActionButton
-    extends StatelessWidget {
+class _RailActionButton extends StatelessWidget {
   const _RailActionButton({
     required this.dark,
     required this.icon,
@@ -1287,138 +843,78 @@ class _RailActionButton
   final bool enabled;
 
   @override
-  Widget build(
-    BuildContext context,
-  ) =>
-      Opacity(
-        opacity:
-            enabled
-                ? 1
-                : .30,
-        child:
-            Material(
-          color:
-              Colors.transparent,
-          child:
-              InkWell(
-            borderRadius:
-                BorderRadius.circular(
-              6,
+  Widget build(BuildContext context) {
+    final accent = _uiAccent(dark);
+
+    return Opacity(
+      opacity: enabled ? 1 : .30,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(5),
+          onTap: enabled ? onTap : null,
+          child: AnimatedContainer(
+            duration: const Duration(
+              milliseconds: 120,
             ),
-            onTap:
-                enabled
-                    ? onTap
-                    : null,
-            child:
-                AnimatedContainer(
-              duration:
-                  const Duration(
-                milliseconds:
-                    140,
-              ),
-              width:
-                  double.infinity,
-              height:
-                  44,
-              padding:
-                  const EdgeInsets.symmetric(
-                horizontal:
-                    6,
-              ),
-              decoration:
-                  BoxDecoration(
+            width: double.infinity,
+            height: 44,
+            padding: const EdgeInsets.symmetric(
+              horizontal: 6,
+            ),
+            decoration: BoxDecoration(
+              color:
+                  active
+                      ? accent
+                      : _uiSurfaceAlt(dark),
+              border: Border.all(
                 color:
                     active
-                        ? _uiAccent(
-                            dark,
-                          ).withValues(
-                            alpha:
-                                dark
-                                    ? .14
-                                    : .09,
-                          )
-                        : _uiSurfaceAlt(
-                            dark,
-                          ),
-                border:
-                    Border.all(
+                        ? accent
+                        : _uiBorderStrong(dark),
+                width: active ? 1.2 : 1,
+              ),
+              borderRadius: BorderRadius.circular(5),
+            ),
+            child: Column(
+              mainAxisAlignment:
+                  MainAxisAlignment.center,
+              children: [
+                Icon(
+                  icon,
+                  size: 15,
                   color:
                       active
-                          ? _uiAccent(
-                              dark,
-                            )
-                          : _uiBorderStrong(
-                              dark,
-                            ),
-                  width:
-                      active
-                          ? 1.2
-                          : 1,
+                          ? _activeTextOn(accent)
+                          : _uiForeground(dark),
                 ),
-                borderRadius:
-                    BorderRadius.circular(
-                  6,
+                const SizedBox(height: 3),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    style: TextStyle(
+                      color:
+                          active
+                              ? _activeTextOn(accent)
+                              : _uiForeground(dark),
+                      fontSize: 6.5,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: .45,
+                    ),
+                  ),
                 ),
-              ),
-              child:
-                  Column(
-                mainAxisAlignment:
-                    MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    icon,
-                    size:
-                        15,
-                    color:
-                        active
-                            ? _uiAccent(
-                                dark,
-                              )
-                            : _uiForeground(
-                                dark,
-                              ),
-                  ),
-                  const SizedBox(
-                    height:
-                        3,
-                  ),
-                  FittedBox(
-                    fit:
-                        BoxFit.scaleDown,
-                    child:
-                        Text(
-                          label,
-                          maxLines:
-                              1,
-                          style:
-                              TextStyle(
-                            color:
-                                active
-                                    ? _uiAccent(
-                                        dark,
-                                      )
-                                    : _uiForeground(
-                                        dark,
-                                      ),
-                            fontSize:
-                                6.5,
-                            fontWeight:
-                                FontWeight.w800,
-                            letterSpacing:
-                                .45,
-                          ),
-                        ),
-                  ),
-                ],
-              ),
+              ],
             ),
           ),
         ),
-      );
+      ),
+    );
+  }
 }
 
-class _CameraPreview
-    extends StatelessWidget {
+class _CameraPreview extends StatelessWidget {
   const _CameraPreview({
     required this.frame,
     required this.link,
@@ -1451,15 +947,13 @@ class _CameraPreview
 
   String get _effectivePreviewMode {
     final explicit =
-        previewMode
-                ?.trim()
-                .toUpperCase() ??
-            '';
+        previewMode?.trim().toUpperCase() ?? '';
 
     if (
-        explicit == 'NDVI' ||
-        explicit == 'RAW' ||
-        explicit == 'PROCESSED') {
+      explicit == 'NDVI' ||
+      explicit == 'RAW' ||
+      explicit == 'PROCESSED'
+    ) {
       return explicit;
     }
 
@@ -1471,12 +965,10 @@ class _CameraPreview
   }
 
   bool get _isNdviPreview =>
-      _effectivePreviewMode ==
-      'NDVI';
+      _effectivePreviewMode == 'NDVI';
 
   bool get _hasByteFrame =>
-      frame != null &&
-      frame!.isNotEmpty;
+      frame != null && frame!.isNotEmpty;
 
   bool get _hasGpuNdviTexture =>
       _isNdviPreview &&
@@ -1500,135 +992,66 @@ class _CameraPreview
       return 'NDVI';
     }
 
-    // Untuk RGB / R / G / B / NIR,
-    // gunakan label spectral band.
     return currentBand.shortLabel;
   }
 
   @override
-  Widget build(
-    BuildContext context,
-  ) {
+  Widget build(BuildContext context) {
     return RepaintBoundary(
-      child:
-          DecoratedBox(
-        decoration:
-            BoxDecoration(
-          color:
-              Colors.black,
-          border:
-              Border.all(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.black,
+          border: Border.all(
             color:
                 _hasPreview
                     ? _previewModeAccent
-                        .withValues(
-                      alpha:
-                          .72,
-                    )
-                    : _uiBorderStrong(
-                        dark,
-                      ),
-            width:
-                _hasPreview
-                    ? 1.2
-                    : 1,
+                    : _uiBorderStrong(dark),
+            width: _hasPreview ? 1.2 : 1,
           ),
-          borderRadius:
-              BorderRadius.circular(
-            8,
-          ),
-          boxShadow: [
-            if (_hasPreview)
-              BoxShadow(
-                color:
-                    _previewModeAccent
-                        .withValues(
-                  alpha:
-                      .10,
-                ),
-                blurRadius:
-                    18,
-                spreadRadius:
-                    1,
-              ),
-          ],
+          borderRadius: BorderRadius.circular(6),
         ),
-        child:
-            ClipRRect(
-          borderRadius:
-              BorderRadius.circular(
-            7,
-          ),
-          child:
-              AspectRatio(
-            aspectRatio:
-                1,
-            child:
-                Stack(
-              fit:
-                  StackFit.expand,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(5),
+          child: AspectRatio(
+            aspectRatio: 1,
+            child: Stack(
+              fit: StackFit.expand,
               children: [
-                // =========================================================
-                // PREVIEW IMAGE
-                // =========================================================
                 if (_hasGpuNdviTexture)
                   SizedBox.expand(
-                    child:
-                        Texture(
-                      textureId:
-                          ndviTextureId!,
+                    child: Texture(
+                      textureId: ndviTextureId!,
                     ),
                   )
                 else if (_hasByteFrame)
                   _ProcessedImage(
-                    bytes:
-                        frame!,
-                    fit:
-                        BoxFit.contain,
+                    bytes: frame!,
+                    fit: BoxFit.contain,
                   )
                 else
                   _PreviewEmpty(
-                    link:
-                        link,
-                    band:
-                        currentBand,
-                    activating:
-                        nirActivating,
-                    ndviEnabled:
-                        _isNdviPreview,
+                    link: link,
+                    band: currentBand,
+                    activating: nirActivating,
+                    ndviEnabled: _isNdviPreview,
                   ),
 
-                // =========================================================
-                // VIEWFINDER
-                // =========================================================
                 const Positioned.fill(
-                  child:
-                      IgnorePointer(
-                    child:
-                        _ViewfinderOverlay(),
+                  child: IgnorePointer(
+                    child: _ViewfinderOverlay(),
                   ),
                 ),
 
-                // =========================================================
-                // ONLY MODE + FPS
-                // =========================================================
                 Positioned(
-                  top:
-                      10,
-                  left:
-                      10,
-                  right:
-                      10,
-                  child:
-                      Row(
+                  top: 10,
+                  left: 10,
+                  right: 10,
+                  child: Row(
                     children: [
                       _PreviewTag(
-                        text:
-                            _previewModeLabel,
-                        active:
-                            true,
-                        accent:
-                            _previewModeAccent,
+                        text: _previewModeLabel,
+                        active: true,
+                        accent: _previewModeAccent,
                       ),
                       const Spacer(),
                       _PreviewTag(
@@ -1641,17 +1064,11 @@ class _CameraPreview
                   ),
                 ),
 
-                // =========================================================
-                // NDVI LEGEND ONLY
-                // =========================================================
                 if (_isNdviPreview)
-                  Positioned(
-                    top:
-                        44,
-                    left:
-                        10,
-                    child:
-                        const _NdviLegend(),
+                  const Positioned(
+                    top: 44,
+                    left: 10,
+                    child: _NdviLegend(),
                   ),
               ],
             ),
@@ -1662,131 +1079,72 @@ class _CameraPreview
   }
 }
 
-class _NdviLegend
-    extends StatelessWidget {
+class _NdviLegend extends StatelessWidget {
   const _NdviLegend();
 
   @override
-  Widget build(
-    BuildContext context,
-  ) {
+  Widget build(BuildContext context) {
     final dark =
-        Theme.of(
-                  context,
-                ).brightness ==
-                Brightness.dark;
+        Theme.of(context).brightness ==
+        Brightness.dark;
 
     return DecoratedBox(
-      decoration:
-          BoxDecoration(
-        color:
-            Colors.black.withValues(
-          alpha:
-              .68,
-        ),
-        borderRadius:
-            BorderRadius.circular(
-          6,
-        ),
-        border:
-            Border.all(
-          color:
-              _uiBorderStrong(
-            dark,
-          ),
-          width:
-              1,
+      decoration: BoxDecoration(
+        color: Colors.black,
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(
+          color: _uiBorderStrong(dark),
         ),
       ),
-      child:
-          Padding(
-        padding:
-            const EdgeInsets.fromLTRB(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
           7,
           5,
           7,
           5,
         ),
-        child:
-            Column(
+        child: Column(
           crossAxisAlignment:
               CrossAxisAlignment.start,
-          mainAxisSize:
-              MainAxisSize.min,
+          mainAxisSize: MainAxisSize.min,
           children: [
             const Text(
               'NDVI',
-              style:
-                  TextStyle(
-                color:
-                    Colors.white,
-                fontSize:
-                    8,
-                fontWeight:
-                    FontWeight.w900,
-                letterSpacing:
-                    1.1,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 8,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.1,
               ),
             ),
-            const SizedBox(
-              height:
-                  4,
-            ),
+            const SizedBox(height: 4),
             Container(
-              width:
-                  122,
-              height:
-                  8,
-              decoration:
-                  BoxDecoration(
-                borderRadius:
-                    BorderRadius.circular(
-                  3,
-                ),
+              width: 122,
+              height: 8,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(2),
                 gradient:
                     const LinearGradient(
                   colors: [
-                    Color(
-                      0xFFD7191C,
-                    ),
-                    Color(
-                      0xFFFF7F00,
-                    ),
-                    Color(
-                      0xFFFFE600,
-                    ),
-                    Color(
-                      0xFF8BC34A,
-                    ),
-                    Color(
-                      0xFF15803D,
-                    ),
+                    Color(0xFFD7191C),
+                    Color(0xFFFF7F00),
+                    Color(0xFFFFE600),
+                    Color(0xFF8BC34A),
+                    Color(0xFF15803D),
                   ],
                 ),
               ),
             ),
-            const SizedBox(
-              height:
-                  2,
-            ),
+            const SizedBox(height: 2),
             SizedBox(
-              width:
-                  122,
-              child:
-                  Row(
+              width: 122,
+              child: Row(
                 mainAxisAlignment:
-                    MainAxisAlignment
-                        .spaceBetween,
+                    MainAxisAlignment.spaceBetween,
                 children: [
-                  _label(
-                    '-1.0',
-                  ),
-                  _label(
-                    '0.0',
-                  ),
-                  _label(
-                    '+1.0',
-                  ),
+                  _label('-1.0'),
+                  _label('0.0'),
+                  _label('+1.0'),
                 ],
               ),
             ),
@@ -1796,25 +1154,17 @@ class _NdviLegend
     );
   }
 
-  Widget _label(
-    String text,
-  ) =>
-      Text(
-        text,
-        style:
-            const TextStyle(
-          color:
-              Colors.white,
-          fontSize:
-              7,
-          fontWeight:
-              FontWeight.w700,
-        ),
-      );
+  Widget _label(String text) => Text(
+    text,
+    style: const TextStyle(
+      color: Colors.white,
+      fontSize: 7,
+      fontWeight: FontWeight.w700,
+    ),
+  );
 }
 
-class _ProcessedImage
-    extends StatefulWidget {
+class _ProcessedImage extends StatefulWidget {
   const _ProcessedImage({
     super.key,
     required this.bytes,
@@ -1832,43 +1182,20 @@ class _ProcessedImage
 class _ProcessedImageState
     extends State<_ProcessedImage> {
   @override
-  Widget build(
-    BuildContext context,
-  ) {
-    /*
-     * IMPORTANT — NORMAL RGB/R/G/B PREVIEW ONLY
-     *
-     * Keep exactly ONE Image element alive and let Flutter's own Image
-     * lifecycle manage the provider transition. We intentionally do NOT call
-     * provider.resolve() ourselves here.
-     *
-     * gaplessPlayback=true keeps the previous decoded frame visible while
-     * the next JPEG frame is decoding.
-     *
-     * NDVI NEVER ENTERS THIS WIDGET.
-     * NDVI is rendered by the native SurfaceTexture branch in
-     * _CameraPreview.
-     */
+  Widget build(BuildContext context) {
     return Image.memory(
       widget.bytes,
-      fit:
-          widget.fit,
-      alignment:
-          Alignment.center,
-      gaplessPlayback:
-          true,
-      filterQuality:
-          FilterQuality.low,
-      isAntiAlias:
-          false,
-      excludeFromSemantics:
-          true,
+      fit: widget.fit,
+      alignment: Alignment.center,
+      gaplessPlayback: true,
+      filterQuality: FilterQuality.low,
+      isAntiAlias: false,
+      excludeFromSemantics: true,
     );
   }
 }
 
-class _PreviewEmpty
-    extends StatelessWidget {
+class _PreviewEmpty extends StatelessWidget {
   const _PreviewEmpty({
     required this.link,
     required this.band,
@@ -1882,110 +1209,68 @@ class _PreviewEmpty
   final bool ndviEnabled;
 
   @override
-  Widget build(
-    BuildContext context,
-  ) {
+  Widget build(BuildContext context) {
     final dark =
-        Theme.of(
-                  context,
-                ).brightness ==
-                Brightness.dark;
+        Theme.of(context).brightness ==
+        Brightness.dark;
 
     final message =
         ndviEnabled
             ? 'WAITING FOR NDVI'
             : activating
                 ? 'ACQUIRING ${band.title}'
-                : link ==
-                            CameraLink.idle ||
-                        link ==
-                            CameraLink.error
+                : link == CameraLink.idle ||
+                        link == CameraLink.error
                     ? 'CONNECT CAMERA'
                     : 'WAITING FOR ${band.title}';
 
+    final icon =
+        ndviEnabled || activating
+            ? Icons.radar_rounded
+            : link == CameraLink.idle ||
+                    link == CameraLink.error
+                ? Icons.camera_outlined
+                : Icons.crop_free_rounded;
+
+    final iconColor =
+        ndviEnabled || activating
+            ? _uiAccent(dark)
+            : _uiMuted(dark);
+
     return ColoredBox(
-      color:
-          _uiBackground(
-        dark,
-      ),
-      child:
-          Center(
-        child:
-            Column(
-          mainAxisSize:
-              MainAxisSize.min,
+      color: _uiBackground(dark),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width:
-                  48,
-              height:
-                  48,
-              decoration:
-                  BoxDecoration(
-                color:
-                    _uiSurfaceAlt(
-                  dark,
-                ),
-                shape:
-                    BoxShape.circle,
-                border:
-                    Border.all(
-                  color:
-                      _uiBorderStrong(
-                    dark,
-                  ),
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: _uiSurfaceAlt(dark),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: _uiBorderStrong(dark),
                 ),
               ),
-              child:
-                  Icon(
-                ndviEnabled ||
-                        activating
-                    ? Icons.radar_rounded
-                    : link ==
-                                CameraLink
-                                    .idle ||
-                            link ==
-                                CameraLink
-                                    .error
-                        ? Icons.camera_outlined
-                        : Icons.crop_free_rounded,
-                color:
-                    ndviEnabled ||
-                            activating
-                        ? _uiAccent(
-                            dark,
-                          )
-                        : _uiMuted(
-                            dark,
-                          ),
-                size:
-                    24,
+              child: Icon(
+                icon,
+                color: iconColor,
+                size: 24,
               ),
             ),
-            const SizedBox(
-              height:
-                  12,
-            ),
+            const SizedBox(height: 12),
             Text(
               message,
-              textAlign:
-                  TextAlign.center,
-              style:
-                  TextStyle(
+              textAlign: TextAlign.center,
+              style: TextStyle(
                 color:
                     activating
-                        ? _uiAccent(
-                            dark,
-                          )
-                        : _uiForeground(
-                            dark,
-                          ),
-                fontSize:
-                    10,
-                fontWeight:
-                    FontWeight.w800,
-                letterSpacing:
-                    1.15,
+                        ? _uiAccent(dark)
+                        : _uiForeground(dark),
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.15,
               ),
             ),
           ],
@@ -1995,22 +1280,18 @@ class _PreviewEmpty
   }
 }
 
-class _ViewfinderOverlay
-    extends StatelessWidget {
+class _ViewfinderOverlay extends StatelessWidget {
   const _ViewfinderOverlay();
 
   @override
-  Widget build(
-    BuildContext context,
-  ) =>
-      CustomPaint(
-        painter:
-            _ViewfinderPainter(),
-      );
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _ViewfinderPainter(),
+    );
+  }
 }
 
-class _ViewfinderPainter
-    extends CustomPainter {
+class _ViewfinderPainter extends CustomPainter {
   @override
   void paint(
     Canvas canvas,
@@ -2018,128 +1299,65 @@ class _ViewfinderPainter
   ) {
     final paint =
         Paint()
-          ..color =
-              _previewAccent
-          ..strokeWidth =
-              1.15
-          ..style =
-              PaintingStyle.stroke;
+          ..color = _previewAccent
+          ..strokeWidth = 1.15
+          ..style = PaintingStyle.stroke;
 
     final margin =
-        size.shortestSide *
-            .18;
+        size.shortestSide * .18;
 
-    final left =
-        margin;
-
-    final right =
-        size.width -
-            margin;
-
-    final top =
-        margin;
-
-    final bottom =
-        size.height -
-            margin;
-
+    final left = margin;
+    final right = size.width - margin;
+    final top = margin;
+    final bottom = size.height - margin;
     final length =
-        size.shortestSide *
-            .05;
+        size.shortestSide * .05;
 
     canvas.drawLine(
-      Offset(
-        left,
-        top,
-      ),
-      Offset(
-        left + length,
-        top,
-      ),
+      Offset(left, top),
+      Offset(left + length, top),
       paint,
     );
 
     canvas.drawLine(
-      Offset(
-        left,
-        top,
-      ),
-      Offset(
-        left,
-        top + length,
-      ),
+      Offset(left, top),
+      Offset(left, top + length),
       paint,
     );
 
     canvas.drawLine(
-      Offset(
-        right,
-        top,
-      ),
-      Offset(
-        right - length,
-        top,
-      ),
+      Offset(right, top),
+      Offset(right - length, top),
       paint,
     );
 
     canvas.drawLine(
-      Offset(
-        right,
-        top,
-      ),
-      Offset(
-        right,
-        top + length,
-      ),
+      Offset(right, top),
+      Offset(right, top + length),
       paint,
     );
 
     canvas.drawLine(
-      Offset(
-        left,
-        bottom,
-      ),
-      Offset(
-        left + length,
-        bottom,
-      ),
+      Offset(left, bottom),
+      Offset(left + length, bottom),
       paint,
     );
 
     canvas.drawLine(
-      Offset(
-        left,
-        bottom,
-      ),
-      Offset(
-        left,
-        bottom - length,
-      ),
+      Offset(left, bottom),
+      Offset(left, bottom - length),
       paint,
     );
 
     canvas.drawLine(
-      Offset(
-        right,
-        bottom,
-      ),
-      Offset(
-        right - length,
-        bottom,
-      ),
+      Offset(right, bottom),
+      Offset(right - length, bottom),
       paint,
     );
 
     canvas.drawLine(
-      Offset(
-        right,
-        bottom,
-      ),
-      Offset(
-        right,
-        bottom - length,
-      ),
+      Offset(right, bottom),
+      Offset(right, bottom - length),
       paint,
     );
   }
@@ -2154,8 +1372,7 @@ class _ViewfinderPainter
 const Color _previewAccent =
     Color(0xFF55D98B);
 
-class _MonoBrandMark
-    extends StatelessWidget {
+class _MonoBrandMark extends StatelessWidget {
   const _MonoBrandMark({
     required this.dark,
     this.compact = false,
@@ -2165,56 +1382,28 @@ class _MonoBrandMark
   final bool compact;
 
   @override
-  Widget build(
-    BuildContext context,
-  ) =>
-      Container(
-        width:
-            compact
-                ? 36
-                : 38,
-        height:
-            compact
-                ? 36
-                : 38,
-        decoration:
-            BoxDecoration(
-          color:
-              _uiSurfaceAlt(
-            dark,
-          ),
-          border:
-              Border.all(
-            color:
-                _uiAccent(
-              dark,
-            ).withValues(
-              alpha:
-                  .75,
-            ),
-          ),
-          borderRadius:
-              BorderRadius.circular(
-            7,
-          ),
+  Widget build(BuildContext context) {
+    return Container(
+      width: compact ? 36 : 38,
+      height: compact ? 36 : 38,
+      decoration: BoxDecoration(
+        color: _uiSurfaceAlt(dark),
+        border: Border.all(
+          color: _uiBorderStrong(dark),
+          width: 1,
         ),
-        child:
-            Icon(
-          Icons.camera_alt_outlined,
-          color:
-              _uiAccent(
-            dark,
-          ),
-          size:
-              compact
-                  ? 18
-                  : 19,
-        ),
-      );
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Icon(
+        Icons.camera_alt_outlined,
+        color: _uiAccent(dark),
+        size: compact ? 18 : 19,
+      ),
+    );
+  }
 }
 
-class _IconButton
-    extends StatelessWidget {
+class _IconButton extends StatelessWidget {
   const _IconButton({
     required this.dark,
     required this.icon,
@@ -2230,90 +1419,55 @@ class _IconButton
   final bool active;
 
   @override
-  Widget build(
-    BuildContext context,
-  ) =>
-      Tooltip(
-        message:
-            tooltip,
-        child:
-            Material(
-          color:
-              Colors.transparent,
-          child:
-              InkWell(
-            borderRadius:
-                BorderRadius.circular(
-              7,
-            ),
-            onTap:
-                onTap,
-            child:
-                SizedBox(
-              width:
-                  38,
-              height:
-                  38,
-              child:
-                  DecoratedBox(
-                decoration:
-                    BoxDecoration(
+  Widget build(BuildContext context) {
+    final accent = _uiAccent(dark);
+
+    final background =
+        active
+            ? accent
+            : _uiSurfaceAlt(dark);
+
+    final foreground =
+        active
+            ? _activeTextOn(accent)
+            : _uiForeground(dark);
+
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: onTap,
+          child: SizedBox(
+            width: 38,
+            height: 38,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: background,
+                border: Border.all(
                   color:
                       active
-                          ? _uiAccent(
-                              dark,
-                            ).withValues(
-                              alpha:
-                                  dark
-                                      ? .14
-                                      : .09,
-                            )
-                          : _uiSurfaceAlt(
-                              dark,
-                            ),
-                  border:
-                      Border.all(
-                    color:
-                        active
-                            ? _uiAccent(
-                                dark,
-                              )
-                            : _uiBorderStrong(
-                                dark,
-                              ),
-                    width:
-                        active
-                            ? 1.2
-                            : 1,
-                  ),
-                  borderRadius:
-                      BorderRadius.circular(
-                    7,
-                  ),
+                          ? accent
+                          : _uiBorderStrong(dark),
+                  width: active ? 1.2 : 1,
                 ),
-                child:
-                    Icon(
-                  icon,
-                  color:
-                      active
-                          ? _uiAccent(
-                              dark,
-                            )
-                          : _uiForeground(
-                              dark,
-                            ),
-                  size:
-                      18,
-                ),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Icon(
+                icon,
+                color: foreground,
+                size: 18,
               ),
             ),
           ),
         ),
-      );
+      ),
+    );
+  }
 }
 
-class _StatusIndicator
-    extends StatelessWidget {
+class _StatusIndicator extends StatelessWidget {
   const _StatusIndicator({
     required this.link,
     required this.dark,
@@ -2323,59 +1477,29 @@ class _StatusIndicator
   final bool dark;
 
   @override
-  Widget build(
-    BuildContext context,
-  ) {
+  Widget build(BuildContext context) {
     final color =
         switch (link) {
-      CameraLink.ready =>
-        _uiAccent(dark),
-      CameraLink.error =>
-        _uiDanger(dark),
-      _ =>
-        _uiMuted(dark),
-    };
+          CameraLink.ready => _uiAccent(dark),
+          CameraLink.error => _uiDanger(dark),
+          _ => _uiMuted(dark),
+        };
 
     return AnimatedContainer(
-      duration:
-          const Duration(
-        milliseconds:
-            160,
+      duration: const Duration(
+        milliseconds: 160,
       ),
-      width:
-          8,
-      height:
-          8,
-      decoration:
-          BoxDecoration(
-        shape:
-            BoxShape.circle,
-        color:
-            color,
-        boxShadow:
-            link ==
-                    CameraLink.ready
-                ? [
-                    BoxShadow(
-                      color:
-                          color.withValues(
-                        alpha:
-                            .35,
-                      ),
-                      blurRadius:
-                          8,
-                      spreadRadius:
-                          1,
-                    ),
-                  ]
-                : null,
+      width: 8,
+      height: 8,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: color,
       ),
     );
   }
 }
 
-class _ShutterButton
-    extends StatelessWidget {
+class _ShutterButton extends StatelessWidget {
   const _ShutterButton({
     required this.dark,
     required this.ready,
@@ -2391,96 +1515,46 @@ class _ShutterButton
   final bool compact;
 
   @override
-  Widget build(
-    BuildContext context,
-  ) {
-    final accent =
-        _uiAccent(dark);
+  Widget build(BuildContext context) {
+    final accent = _uiAccent(dark);
+
+    final background =
+        capturing
+            ? _uiSurfaceAlt(dark)
+            : accent;
+
+    final foreground =
+        capturing
+            ? accent
+            : _activeTextOn(accent);
 
     return Opacity(
-      opacity:
-          ready
-              ? 1
-              : .38,
-      child:
-          Material(
-        color:
-            Colors.transparent,
-        child:
-            InkWell(
-          borderRadius:
-              BorderRadius.circular(
-            50,
-          ),
-          onTap:
-              ready
-                  ? onTap
-                  : null,
-          child:
-              AnimatedContainer(
-            duration:
-                const Duration(
-              milliseconds:
-                  160,
+      opacity: ready ? 1 : .38,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(50),
+          onTap: ready ? onTap : null,
+          child: AnimatedContainer(
+            duration: const Duration(
+              milliseconds: 140,
             ),
-            width:
-                compact
-                    ? 74
-                    : 76,
-            height:
-                compact
-                    ? 74
-                    : 76,
-            decoration:
-                BoxDecoration(
-              color:
-                  capturing
-                      ? _uiSurfaceAlt(
-                          dark,
-                        )
-                      : accent,
-              shape:
-                  BoxShape.circle,
-              border:
-                  Border.all(
-                color:
-                    accent.withValues(
-                  alpha:
-                      .9,
-                ),
-                width:
-                    2.5,
+            width: compact ? 74 : 76,
+            height: compact ? 74 : 76,
+            decoration: BoxDecoration(
+              color: background,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: accent,
+                width: 2.5,
               ),
-              boxShadow:
-                  ready
-                      ? [
-                          BoxShadow(
-                            color:
-                                accent.withValues(
-                              alpha:
-                                  .14,
-                            ),
-                            blurRadius:
-                                18,
-                            spreadRadius:
-                                2,
-                          ),
-                        ]
-                      : null,
             ),
-            child:
-                Icon(
+            child: Icon(
               capturing
                   ? Icons.hourglass_top_rounded
                   : Icons.camera_alt_rounded,
-              color:
-                  capturing
-                      ? accent
-                      : Colors.black,
-              size:
-                  compact
-                      ? 24
-                      : 25,
+              color: foreground,
+              size: compact ? 24 : 25,
             ),
           ),
         ),
@@ -2489,8 +1563,7 @@ class _ShutterButton
   }
 }
 
-class _PreviewTag
-    extends StatelessWidget {
+class _PreviewTag extends StatelessWidget {
   const _PreviewTag({
     required this.text,
     this.active = false,
@@ -2502,83 +1575,52 @@ class _PreviewTag
   final Color? accent;
 
   @override
-  Widget build(
-    BuildContext context,
-  ) {
+  Widget build(BuildContext context) {
     final dark =
-        Theme.of(
-                  context,
-                ).brightness ==
-                Brightness.dark;
+        Theme.of(context).brightness ==
+        Brightness.dark;
 
     final tagAccent =
-        accent ??
-            _uiAccent(
-          dark,
-        );
+        accent ?? _uiAccent(dark);
+
+    final background =
+        active
+            ? tagAccent
+            : const Color(0xFF111613);
+
+    final foreground =
+        active
+            ? _activeTextOn(tagAccent)
+            : Colors.white;
 
     return Container(
-      constraints:
-          const BoxConstraints(
-        maxWidth:
-            190,
+      constraints: const BoxConstraints(
+        maxWidth: 190,
       ),
-      padding:
-          const EdgeInsets.symmetric(
-        horizontal:
-            7,
-        vertical:
-            4,
+      padding: const EdgeInsets.symmetric(
+        horizontal: 7,
+        vertical: 4,
       ),
-      decoration:
-          BoxDecoration(
-        color:
-            active
-                ? tagAccent.withValues(
-                    alpha:
-                        .90,
-                  )
-                : const Color(
-                    0xCC0A0D0B,
-                  ),
-        border:
-            Border.all(
+      decoration: BoxDecoration(
+        color: background,
+        border: Border.all(
           color:
               active
                   ? tagAccent
-                  : Colors.white.withValues(
-                      alpha:
-                          .18,
-                    ),
+                  : const Color(0xFF37423B),
         ),
-        borderRadius:
-            BorderRadius.circular(
-          4,
-        ),
+        borderRadius: BorderRadius.circular(4),
       ),
-      child:
-          Text(
+      child: Text(
         text,
-        maxLines:
-            1,
-        overflow:
-            TextOverflow.ellipsis,
-        style:
-            TextStyle(
-          color:
-              active
-                  ? _activeTextOn(
-                      tagAccent,
-                    )
-                  : Colors.white,
-          fontFamily:
-              'monospace',
-          fontSize:
-              7,
-          fontWeight:
-              FontWeight.w800,
-          letterSpacing:
-              .6,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: foreground,
+          fontFamily: 'monospace',
+          fontSize: 7,
+          fontWeight: FontWeight.w800,
+          letterSpacing: .6,
         ),
       ),
     );
@@ -2589,131 +1631,59 @@ class _PreviewTag
 // Local UI palette
 // =============================================================================
 
-Color _uiBackground(
-  bool dark,
-) =>
+Color _uiBackground(bool dark) =>
     dark
-        ? const Color(
-            0xFF0A0D0B,
-          )
-        : const Color(
-            0xFFF2F5F3,
-          );
+        ? const Color(0xFF090C0A)
+        : const Color(0xFFF2F5F3);
 
-Color _uiForeground(
-  bool dark,
-) =>
+Color _uiForeground(bool dark) =>
     dark
-        ? const Color(
-            0xFFF2F6F3,
-          )
-        : const Color(
-            0xFF111612,
-          );
+        ? const Color(0xFFF2F6F3)
+        : const Color(0xFF111612);
 
-Color _uiSurface(
-  bool dark,
-) =>
+Color _uiSurface(bool dark) =>
     dark
-        ? const Color(
-            0xFF101512,
-          )
-        : const Color(
-            0xFFFFFFFF,
-          );
+        ? const Color(0xFF101512)
+        : const Color(0xFFFFFFFF);
 
-Color _uiSurfaceAlt(
-  bool dark,
-) =>
+Color _uiSurfaceAlt(bool dark) =>
     dark
-        ? const Color(
-            0xFF151B17,
-          )
-        : const Color(
-            0xFFE8EEEA,
-          );
+        ? const Color(0xFF171D19)
+        : const Color(0xFFE7ECE9);
 
-Color _uiAccent(
-  bool dark,
-) =>
+Color _uiAccent(bool dark) =>
     dark
-        ? const Color(
-            0xFF55D98B,
-          )
-        : const Color(
-            0xFF1D7E4B,
-          );
+        ? const Color(0xFF55D98B)
+        : const Color(0xFF1D7E4B);
 
-Color _uiSecondary(
-  bool dark,
-) =>
+Color _uiSecondary(bool dark) =>
     (dark
-            ? const Color(
-                0xFFE7EEE9,
-              )
-            : const Color(
-                0xFF2D3831,
-              ))
-        .withValues(
-      alpha:
-          .68,
-    );
+            ? const Color(0xFFE7EEE9)
+            : const Color(0xFF2D3831))
+        .withValues(alpha: .72);
 
-Color _uiMuted(
-  bool dark,
-) =>
+Color _uiMuted(bool dark) =>
     (dark
-            ? const Color(
-                0xFFB4BFB8,
-              )
-            : const Color(
-                0xFF56635B,
-              ))
-        .withValues(
-      alpha:
-          .70,
-    );
+            ? const Color(0xFFB4BFB8)
+            : const Color(0xFF56635B))
+        .withValues(alpha: .72);
 
-Color _uiBorder(
-  bool dark,
-) =>
+Color _uiBorder(bool dark) =>
     (dark
-            ? const Color(
-                0xFFB8C4BD,
-              )
-            : const Color(
-                0xFF35423A,
-              ))
-        .withValues(
-      alpha:
-          .14,
-    );
+            ? const Color(0xFFB8C4BD)
+            : const Color(0xFF35423A))
+        .withValues(alpha: .16);
 
-Color _uiBorderStrong(
-  bool dark,
-) =>
+Color _uiBorderStrong(bool dark) =>
     (dark
-            ? const Color(
-                0xFFB8C4BD,
-              )
-            : const Color(
-                0xFF35423A,
-              ))
-        .withValues(
-      alpha:
-          .24,
-    );
+            ? const Color(0xFFB8C4BD)
+            : const Color(0xFF35423A))
+        .withValues(alpha: .30);
 
-Color _uiDanger(
-  bool dark,
-) =>
+Color _uiDanger(bool dark) =>
     dark
-        ? const Color(
-            0xFFE56B6F,
-          )
-        : const Color(
-            0xFFB64045,
-          );
+        ? const Color(0xFFE56B6F)
+        : const Color(0xFFB64045);
 
 Color _spectralAccent(
   bool dark,
@@ -2722,50 +1692,27 @@ Color _spectralAccent(
     switch (band) {
       SpectralBand.rgb =>
         dark
-            ? const Color(
-                0xFFE9EFEB,
-              )
-            : const Color(
-                0xFF1A211D,
-              ),
+            ? const Color(0xFFE9EFEB)
+            : const Color(0xFF1A211D),
       SpectralBand.red =>
         dark
-            ? const Color(
-                0xFFE16B70,
-              )
-            : const Color(
-                0xFFB23D43,
-              ),
+            ? const Color(0xFFE16B70)
+            : const Color(0xFFB23D43),
       SpectralBand.green =>
         dark
-            ? const Color(
-                0xFF55D98B,
-              )
-            : const Color(
-                0xFF1D7E4B,
-              ),
+            ? const Color(0xFF55D98B)
+            : const Color(0xFF1D7E4B),
       SpectralBand.blue =>
         dark
-            ? const Color(
-                0xFF72A8F4,
-              )
-            : const Color(
-                0xFF3A68AE,
-              ),
+            ? const Color(0xFF72A8F4)
+            : const Color(0xFF3A68AE),
       SpectralBand.nir =>
         dark
-            ? const Color(
-                0xFFD4A56B,
-              )
-            : const Color(
-                0xFF946428,
-              ),
+            ? const Color(0xFFD4A56B)
+            : const Color(0xFF946428),
     };
 
-Color _activeTextOn(
-  Color background,
-) =>
-    background.computeLuminance() >
-            .5
+Color _activeTextOn(Color background) =>
+    background.computeLuminance() > .5
         ? Colors.black
         : Colors.white;
