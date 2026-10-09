@@ -4,26 +4,69 @@ import '../models/landcam_models.dart';
 
 /// LANDCAM settings bottom sheet.
 ///
+/// Preview Display is independent of capture-output settings.
 /// Presentation-only widget.
 /// All state changes are delegated through callbacks.
 class SettingsSheet extends StatelessWidget {
   const SettingsSheet({
     super.key,
     required this.dark,
-    required this.captureMode,
+    this.previewDisplayMode,
+    this.onPreviewDisplayMode,
+    this.previewChangeInFlight = false,
+    // Legacy parameters retained so older call sites still compile while the
+    // remaining files are upgraded in sequence. New code should use the
+    // preview-only properties above.
+    this.captureMode = 'PROCESSED',
+    this.onCaptureMode,
     required this.onTheme,
-    required this.onCaptureMode,
     required this.onRotate,
     required this.onAdvancedSettings,
   });
 
   final bool dark;
+  final String? previewDisplayMode;
+  final Future<void> Function(String mode)? onPreviewDisplayMode;
+  final bool previewChangeInFlight;
+
+  @Deprecated('Use previewDisplayMode instead of captureMode.')
   final String captureMode;
+  @Deprecated('Use onPreviewDisplayMode instead of onCaptureMode.')
+  final Future<void> Function()? onCaptureMode;
 
   final VoidCallback onTheme;
-  final Future<void> Function() onCaptureMode;
   final Future<void> Function() onRotate;
   final VoidCallback onAdvancedSettings;
+
+  String get _selectedPreviewMode {
+    final value = previewDisplayMode?.trim().toUpperCase();
+    if (value != null &&
+        const {'PROCESSED', 'FULL_FRAME', 'MULTI_VIEW'}.contains(value)) {
+      return value;
+    }
+    return captureMode.trim().toUpperCase() == 'RAW'
+        ? 'FULL_FRAME'
+        : 'PROCESSED';
+  }
+
+  Future<void> _selectPreviewMode(String mode) async {
+    if (previewChangeInFlight || mode == _selectedPreviewMode) {
+      return;
+    }
+
+    final callback = onPreviewDisplayMode;
+    if (callback != null) {
+      await callback(mode);
+      return;
+    }
+
+    // Compatibility fallback for old two-state callers only. MULTI_VIEW needs
+    // the new explicit callback and is not falsely presented as applied.
+    final legacyCallback = onCaptureMode;
+    if (legacyCallback != null && mode != 'MULTI_VIEW') {
+      await legacyCallback();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -36,8 +79,8 @@ class SettingsSheet extends StatelessWidget {
     // The parent bottom sheet is scroll-controlled.
     // Keep this panel compact enough for small devices.
     final sheetHeight =
-        (screenHeight * .46)
-            .clamp(248.0, 300.0)
+        (screenHeight * .50)
+            .clamp(280.0, 330.0)
             .toDouble();
 
     final compact =
@@ -129,7 +172,7 @@ class SettingsSheet extends StatelessWidget {
                                 height: 3,
                               ),
                               Text(
-                                'DISPLAY & DEVICE',
+                                'PREVIEW DISPLAY & DEVICE',
                                 maxLines: 1,
                                 overflow:
                                     TextOverflow.ellipsis,
@@ -214,111 +257,89 @@ class SettingsSheet extends StatelessWidget {
                         children: [
                           Expanded(
                             child: Row(
-                              crossAxisAlignment:
-                                  CrossAxisAlignment.stretch,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 Expanded(
-                                  child:
-                                      _SettingsTile(
-                                    dark:
-                                        dark,
-                                    icon:
-                                        Icons
-                                            .brightness_6_outlined,
-                                    title:
-                                        'THEME',
-                                    value:
-                                        dark
-                                            ? 'DARK'
-                                            : 'LIGHT',
-                                    active:
-                                        true,
-                                    compact:
-                                        compact,
-                                    onTap:
-                                        onTheme,
+                                  child: _SettingsTile(
+                                    dark: dark,
+                                    icon: Icons.brightness_6_outlined,
+                                    title: 'THEME',
+                                    value: dark ? 'DARK' : 'LIGHT',
+                                    active: true,
+                                    compact: compact,
+                                    onTap: onTheme,
                                   ),
                                 ),
-
-                                const SizedBox(
-                                  width: 8,
-                                ),
-
+                                const SizedBox(width: 8),
                                 Expanded(
-                                  child:
-                                      _SettingsTile(
-                                    dark:
-                                        dark,
-                                    icon:
-                                        Icons
-                                            .crop_square_rounded,
-                                    title:
-                                        'IMAGE',
-                                    value:
-                                        captureMode ==
-                                                'RAW'
-                                            ? 'RAW'
-                                            : 'PROCESSED',
-                                    active:
-                                        captureMode ==
-                                            'RAW',
-                                    compact:
-                                        compact,
-                                    onTap:
-                                        () async {
-                                      await onCaptureMode();
-                                    },
-                                  ),
-                                ),
-
-                                const SizedBox(
-                                  width: 8,
-                                ),
-
-                                Expanded(
-                                  child:
-                                      _SettingsTile(
-                                    dark:
-                                        dark,
-                                    icon:
-                                        Icons
-                                            .screen_rotation_alt_rounded,
-                                    title:
-                                        'ROTATE',
-                                    value:
-                                        'ORIENTATION',
-                                    compact:
-                                        compact,
-                                    onTap:
-                                        () async {
-                                      await onRotate();
-                                    },
+                                  child: _SettingsTile(
+                                    dark: dark,
+                                    icon: Icons.screen_rotation_alt_rounded,
+                                    title: 'ROTATE',
+                                    value: 'ORIENTATION',
+                                    compact: compact,
+                                    onTap: () async => onRotate(),
                                   ),
                                 ),
                               ],
                             ),
                           ),
-
-                          SizedBox(
-                            height:
-                                compact
-                                    ? 7
-                                    : 9,
+                          SizedBox(height: compact ? 7 : 9),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              'PREVIEW DISPLAY',
+                              style: TextStyle(
+                                color: secondary,
+                                fontSize: 8,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: .75,
+                              ),
+                            ),
                           ),
-
+                          const SizedBox(height: 5),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _PreviewModeButton(
+                                  dark: dark,
+                                  label: 'PROCESSED',
+                                  selected: _selectedPreviewMode == 'PROCESSED',
+                                  enabled: !previewChangeInFlight &&
+                                      (onPreviewDisplayMode != null || onCaptureMode != null),
+                                  onTap: () => _selectPreviewMode('PROCESSED'),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: _PreviewModeButton(
+                                  dark: dark,
+                                  label: 'FULL FRAME',
+                                  selected: _selectedPreviewMode == 'FULL_FRAME',
+                                  enabled: !previewChangeInFlight &&
+                                      (onPreviewDisplayMode != null || onCaptureMode != null),
+                                  onTap: () => _selectPreviewMode('FULL_FRAME'),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: _PreviewModeButton(
+                                  dark: dark,
+                                  label: 'MULTI-VIEW',
+                                  selected: _selectedPreviewMode == 'MULTI_VIEW',
+                                  enabled: !previewChangeInFlight && onPreviewDisplayMode != null,
+                                  onTap: () => _selectPreviewMode('MULTI_VIEW'),
+                                ),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: compact ? 7 : 9),
                           SizedBox(
-                            width:
-                                double.infinity,
-                            height:
-                                compact
-                                    ? 43
-                                    : 46,
-                            child:
-                                _AdvancedSettingsButton(
-                              dark:
-                                  dark,
-                              onTap:
-                                  onAdvancedSettings,
+                            width: double.infinity,
+                            height: compact ? 43 : 46,
+                            child: _AdvancedSettingsButton(
+                              dark: dark,
+                              onTap: onAdvancedSettings,
                             ),
                           ),
                         ],
@@ -326,6 +347,67 @@ class SettingsSheet extends StatelessWidget {
                     ),
                   ),
                 ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PreviewModeButton extends StatelessWidget {
+  const _PreviewModeButton({
+    required this.dark,
+    required this.label,
+    required this.selected,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final bool dark;
+  final String label;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = _uiAccent(dark);
+    final foreground = selected
+        ? _activeTextOn(accent)
+        : _uiForeground(dark);
+
+    return Material(
+      color: selected ? accent : _uiSurfaceAlt(dark),
+      borderRadius: BorderRadius.circular(5),
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(5),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          height: 38,
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: selected ? accent : _uiBorderStrong(dark),
+              width: selected ? 1.2 : 1,
+            ),
+            borderRadius: BorderRadius.circular(5),
+          ),
+          child: Center(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                label,
+                maxLines: 1,
+                style: TextStyle(
+                  color: enabled ? foreground : _uiMuted(dark),
+                  fontFamily: 'monospace',
+                  fontSize: 8,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: .35,
+                ),
               ),
             ),
           ),
@@ -629,6 +711,8 @@ class ConnectionSheet
     required this.dark,
     required this.link,
     required this.status,
+    this.connectionOperation,
+    this.operationInFlight = false,
     required this.ssid,
     required this.brand,
     required this.model,
@@ -660,6 +744,8 @@ class ConnectionSheet
 
   final CameraLink link;
   final String status;
+  final String? connectionOperation;
+  final bool operationInFlight;
 
   final String? ssid;
   final String? brand;
@@ -702,6 +788,27 @@ class ConnectionSheet
 
   @override
   Widget build(BuildContext context) {
+    final normalizedStatus = status.trim().toUpperCase();
+    const knownOperations = <String>{
+      'SCANNING NETWORK',
+      'RECONNECTING',
+      'REFRESHING LIVE VIEW',
+      'DISCONNECTING',
+    };
+    final explicitOperation = connectionOperation?.trim().toUpperCase();
+    final inferredOperation = knownOperations.contains(normalizedStatus)
+        ? normalizedStatus
+        : null;
+    final activeOperation = explicitOperation != null &&
+            explicitOperation.isNotEmpty
+        ? explicitOperation
+        : inferredOperation;
+    final anyOperationInFlight = operationInFlight || activeOperation != null;
+    final scanning = activeOperation == 'SCANNING NETWORK';
+    final reconnecting = activeOperation == 'RECONNECTING';
+    final refreshing = activeOperation == 'REFRESHING LIVE VIEW';
+    final disconnecting = activeOperation == 'DISCONNECTING';
+
     final surface =
         _uiSurface(dark);
 
@@ -997,6 +1104,51 @@ class ConnectionSheet
                       height: 7,
                     ),
 
+                    if (anyOperationInFlight) ...[
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 9),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _uiSurfaceAlt(dark),
+                          border: Border.all(color: _uiBorderStrong(dark)),
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 13,
+                              height: 13,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 1.5,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  _uiAccent(dark),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 9),
+                            Expanded(
+                              child: Text(
+                                '${activeOperation ?? 'CAMERA OPERATION'} IN PROGRESS',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: foreground,
+                                  fontFamily: 'monospace',
+                                  fontSize: 8,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: .3,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
                     Wrap(
                       spacing: 7,
                       runSpacing: 7,
@@ -1022,7 +1174,9 @@ class ConnectionSheet
                               Icons
                                   .wifi_find_rounded,
                           label:
-                              'SCAN NETWORK',
+                              scanning ? 'SCANNING...' : 'SCAN NETWORK',
+                          busy: scanning,
+                          disabled: anyOperationInFlight,
                           onTap:
                               onScan,
                         ),
@@ -1033,7 +1187,9 @@ class ConnectionSheet
                               Icons
                                   .sync_rounded,
                           label:
-                              'RECONNECT',
+                              reconnecting ? 'RECONNECTING...' : 'RECONNECT',
+                          busy: reconnecting,
+                          disabled: anyOperationInFlight,
                           onTap:
                               onReconnect,
                         ),
@@ -1044,7 +1200,9 @@ class ConnectionSheet
                               Icons
                                   .refresh_rounded,
                           label:
-                              'REFRESH VIEW',
+                              refreshing ? 'REFRESHING...' : 'REFRESH VIEW',
+                          busy: refreshing,
+                          disabled: anyOperationInFlight,
                           onTap:
                               onRefresh,
                         ),
@@ -1079,9 +1237,11 @@ class ConnectionSheet
                               Icons
                                   .link_off_rounded,
                           label:
-                              'DISCONNECT',
+                              disconnecting ? 'DISCONNECTING...' : 'DISCONNECT',
                           danger:
                               true,
+                          busy: disconnecting,
+                          disabled: anyOperationInFlight,
                           onTap:
                               onDisconnect,
                         ),
@@ -1561,6 +1721,8 @@ class _SheetButton
     required this.onTap,
     this.danger = false,
     this.accent = false,
+    this.busy = false,
+    this.disabled = false,
   });
 
   final bool dark;
@@ -1569,6 +1731,8 @@ class _SheetButton
   final Future<void> Function() onTap;
   final bool danger;
   final bool accent;
+  final bool busy;
+  final bool disabled;
 
   @override
   Widget build(BuildContext context) {
@@ -1593,14 +1757,14 @@ class _SheetButton
             ? green
             : _uiSurfaceAlt(dark);
 
-    final contentColor =
-        accent
+    final contentColor = disabled
+        ? _uiMuted(dark)
+        : accent
             ? _activeTextOn(green)
             : primaryColor;
 
     return Material(
-      color:
-          background,
+      color: disabled ? _uiSurfaceAlt(dark) : background,
       borderRadius:
           BorderRadius.circular(
         5,
@@ -1611,10 +1775,11 @@ class _SheetButton
             BorderRadius.circular(
           5,
         ),
-        onTap:
-            () async {
-          await onTap();
-        },
+        onTap: disabled
+            ? null
+            : () async {
+                await onTap();
+              },
         child:
             Container(
           constraints:
@@ -1654,12 +1819,21 @@ class _SheetButton
             mainAxisSize:
                 MainAxisSize.min,
             children: [
-              Icon(
-                icon,
-                size: 14,
-                color:
-                    contentColor,
-              ),
+              if (busy)
+                SizedBox(
+                  width: 13,
+                  height: 13,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.5,
+                    valueColor: AlwaysStoppedAnimation<Color>(contentColor),
+                  ),
+                )
+              else
+                Icon(
+                  icon,
+                  size: 14,
+                  color: contentColor,
+                ),
               const SizedBox(
                 width: 7,
               ),

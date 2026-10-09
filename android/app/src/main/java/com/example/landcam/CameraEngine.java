@@ -4,14 +4,17 @@ import android.Manifest;
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.ColorMatrix;
 import android.graphics.ColorMatrixColorFilter;
 import android.graphics.Paint;
 import android.graphics.Rect;
+import android.graphics.Typeface;
 import android.graphics.SurfaceTexture;
 import android.net.ConnectivityManager;
 import android.net.LinkAddress;
@@ -431,6 +434,14 @@ public class CameraEngine {
     private final AtomicLong previewGeneration =
             new AtomicLong(0L);
 
+    /*
+     * Stream lifetime is independent from preview-display generation. A mode
+     * change invalidates results but must not strand the latest-frame worker;
+     * a stream restart, however, must retire work queued by the previous stream.
+     */
+    private final AtomicLong frameQueueGeneration =
+            new AtomicLong(0L);
+
     private volatile long lastNormalFrameEventAt =
             0L;
 
@@ -521,8 +532,33 @@ public class CameraEngine {
     private static final String PERFORMANCE_BALANCED = "BALANCED";
     private static final String PERFORMANCE_HIGH_QUALITY = "HIGH QUALITY";
 
+    private static final String PREVIEW_DISPLAY_PROCESSED = "PROCESSED";
+    private static final String PREVIEW_DISPLAY_FULL_FRAME = "FULL_FRAME";
+    private static final String PREVIEW_DISPLAY_MULTI_VIEW = "MULTI_VIEW";
+
+    private static final String SETTINGS_PREFERENCES = "landcam_native_settings";
+    private static final String KEY_CAPTURE_OUTPUT_MODE = "capture_output_mode";
+    private static final String KEY_PERFORMANCE_MODE = "performance_mode";
+    private static final String KEY_PREVIEW_DISPLAY_MODE = "preview_display_mode";
+    private static final String KEY_SETTINGS_SCHEMA_VERSION = "settings_schema_version";
+
+    // Version 2 migrates the previous accidental defaults (RAW + PROCESSED / BALANCED)
+    // to the intended defaults without overwriting other user-selected combinations.
+    private static final int SETTINGS_SCHEMA_VERSION = 2;
+
+    private static final int MULTI_VIEW_TILE_WIDTH = 360;
+    private static final int MULTI_VIEW_TILE_HEIGHT = 292;
+    private static final int MULTI_VIEW_GAP = 12;
+    private static final int MULTI_VIEW_HEADER_HEIGHT = 42;
+    private static final int MULTI_VIEW_WIDTH =
+            (MULTI_VIEW_TILE_WIDTH * 3) + (MULTI_VIEW_GAP * 4);
+    private static final int MULTI_VIEW_HEIGHT =
+            (MULTI_VIEW_TILE_HEIGHT * 2) + (MULTI_VIEW_GAP * 3);
+
     private volatile String captureMode = CAPTURE_MODE_PROCESSED;
-    private volatile String performanceMode = PERFORMANCE_BALANCED;
+    private volatile String performanceMode = PERFORMANCE_PERFORMANCE;
+    private volatile String previewDisplayMode = PREVIEW_DISPLAY_PROCESSED;
+    private volatile SharedPreferences settingsPreferences;
 
     /*
      * Advanced Settings are native-owned configuration. CameraEngine is the
@@ -569,6 +605,11 @@ public class CameraEngine {
         this.connectivityManager = (ConnectivityManager) this.context.getSystemService(
                 Context.CONNECTIVITY_SERVICE
         );
+        this.settingsPreferences = this.context.getSharedPreferences(
+                SETTINGS_PREFERENCES,
+                Context.MODE_PRIVATE
+        );
+        loadPersistedSettings();
     }
 
     /**
@@ -647,7 +688,10 @@ public class CameraEngine {
 
 
     public void initialize() {
+        loadPersistedSettings();
         initialized = true;
+        sendAdvancedSettingsState();
+        sendPreviewSettingsState();
     }
 
     public boolean connectLastWifi() {
@@ -721,6 +765,61 @@ public class CameraEngine {
         refreshLiveviewImpl();
     }
 
+    /**
+     * Selects what the live-view displays. This setting never changes capture
+     * output; captureMode is only consulted by takePicture().
+     */
+    public synchronized boolean setPreviewDisplayMode(String rawMode) {
+        String mode = normalizePreviewDisplayMode(rawMode);
+        if (mode == null) {
+            sendEvent("engineWarning", "UNSUPPORTED PREVIEW DISPLAY MODE");
+            return false;
+        }
+
+        if (ndviEnabled) {
+            setNdviEnabled(false);
+        }
+
+        if (!mode.equals(previewDisplayMode)) {
+            previewDisplayMode = mode;
+            previewGeneration.incrementAndGet();
+            previewProcessingSequence.set(0L);
+            persistSettings();
+        }
+
+        HashMap<String, Object> data = new HashMap<>();
+        data.put("mode", previewDisplayMode);
+        data.put("previewDisplayMode", previewDisplayMode);
+        data.put("band", activeSpectralBand == null ? "RGB" : activeSpectralBand);
+        data.put("captureOutputMode", captureMode);
+        sendEvent("previewDisplayModeChanged", data);
+        sendPreviewSettingsState();
+
+        if (PREVIEW_DISPLAY_FULL_FRAME.equals(previewDisplayMode)) {
+            updateSystemStatus("FULL FRAME VIEW", true);
+        } else if (PREVIEW_DISPLAY_MULTI_VIEW.equals(previewDisplayMode)) {
+            updateSystemStatus("MULTI-VIEW", true);
+        } else {
+            updateSystemStatus(
+                    (activeSpectralBand == null ? "RGB" : activeSpectralBand) + " VIEW",
+                    true
+            );
+        }
+        return true;
+    }
+
+    public String getPreviewDisplayMode() {
+        return previewDisplayMode;
+    }
+
+    public synchronized Map<String, Object> getPreviewSettings() {
+        HashMap<String, Object> result = new HashMap<>();
+        result.put("previewDisplayMode", previewDisplayMode);
+        result.put("activeSpectralBand", activeSpectralBand == null ? "RGB" : activeSpectralBand);
+        result.put("captureOutputMode", captureMode);
+        return result;
+    }
+
     public boolean toggleViewMode() {
         isQuadMode = !isQuadMode;
 
@@ -787,8 +886,10 @@ public class CameraEngine {
         }
 
         activeSpectralBand = band;
+        previewDisplayMode = PREVIEW_DISPLAY_PROCESSED;
         spectralGeneration.incrementAndGet();
         previewProcessingSequence.set(0L);
+        persistSettings();
 
         /*
          * Every spectral selection is a new preview generation. Any normal
@@ -807,8 +908,10 @@ public class CameraEngine {
         );
         data.put("realSpectralFrame", true);
         data.put("unifiedSpectralCrop", true);
-        data.put("previewMode", "PROCESSED");
+        data.put("previewMode", PREVIEW_DISPLAY_PROCESSED);
+        data.put("previewDisplayMode", previewDisplayMode);
         sendEvent("spectralBandChanged", data);
+        sendPreviewSettingsState();
 
         updateSystemStatus(
                 "NIR".equals(band) ? "NIR VIEW" : band + " VIEW",
@@ -825,8 +928,7 @@ public class CameraEngine {
         }
 
         captureMode = mode;
-        previewGeneration.incrementAndGet();
-        previewProcessingSequence.set(0L);
+        persistSettings();
 
         HashMap<String, Object> data =
                 new HashMap<>();
@@ -857,6 +959,7 @@ public class CameraEngine {
 
         performanceMode = mode;
         applyPerformancePreset();
+        persistSettings();
 
         previewGeneration.incrementAndGet();
         previewProcessingSequence.set(0L);
@@ -898,6 +1001,7 @@ public class CameraEngine {
         captureMode = mode;
         performanceMode = performance;
         applyPerformancePreset();
+        persistSettings();
 
         previewGeneration.incrementAndGet();
         previewProcessingSequence.set(0L);
@@ -975,6 +1079,119 @@ public class CameraEngine {
         }
 
         return null;
+    }
+
+    private String normalizePreviewDisplayMode(String rawMode) {
+        if (rawMode == null) {
+            return null;
+        }
+
+        String mode = rawMode.trim().toUpperCase(Locale.US)
+                .replace('-', '_')
+                .replaceAll("\\s+", " ")
+                .trim();
+
+        if (PREVIEW_DISPLAY_PROCESSED.equals(mode) || "IMAGE".equals(mode)) {
+            return PREVIEW_DISPLAY_PROCESSED;
+        }
+        if (PREVIEW_DISPLAY_FULL_FRAME.equals(mode)
+                || "FULL FRAME".equals(mode)
+                || "RAW".equals(mode)
+                || "UNCROPPED".equals(mode)) {
+            return PREVIEW_DISPLAY_FULL_FRAME;
+        }
+        if (PREVIEW_DISPLAY_MULTI_VIEW.equals(mode)
+                || "MULTI VIEW".equals(mode)
+                || "MULTI".equals(mode)) {
+            return PREVIEW_DISPLAY_MULTI_VIEW;
+        }
+        return null;
+    }
+
+    private synchronized void loadPersistedSettings() {
+        SharedPreferences preferences = settingsPreferences;
+        if (preferences == null) {
+            return;
+        }
+
+        int storedSchemaVersion = preferences.getInt(
+                KEY_SETTINGS_SCHEMA_VERSION,
+                0
+        );
+
+        String rawCapture = preferences.getString(
+                KEY_CAPTURE_OUTPUT_MODE,
+                CAPTURE_MODE_PROCESSED
+        );
+        String rawPerformance = preferences.getString(
+                KEY_PERFORMANCE_MODE,
+                PERFORMANCE_PERFORMANCE
+        );
+        String rawPreview = preferences.getString(
+                KEY_PREVIEW_DISPLAY_MODE,
+                PREVIEW_DISPLAY_PROCESSED
+        );
+
+        String savedCapture = normalizeCaptureOutput(rawCapture);
+        String savedPerformance = normalizePerformanceMode(rawPerformance);
+        String savedPreview = normalizePreviewDisplayMode(rawPreview);
+
+        /*
+         * A previous build accidentally persisted its UI defaults as
+         * RAW + PROCESSED / BALANCED. Because that build did not record a
+         * settings schema version, migrate only that exact legacy pair once.
+         * Other combinations are treated as intentional user preferences and
+         * are preserved. The selected preview layout is preserved separately.
+         */
+        boolean migrateLegacyDefaults =
+                storedSchemaVersion < SETTINGS_SCHEMA_VERSION
+                        && CAPTURE_MODE_BOTH.equals(savedCapture)
+                        && PERFORMANCE_BALANCED.equals(savedPerformance);
+
+        if (migrateLegacyDefaults) {
+            captureMode = CAPTURE_MODE_PROCESSED;
+            performanceMode = PERFORMANCE_PERFORMANCE;
+            Log.i(
+                    TAG,
+                    "Migrated legacy accidental defaults to PROCESSED / PERFORMANCE"
+            );
+        } else {
+            captureMode = savedCapture == null
+                    ? CAPTURE_MODE_PROCESSED
+                    : savedCapture;
+            performanceMode = savedPerformance == null
+                    ? PERFORMANCE_PERFORMANCE
+                    : savedPerformance;
+        }
+
+        previewDisplayMode = savedPreview == null
+                ? PREVIEW_DISPLAY_PROCESSED
+                : savedPreview;
+
+        applyPerformancePreset();
+        persistSettings();
+    }
+
+    private void persistSettings() {
+        SharedPreferences preferences = settingsPreferences;
+        if (preferences == null) {
+            return;
+        }
+        preferences.edit()
+                .putString(KEY_CAPTURE_OUTPUT_MODE, captureMode)
+                .putString(KEY_PERFORMANCE_MODE, performanceMode)
+                .putString(KEY_PREVIEW_DISPLAY_MODE, previewDisplayMode)
+                .putInt(KEY_SETTINGS_SCHEMA_VERSION, SETTINGS_SCHEMA_VERSION)
+                .apply();
+    }
+
+    private void sendPreviewSettingsState() {
+        HashMap<String, Object> data = new HashMap<>();
+        data.put("previewDisplayMode", previewDisplayMode);
+        data.put("mode", previewDisplayMode);
+        data.put("activeSpectralBand", activeSpectralBand == null ? "RGB" : activeSpectralBand);
+        data.put("captureOutputMode", captureMode);
+        sendEvent("previewSettingsChanged", data);
     }
 
     private void applyPerformancePreset() {
@@ -4280,76 +4497,55 @@ public class CameraEngine {
         }
 
         /*
-         * Latest-frame-only:
-         * a newer network frame replaces an older queued frame. The stream
-         * reader never waits for bitmap/NDVI processing.
+         * Latest-frame-only queue. A mode change invalidates processing results,
+         * but it does not retire the worker. Only a stream lifetime change does.
          */
         pendingCompositeFrame.set(compositeJpeg);
+        scheduleFrameProcessor();
+    }
 
+    private void scheduleFrameProcessor() {
+        if (!isStreaming.get()) {
+            return;
+        }
         if (!frameProcessorRunning.compareAndSet(false, true)) {
             return;
         }
 
-        final long workerPreviewGeneration =
-                previewGeneration.get();
-
-        executor.execute(() -> {
-            try {
-                while (isStreaming.get()
-                        && workerPreviewGeneration == previewGeneration.get()) {
-
-                    byte[] frame =
-                            pendingCompositeFrame.getAndSet(null);
-
-                    if (frame == null) {
-                        break;
-                    }
-
-                    processAndEmitCompositeFrame(frame);
-                }
-            } catch (Throwable t) {
-                Log.e(TAG, "Live-view frame processor failed", t);
-            } finally {
-                frameProcessorRunning.set(false);
-
-                /*
-                 * A frame can arrive between getAndSet(null) and the CAS.
-                 * Restart only for the same stream/mode generation. A mode
-                 * change intentionally lets this worker die so stale work
-                 * cannot cross the mode boundary.
-                 */
-                if (pendingCompositeFrame.get() != null
-                        && isStreaming.get()
-                        && workerPreviewGeneration == previewGeneration.get()
-                        && frameProcessorRunning.compareAndSet(false, true)) {
-
-                    executor.execute(() -> {
-                        try {
-                            while (isStreaming.get()
-                                    && workerPreviewGeneration == previewGeneration.get()) {
-
-                                byte[] frame =
-                                        pendingCompositeFrame.getAndSet(null);
-
-                                if (frame == null) {
-                                    break;
-                                }
-
-                                processAndEmitCompositeFrame(frame);
-                            }
-                        } catch (Throwable t) {
-                            Log.e(
-                                    TAG,
-                                    "Live-view frame processor restart failed",
-                                    t
-                            );
-                        } finally {
-                            frameProcessorRunning.set(false);
+        final long workerQueueGeneration = frameQueueGeneration.get();
+        try {
+            executor.execute(() -> {
+                try {
+                    while (isStreaming.get()
+                            && workerQueueGeneration == frameQueueGeneration.get()) {
+                        byte[] frame = pendingCompositeFrame.getAndSet(null);
+                        if (frame == null) {
+                            break;
                         }
-                    });
+                        processAndEmitCompositeFrame(frame);
+                    }
+                } catch (Throwable t) {
+                    Log.e(TAG, "Live-view frame processor failed", t);
+                } finally {
+                    frameProcessorRunning.set(false);
+
+                    /*
+                     * Close the lost-wakeup race: if a frame arrived while this
+                     * worker was exiting, reschedule regardless of preview mode.
+                     * scheduleFrameProcessor() atomically claims the next worker.
+                     */
+                    if (isStreaming.get()
+                            && pendingCompositeFrame.get() != null) {
+                        scheduleFrameProcessor();
+                    }
                 }
+            });
+        } catch (RuntimeException e) {
+            frameProcessorRunning.set(false);
+            if (!executor.isShutdown()) {
+                Log.e(TAG, "Could not schedule live-view frame processor", e);
             }
-        });
+        }
     }
 
     private void processAndEmitCompositeFrame(byte[] compositeJpeg) {
@@ -4367,13 +4563,11 @@ public class CameraEngine {
                 previewGeneration.get();
 
         /*
-         * Apply frame cadence before BitmapFactory decode for the normal
-         * processed preview path. This is where PERFORMANCE mode actually
-         * reduces CPU/memory pressure rather than merely dropping completed
-         * results. RAW preview and NDVI keep their own cadence/ownership.
+         * Apply the configured cadence before BitmapFactory decode for every
+         * non-NDVI display mode. This reduces CPU/memory pressure rather than
+         * merely dropping completed results. NDVI keeps its own cadence.
          */
-        if (!ndviEnabled
-                && !CAPTURE_MODE_RAW.equals(captureMode)) {
+        if (!ndviEnabled) {
 
             final long processingSequence =
                     previewProcessingSequence.incrementAndGet();
@@ -4598,88 +4792,79 @@ public class CameraEngine {
                 return;
             }
 
-            /*
-             * RAW preview is still a capture/preview mode distinct from the
-             * spectral path. It can only be published while NDVI is off.
-             */
-            if (CAPTURE_MODE_RAW.equals(captureMode)) {
+            final String displayMode = previewDisplayMode == null
+                    ? PREVIEW_DISPLAY_PROCESSED
+                    : previewDisplayMode;
 
-                if (framePreviewGeneration
-                        != previewGeneration.get()
-                        || ndviEnabled) {
+            if (PREVIEW_DISPLAY_FULL_FRAME.equals(displayMode)) {
+                if (framePreviewGeneration != previewGeneration.get() || ndviEnabled) {
                     return;
                 }
 
-                byte[] previewJpeg =
-                        buildScaledPreviewJpeg(
-                                source,
-                                previewScale
-                        );
-
-                if (previewJpeg == null
-                        || previewJpeg.length == 0) {
-                    return;
-                }
-
-                lastFrameBytes =
-                        previewJpeg;
-
+                /*
+                 * The full-frame preview is the exact JPEG byte stream returned
+                 * by the camera: no optical crop, resize, channel conversion or
+                 * capture-output decision is applied here.
+                 */
+                lastFrameBytes = compositeJpeg;
                 emitPreviewFrame(
-                        previewJpeg,
-                        activeSpectralBand == null
-                                ? "RGB"
-                                : activeSpectralBand,
-                        "FULL_COMPOSITE",
+                        compositeJpeg,
+                        "RGB",
+                        "FULL_CAMERA_COMPOSITE",
                         false,
-                        "RAW",
-                        scaledDimension(
-                                source.getWidth(),
-                                previewScale
-                        ),
-                        scaledDimension(
-                                source.getHeight(),
-                                previewScale
-                        ),
+                        PREVIEW_DISPLAY_FULL_FRAME,
+                        source.getWidth(),
+                        source.getHeight(),
                         null,
                         framePreviewGeneration
                 );
                 return;
             }
 
-            final String band =
-                    activeSpectralBand == null
-                            ? "RGB"
-                            : activeSpectralBand;
+            if (PREVIEW_DISPLAY_MULTI_VIEW.equals(displayMode)) {
+                byte[] multiView = buildMultiViewPreviewJpeg(source);
+                if (multiView == null || multiView.length == 0
+                        || framePreviewGeneration != previewGeneration.get()
+                        || ndviEnabled
+                        || !PREVIEW_DISPLAY_MULTI_VIEW.equals(previewDisplayMode)) {
+                    return;
+                }
 
-            final long generation =
-                    spectralGeneration.get();
-
-            byte[] processed =
-                    processCompositeForBand(
-                            source,
-                            band
-                    );
-
-            if (processed == null
-                    || processed.length == 0) {
+                lastFrameBytes = multiView;
+                emitPreviewFrame(
+                        multiView,
+                        "MULTI",
+                        "RGB_R_G_B_AND_FULL_CAMERA_COMPOSITE",
+                        true,
+                        PREVIEW_DISPLAY_MULTI_VIEW,
+                        MULTI_VIEW_WIDTH,
+                        MULTI_VIEW_HEIGHT,
+                        null,
+                        framePreviewGeneration
+                );
                 return;
             }
 
-            /*
-             * Both the spectral generation and preview generation must still
-             * match before a normal processed frame can own the screen.
-             */
+            final String band = activeSpectralBand == null
+                    ? "RGB"
+                    : activeSpectralBand;
+            final long generation = spectralGeneration.get();
+
+            byte[] processed = processCompositeForBand(source, band);
+            if (processed == null || processed.length == 0) {
+                return;
+            }
+
+            /* Both generations must still match before this frame can publish. */
             if (generation != spectralGeneration.get()
-                    || framePreviewGeneration
-                            != previewGeneration.get()
+                    || framePreviewGeneration != previewGeneration.get()
                     || ndviEnabled
+                    || !PREVIEW_DISPLAY_PROCESSED.equals(previewDisplayMode)
                     || !band.equals(activeSpectralBand)) {
                 return;
             }
 
-            lastFrameBytes =
-                    processed;
-
+            lastFrameBytes = processed;
             emitProcessedFrame(
                     processed,
                     band,
@@ -5301,7 +5486,9 @@ public class CameraEngine {
                 "NDVI"
         );
         event.put("gpuTexture", true);
-        event.put("captureMode", captureMode);
+        event.put("captureOutputMode", captureMode);
+        event.put("captureMode", captureMode); // Backward-compatible field.
+        event.put("previewDisplayMode", "NDVI");
         event.put("isQuadFrame", false);
         event.put("realSpectralFrame", true);
         event.put("width", GPU_NDVI_OUTPUT_WIDTH);
@@ -5363,6 +5550,10 @@ public class CameraEngine {
                     "firstLiveviewFrame",
                     true
             );
+            HashMap<String, Object> refreshReady = new HashMap<>();
+            refreshReady.put("state", "READY");
+            refreshReady.put("message", "FIRST LIVE-VIEW FRAME RECEIVED");
+            sendEvent("liveviewRefreshState", refreshReady);
 
             updateSystemStatus(
                     "CAMERA READY",
@@ -6731,6 +6922,194 @@ public class CameraEngine {
         return output;
     }
 
+    /**
+     * Produces one labeled, bounded contact sheet so Flutter receives one frame
+     * event per update instead of five high-volume base64/image payloads.
+     * RGB/R/G/B are processed optical crops; RAW is the uncropped source frame.
+     */
+    private byte[] buildMultiViewPreviewJpeg(Bitmap source) {
+        if (source == null || source.isRecycled()) {
+            return null;
+        }
+
+        final String[] labels = new String[]{
+                "RGB  /  OPTICAL CROP",
+                "R    /  RED CHANNEL",
+                "G    /  GREEN CHANNEL",
+                "B    /  BLUE CHANNEL",
+                "RAW  /  FULL CAMERA FRAME"
+        };
+        final Bitmap[] tiles = new Bitmap[5];
+        Bitmap crop = null;
+        Bitmap redSource = null;
+        Bitmap greenSource = null;
+        Bitmap blueSource = null;
+        Bitmap sheet = null;
+
+        try {
+            Rect unified = unifiedRgbRect();
+            if (!isUsableCrop(unified, source.getWidth(), source.getHeight())
+                    || !isUsableCrop(nirCropRect, source.getWidth(), source.getHeight())) {
+                return null;
+            }
+
+            double tileScale = Math.min(0.50d, Math.max(0.25d, processingScale));
+            crop = Bitmap.createBitmap(
+                    source,
+                    unified.left,
+                    unified.top,
+                    unified.width(),
+                    unified.height()
+            );
+            redSource = channelBitmap(crop, 0);
+            greenSource = channelBitmap(crop, 1);
+            blueSource = channelBitmap(crop, 2);
+
+            /* Work with scaled bitmaps directly; avoid four JPEG encode/decode cycles. */
+            tiles[0] = scaleBitmap(crop, tileScale);
+            tiles[1] = scaleBitmap(redSource, tileScale);
+            tiles[2] = scaleBitmap(greenSource, tileScale);
+            tiles[3] = scaleBitmap(blueSource, tileScale);
+            tiles[4] = source;
+
+            sheet = Bitmap.createBitmap(
+                    MULTI_VIEW_WIDTH,
+                    MULTI_VIEW_HEIGHT,
+                    Bitmap.Config.ARGB_8888
+            );
+            Canvas canvas = new Canvas(sheet);
+            canvas.drawColor(Color.rgb(10, 14, 18));
+
+            Paint tilePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            tilePaint.setColor(Color.rgb(22, 29, 35));
+            tilePaint.setStyle(Paint.Style.FILL);
+
+            Paint headerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            headerPaint.setColor(Color.rgb(33, 45, 53));
+            headerPaint.setStyle(Paint.Style.FILL);
+
+            Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            textPaint.setColor(Color.rgb(225, 241, 235));
+            textPaint.setTextSize(17f);
+            textPaint.setTypeface(Typeface.create("monospace", Typeface.BOLD));
+
+            Paint borderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            borderPaint.setColor(Color.rgb(66, 95, 91));
+            borderPaint.setStyle(Paint.Style.STROKE);
+            borderPaint.setStrokeWidth(1.5f);
+
+            Paint imagePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+            imagePaint.setFilterBitmap(true);
+
+            for (int i = 0; i < tiles.length; i++) {
+                int col = i % 3;
+                int row = i / 3;
+                int left = MULTI_VIEW_GAP + col * (MULTI_VIEW_TILE_WIDTH + MULTI_VIEW_GAP);
+                int top = MULTI_VIEW_GAP + row * (MULTI_VIEW_TILE_HEIGHT + MULTI_VIEW_GAP);
+                Rect tileRect = new Rect(
+                        left,
+                        top,
+                        left + MULTI_VIEW_TILE_WIDTH,
+                        top + MULTI_VIEW_TILE_HEIGHT
+                );
+                canvas.drawRect(tileRect, tilePaint);
+                canvas.drawRect(
+                        left,
+                        top,
+                        left + MULTI_VIEW_TILE_WIDTH,
+                        top + MULTI_VIEW_HEADER_HEIGHT,
+                        headerPaint
+                );
+                canvas.drawText(labels[i], left + 10f, top + 27f, textPaint);
+
+                Rect imageBounds = new Rect(
+                        left + 8,
+                        top + MULTI_VIEW_HEADER_HEIGHT + 6,
+                        left + MULTI_VIEW_TILE_WIDTH - 8,
+                        top + MULTI_VIEW_TILE_HEIGHT - 8
+                );
+                drawBitmapFitCenter(canvas, tiles[i], imageBounds, imagePaint);
+                canvas.drawRect(tileRect, borderPaint);
+            }
+
+            // Use the spare sixth cell for a quiet legend rather than stretching a tile.
+            int legendLeft = MULTI_VIEW_GAP + 2 * (MULTI_VIEW_TILE_WIDTH + MULTI_VIEW_GAP);
+            int legendTop = MULTI_VIEW_GAP + (MULTI_VIEW_TILE_HEIGHT + MULTI_VIEW_GAP);
+            Rect legendRect = new Rect(
+                    legendLeft,
+                    legendTop,
+                    legendLeft + MULTI_VIEW_TILE_WIDTH,
+                    legendTop + MULTI_VIEW_TILE_HEIGHT
+            );
+            canvas.drawRect(legendRect, tilePaint);
+            canvas.drawRect(
+                    legendLeft,
+                    legendTop,
+                    legendLeft + MULTI_VIEW_TILE_WIDTH,
+                    legendTop + MULTI_VIEW_HEADER_HEIGHT,
+                    headerPaint
+            );
+            canvas.drawRect(legendRect, borderPaint);
+            canvas.drawText("LANDCAM / MULTI-VIEW", legendLeft + 10f, legendTop + 27f, textPaint);
+            Paint legendText = new Paint(Paint.ANTI_ALIAS_FLAG);
+            legendText.setColor(Color.rgb(166, 190, 183));
+            legendText.setTextSize(15f);
+            legendText.setTypeface(Typeface.create("monospace", Typeface.NORMAL));
+            canvas.drawText("4 PROCESSED CROPS", legendLeft + 14f, legendTop + 96f, legendText);
+            canvas.drawText("1 UNMODIFIED SOURCE", legendLeft + 14f, legendTop + 126f, legendText);
+            canvas.drawText("CAPTURE OUTPUT: UNCHANGED", legendLeft + 14f, legendTop + 156f, legendText);
+            canvas.drawText("PREVIEW DISPLAY ONLY", legendLeft + 14f, legendTop + 186f, legendText);
+
+            return bitmapToJpeg(sheet, 88);
+        } catch (Exception e) {
+            log("WARN", "Multi-view preview creation failed: " + safeMessage(e));
+            return null;
+        } finally {
+            for (int i = 0; i < 4; i++) {
+                if (tiles[i] != null && !tiles[i].isRecycled()) {
+                    tiles[i].recycle();
+                }
+            }
+            if (crop != null && !crop.isRecycled()) {
+                crop.recycle();
+            }
+            if (redSource != null && !redSource.isRecycled()) {
+                redSource.recycle();
+            }
+            if (greenSource != null && !greenSource.isRecycled()) {
+                greenSource.recycle();
+            }
+            if (blueSource != null && !blueSource.isRecycled()) {
+                blueSource.recycle();
+            }
+            if (sheet != null && !sheet.isRecycled()) {
+                sheet.recycle();
+            }
+        }
+    }
+
+    private void drawBitmapFitCenter(
+            Canvas canvas,
+            Bitmap bitmap,
+            Rect bounds,
+            Paint paint
+    ) {
+        if (canvas == null || bitmap == null || bitmap.isRecycled()
+                || bounds == null || bounds.width() <= 0 || bounds.height() <= 0) {
+            return;
+        }
+        float scale = Math.min(
+                bounds.width() / (float) bitmap.getWidth(),
+                bounds.height() / (float) bitmap.getHeight()
+        );
+        int width = Math.max(1, Math.round(bitmap.getWidth() * scale));
+        int height = Math.max(1, Math.round(bitmap.getHeight() * scale));
+        int left = bounds.left + (bounds.width() - width) / 2;
+        int top = bounds.top + (bounds.height() - height) / 2;
+        Rect destination = new Rect(left, top, left + width, top + height);
+        canvas.drawBitmap(bitmap, null, destination, paint);
+    }
+
     private byte[] buildScaledPreviewJpeg(
             Bitmap source,
             double scale
@@ -6905,10 +7284,12 @@ public class CameraEngine {
         event.put("source", source);
         event.put("processed", processed);
         event.put("previewMode", previewMode);
-        event.put("captureMode", captureMode);
+        event.put("previewDisplayMode", previewDisplayMode);
+        event.put("captureOutputMode", captureMode);
+        event.put("captureMode", captureMode); // Backward-compatible field.
         event.put(
                 "isQuadFrame",
-                !processed
+                "RAW".equalsIgnoreCase(previewMode)
         );
         event.put(
                 "realSpectralFrame",
@@ -6941,23 +7322,13 @@ public class CameraEngine {
                 "cropHeight",
                 rect == null ? 0 : rect.height()
         );
-        event.put(
-                "unifiedSpectralCrop",
-                isNdviPreview
-                        ? true
-                        : !"RAW".equals(previewMode)
-        );
-        event.put(
-                "registrationApplied",
-                isNdviPreview
-                        ? true
-                        : !"RAW".equals(previewMode)
-        );
+        boolean unifiedCropPreview = isNdviPreview
+                || PREVIEW_DISPLAY_PROCESSED.equalsIgnoreCase(previewMode);
+        event.put("unifiedSpectralCrop", unifiedCropPreview);
+        event.put("registrationApplied", unifiedCropPreview);
         event.put(
                 "registrationModel",
-                isNdviPreview
-                        ? "CENTERED_AFFINE"
-                        : "CENTERED_AFFINE"
+                unifiedCropPreview ? "CENTERED_AFFINE" : "NONE"
         );
         event.put(
                 "nirGain",
@@ -6984,6 +7355,10 @@ public class CameraEngine {
                     "firstLiveviewFrame",
                     true
             );
+            HashMap<String, Object> refreshReady = new HashMap<>();
+            refreshReady.put("state", "READY");
+            refreshReady.put("message", "FIRST LIVE-VIEW FRAME RECEIVED");
+            sendEvent("liveviewRefreshState", refreshReady);
 
             updateSystemStatus(
                     "CAMERA READY",
@@ -7165,50 +7540,68 @@ public class CameraEngine {
     }
 
     private void refreshLiveviewImpl() {
-
         stopStreaming();
+        firstFrameSent = false;
+        updateSystemStatus("REFRESHING LIVE VIEW", true);
 
-        updateSystemStatus(
-                "REFRESHING LIVE VIEW",
-                true
-        );
+        HashMap<String, Object> refreshState = new HashMap<>();
+        refreshState.put("state", "REFRESHING");
+        refreshState.put("message", "STOPPING OLD STREAM");
+        sendEvent("liveviewRefreshState", refreshState);
+        log("INFO", "Live-view refresh requested");
 
-        executor.execute(
-                () -> {
+        try {
+            executor.execute(() -> {
+                try {
+                    sleepQuietly(250L);
 
-                    sleepQuietly(
-                            350L
-                    );
+                    Network network = currentNetwork;
+                    CameraEndpoint endpoint = currentEndpoint();
 
-                    Network network =
-                            currentNetwork;
-
-                    CameraEndpoint endpoint =
-                            currentEndpoint();
-
-                    if (
-                            network == null
-                                    || endpoint == null
-                    ) {
-
+                    if (network == null || endpoint == null) {
+                        HashMap<String, Object> discovering = new HashMap<>();
+                        discovering.put("state", "DISCOVERING");
+                        discovering.put("message", "REACQUIRING CAMERA ENDPOINT");
+                        sendEvent("liveviewRefreshState", discovering);
+                        isEngineStarting.set(false);
+                        isDiscoveryRunning.set(false);
                         probeCurrentNetworkImpl();
                         return;
                     }
 
-                    isEngineStarting.set(
-                            false
-                    );
+                    /*
+                     * Retire any stale camera-start operation, then re-run the
+                     * camera API handshake and start a fresh stream on the same
+                     * Wi-Fi network. This does not request a new Wi-Fi connection.
+                     */
+                    long generation = sessionGeneration.get();
+                    isEngineStarting.set(false);
+                    firstFrameSent = false;
 
-                    long generation =
-                            sessionGeneration.get();
-
-                    probeAndStartCamera(
-                            network,
-                            endpoint,
-                            generation
-                    );
+                    HashMap<String, Object> starting = new HashMap<>();
+                    starting.put("state", "STARTING");
+                    starting.put("message", "RESTARTING LIVE VIEW STREAM");
+                    sendEvent("liveviewRefreshState", starting);
+                    probeAndStartCamera(network, endpoint, generation);
+                } catch (Exception e) {
+                    Log.e(TAG, "Live-view refresh failed", e);
+                    updateSystemStatus("LIVE VIEW REFRESH FAILED", false);
+                    HashMap<String, Object> failed = new HashMap<>();
+                    failed.put("state", "FAILED");
+                    failed.put("message", safeMessage(e));
+                    sendEvent("liveviewRefreshState", failed);
+                    sendEvent("streamLost", "LIVE VIEW REFRESH FAILED: " + safeMessage(e));
+                    log("ERROR", "Live-view refresh failed: " + safeMessage(e));
                 }
-        );
+            });
+        } catch (RuntimeException e) {
+            updateSystemStatus("LIVE VIEW REFRESH FAILED", false);
+            HashMap<String, Object> failed = new HashMap<>();
+            failed.put("state", "FAILED");
+            failed.put("message", safeMessage(e));
+            sendEvent("liveviewRefreshState", failed);
+            log("ERROR", "Could not schedule live-view refresh: " + safeMessage(e));
+        }
     }
 
     private CameraEndpoint currentEndpoint() {
@@ -8320,11 +8713,13 @@ public class CameraEngine {
     private void stopStreaming() {
 
         /*
-         * Invalidate all in-flight preview work immediately. The worker uses
-         * previewGeneration to self-terminate after the current call returns.
+         * Invalidate in-flight preview commits immediately and advance the
+         * stream queue epoch. Preview mode changes do not retire the worker;
+         * stopping/restarting the actual stream does.
          */
         previewGeneration.incrementAndGet();
         previewProcessingSequence.set(0L);
+        frameQueueGeneration.incrementAndGet();
 
         isStreaming.set(
                 false

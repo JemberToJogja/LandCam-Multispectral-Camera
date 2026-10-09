@@ -33,7 +33,7 @@
 
     <application
         android:name="${applicationName}"
-        android:label="LANDCAM"
+        android:label="Landcam"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="true"
         android:supportsRtl="true"

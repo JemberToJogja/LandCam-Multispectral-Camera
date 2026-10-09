@@ -105,84 +105,62 @@ class _LandCamPageState
     await showModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
-      backgroundColor:
-          Colors.transparent,
-      barrierColor:
-          Colors.black.withValues(
-        alpha: .78,
-      ),
-      builder: (
-        sheetContext,
-      ) {
-        return SettingsSheet(
-          dark: _dark,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: .78),
+      builder: (sheetContext) {
+        // Bottom sheets are separate routes. Listen to the ViewModel here as
+        // well as on the page so settings values stay current while the sheet
+        // remains open.
+        return ListenableBuilder(
+          listenable: _viewModel,
+          builder: (context, _) {
+            return SettingsSheet(
+              dark: _dark,
+              // Preview display is separate from the saved capture output.
+              previewDisplayMode: _viewModel.previewDisplayMode,
+              previewChangeInFlight:
+                  _viewModel.status.startsWith('SWITCHING PREVIEW:'),
+              onPreviewDisplayMode: (mode) async {
+                final message =
+                    await _viewModel.setPreviewDisplayMode(mode);
 
-          // Legacy two-state capture control remains available in the
-          // existing settings sheet.
-          captureMode:
-              _viewModel.captureMode,
+                if (!mounted || !sheetContext.mounted) {
+                  return;
+                }
 
-          onTheme: () {
-            if (!mounted) {
-              return;
-            }
+                if (message != null && message.isNotEmpty) {
+                  _showSheetToast(sheetContext, message);
+                }
+              },
+              onTheme: () {
+                if (!mounted) {
+                  return;
+                }
 
-            setState(() {
-              _dark = !_dark;
-            });
+                setState(() {
+                  _dark = !_dark;
+                });
 
-            if (sheetContext.mounted) {
-              Navigator.of(
-                sheetContext,
-              ).pop();
-            }
-          },
+                if (sheetContext.mounted) {
+                  Navigator.of(sheetContext).pop();
+                }
+              },
+              onRotate: () async {
+                await _toggleOrientation();
 
-          onCaptureMode: () async {
-            final message =
-                await _viewModel
-                    .toggleCaptureMode();
+                if (sheetContext.mounted) {
+                  Navigator.of(sheetContext).pop();
+                }
+              },
+              onAdvancedSettings: () {
+                if (!mounted) {
+                  return;
+                }
 
-            if (!mounted) {
-              return;
-            }
-
-            if (message != null &&
-                message.isNotEmpty) {
-              _showToast(
-                message,
-              );
-              return;
-            }
-
-            if (sheetContext.mounted) {
-              Navigator.of(
-                sheetContext,
-              ).pop();
-            }
-          },
-
-          onRotate: () async {
-            await _toggleOrientation();
-
-            if (sheetContext.mounted) {
-              Navigator.of(
-                sheetContext,
-              ).pop();
-            }
-          },
-
-          onAdvancedSettings: () {
-            if (!mounted) {
-              return;
-            }
-
-            Navigator.of(
-              sheetContext,
-            ).pop();
-
-            unawaited(
-              _openAdvancedSettings(),
+                Navigator.of(sheetContext).pop();
+                unawaited(_openAdvancedSettings());
+              },
             );
           },
         );
@@ -199,29 +177,24 @@ class _LandCamPageState
       return;
     }
 
-    final result =
-        await Navigator.of(context).push<AdvancedSettings>(
-      MaterialPageRoute(
-        builder: (_) =>
-            AdvancedSettingsPage(
+    // AdvancedSettingsPage returns the AdvancedSettings model directly.
+    // Keep the route's generic type and returned value aligned with that
+    // contract.
+    final result = await Navigator.of(context).push<AdvancedSettings>(
+      MaterialPageRoute<AdvancedSettings>(
+        builder: (_) => AdvancedSettingsPage(
           dark: _dark,
-          initialCaptureOutput:
-              _viewModel.captureOutput,
-          initialPerformance:
-              _viewModel.performance,
+          initialCaptureOutput: _viewModel.captureOutput,
+          initialPerformance: _viewModel.performance,
         ),
       ),
     );
 
-    if (!mounted ||
-        result == null) {
+    if (!mounted || result == null) {
       return;
     }
 
-    final message =
-        await _viewModel.applyAdvancedSettings(
-      result,
-    );
+    final message = await _viewModel.applyAdvancedSettings(result);
 
     if (!mounted ||
         message == null ||
@@ -247,122 +220,94 @@ class _LandCamPageState
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
-      backgroundColor:
-          Colors.transparent,
-      barrierColor:
-          Colors.black.withValues(
-        alpha: .78,
-      ),
-      builder: (
-        sheetContext,
-      ) {
-        return ConnectionSheet(
-          dark: _dark,
-
-          link:
-              _viewModel.link,
-          status:
-              _viewModel.status,
-
-          ssid:
-              _viewModel.ssid,
-          brand:
-              _viewModel.brand,
-          model:
-              _viewModel.model,
-          identityName:
-              _viewModel.cameraIdentityName,
-          protocol:
-              _viewModel.protocol,
-          host:
-              _viewModel.cameraHost,
-          port:
-              _viewModel.cameraPort,
-
-          logs:
-              _viewModel.logs,
-
-          nfcListening:
-              _viewModel.nfcListening,
-          supportsLiveView:
-              _viewModel.supportsLiveView,
-          supportsCapture:
-              _viewModel.supportsCapture,
-          supportsAutofocus:
-              _viewModel.supportsAutofocus,
-          dualOpticalRoiAvailable:
-              _viewModel
-                  .dualOpticalRoiAvailable,
-
-          currentBand:
-              _viewModel.band,
-          sourceLabel:
-              _viewModel.sourceLabel,
-
-          frameWidth:
-              _viewModel.frameWidth,
-          frameHeight:
-              _viewModel.frameHeight,
-          bitDepth:
-              _viewModel.bitDepth,
-
-          onStartNfc: () async {
-            await _viewModel
-                .startNfc();
-          },
-
-          onScan: () async {
-            await _viewModel
-                .scanNetwork();
-          },
-
-          onReconnect: () async {
-            await _viewModel
-                .reconnect();
-          },
-
-          onRefresh: () async {
-            await _viewModel
-                .refreshLiveview();
-          },
-
-          onClear: () {
-            _viewModel.clearLogs();
-          },
-
-          onCopy: () async {
-            await Clipboard.setData(
-              ClipboardData(
-                text:
-                    _viewModel.logsText,
-              ),
-            );
-
-            if (sheetContext.mounted) {
-              ScaffoldMessenger.of(
-                sheetContext,
-              )
-                ..hideCurrentSnackBar()
-                ..showSnackBar(
-                  const SnackBar(
-                    content:
-                        Text(
-                      'LOG COPIED',
-                    ),
-                  ),
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: .78),
+      builder: (sheetContext) {
+        // This is the key fix for stale connection-panel data: logs, status,
+        // camera metadata and capabilities are immutable snapshots passed to
+        // ConnectionSheet, so rebuild this sheet whenever the ViewModel emits.
+        return ListenableBuilder(
+          listenable: _viewModel,
+          builder: (context, _) {
+            return ConnectionSheet(
+              dark: _dark,
+              link: _viewModel.link,
+              status: _viewModel.status,
+              connectionOperation: _viewModel.connectionOperation,
+              operationInFlight: _viewModel.connectionOperationInFlight,
+              ssid: _viewModel.ssid,
+              brand: _viewModel.brand,
+              model: _viewModel.model,
+              identityName: _viewModel.cameraIdentityName,
+              protocol: _viewModel.protocol,
+              host: _viewModel.cameraHost,
+              port: _viewModel.cameraPort,
+              logs: _viewModel.logs,
+              nfcListening: _viewModel.nfcListening,
+              supportsLiveView: _viewModel.supportsLiveView,
+              supportsCapture: _viewModel.supportsCapture,
+              supportsAutofocus: _viewModel.supportsAutofocus,
+              dualOpticalRoiAvailable:
+                  _viewModel.dualOpticalRoiAvailable,
+              currentBand: _viewModel.band,
+              sourceLabel: _viewModel.sourceLabel,
+              frameWidth: _viewModel.frameWidth,
+              frameHeight: _viewModel.frameHeight,
+              bitDepth: _viewModel.bitDepth,
+              onStartNfc: () async {
+                final started = await _viewModel.startNfc();
+                if (!started && sheetContext.mounted) {
+                  _showSheetToast(sheetContext, 'NFC COULD NOT START');
+                }
+              },
+              onScan: () async {
+                final accepted = await _viewModel.scanNetwork();
+                if (!accepted && sheetContext.mounted) {
+                  _showSheetToast(
+                    sheetContext,
+                    'NETWORK SCAN COULD NOT START — CHECK CURRENT OPERATION',
+                  );
+                }
+              },
+              onReconnect: () async {
+                final accepted = await _viewModel.reconnect();
+                if (!accepted && sheetContext.mounted) {
+                  _showSheetToast(
+                    sheetContext,
+                    'RECONNECT COULD NOT START — CHECK CURRENT OPERATION',
+                  );
+                }
+              },
+              onRefresh: () async {
+                await _viewModel.refreshLiveview();
+              },
+              onClear: _viewModel.clearLogs,
+              onCopy: () async {
+                await Clipboard.setData(
+                  ClipboardData(text: _viewModel.logsText),
                 );
-            }
-          },
 
-          onDisconnect: () async {
-            await _viewModel
-                .disconnect();
+                if (sheetContext.mounted) {
+                  _showSheetToast(sheetContext, 'LOG COPIED');
+                }
+              },
+              onDisconnect: () async {
+                await _viewModel.disconnect();
 
-            if (sheetContext.mounted) {
-              Navigator.of(
-                sheetContext,
-              ).pop();
-            }
+                if (!sheetContext.mounted) {
+                  return;
+                }
+
+                if (_viewModel.link == CameraLink.idle) {
+                  Navigator.of(sheetContext).pop();
+                } else {
+                  _showSheetToast(
+                    sheetContext,
+                    'DISCONNECT NOT CONFIRMED: ${_viewModel.status}',
+                  );
+                }
+              },
+            );
           },
         );
       },
@@ -451,6 +396,68 @@ class _LandCamPageState
       );
   }
 
+  void _showSheetToast(
+    BuildContext sheetContext,
+    String message,
+  ) {
+    if (!mounted ||
+        !sheetContext.mounted ||
+        message.trim().isEmpty) {
+      return;
+    }
+
+    // A modal bottom sheet is a separate Navigator route. Looking up the
+    // messenger from sheetContext can return the app-level messenger, which
+    // may have no registered Scaffold because the page owns a nested
+    // ScaffoldMessenger. Prefer the page's explicitly keyed messenger.
+    final messenger = _messengerKey.currentState;
+    if (messenger != null && messenger.mounted) {
+      try {
+        messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              duration: const Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
+              content: Text(
+                message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          );
+        return;
+      } on FlutterError {
+        // There can briefly be no registered Scaffold during route/lifecycle
+        // transitions. Fall through to a dialog, which doesn't need a Scaffold.
+      } on AssertionError {
+        // showSnackBar uses an assertion when the messenger currently has no
+        // descendant Scaffold. Treat that transition as a UI fallback case.
+      }
+    }
+
+    // Safe fallback: never allow a feedback message to trigger an unhandled
+    // ScaffoldMessenger assertion or hide the real native bridge error.
+    unawaited(
+      showDialog<void>(
+        context: sheetContext,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('LANDCAM'),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // Build
   // ---------------------------------------------------------------------------
@@ -536,6 +543,8 @@ class _LandCamPageState
               ndviEnabled:
                   _viewModel
                       .ndviEnabled,
+              previewMode:
+                  _viewModel.previewMode,
               ndvi:
                   _viewModel
                       .ndvi,
