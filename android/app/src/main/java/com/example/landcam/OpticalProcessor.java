@@ -1,5 +1,4 @@
 package com.example.landcam;
-
 import android.graphics.Bitmap;
 import android.graphics.Bitmap.Config;
 import android.graphics.Canvas;
@@ -8,12 +7,9 @@ import android.graphics.ColorMatrixColorFilter;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.util.Log;
-
 import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
-import java.util.List;
 import java.util.Locale;
-
 /**
  * LANDCAM optical image processor.
  *
@@ -43,7 +39,8 @@ public final class OpticalProcessor {
 
     // ---------------------------------------------------------------------
     // Optical calibration constants
-    // ---------------------------------------------------------------------
+
+    //   
 
     private static final int ROI_SCAN_STEP =
             4;
@@ -68,61 +65,133 @@ public final class OpticalProcessor {
 
     private static final float FALLBACK_RGB_LEFT =
             0.00f;
+
     private static final float FALLBACK_RGB_TOP =
             0.085f;
+
     private static final float FALLBACK_RGB_RIGHT =
             0.455f;
+
     private static final float FALLBACK_RGB_BOTTOM =
             0.955f;
+
     private static final float FALLBACK_NIR_LEFT =
             0.505f;
+
     private static final float FALLBACK_NIR_TOP =
             0.11f;
+
     private static final float FALLBACK_NIR_RIGHT =
             1.00f;
+
     private static final float FALLBACK_NIR_BOTTOM =
             0.93f;
 
     // ---------------------------------------------------------------------
     // NDVI constants
+
     // ---------------------------------------------------------------------
 
     private static final int NDVI_MAX_SAMPLES_PER_AXIS =
             160;
+
     private static final int NDVI_MIN_SAMPLES_PER_AXIS =
             8;
-    private static final int NDVI_MIN_INTENSITY =
-            1;
-    private static final double NDVI_EPSILON =
-            1e-6;
-    private static final int NDVI_MIN_SIGNAL_SUM =
-            8;
+
+    /** Minimum encoded signal below which channel values are noise dominated. */
+
+    private static final int NDVI_MIN_CHANNEL_SIGNAL = 6;
+
+    /** Near-clipped JPEG values are unreliable for index calculation. */
+
+    private static final int NDVI_SATURATION_LEVEL = 250;
+
+    private static final double NDVI_EPSILON = 1e-9;
+
+    /** Upper bound for CPU false-colour preview work per frame. */
+
+    private static final int NDVI_PREVIEW_MAX_PIXELS = 160_000;
+
+    /** False-colour display only: green is reserved for this NDVI and above. */
+
+    private static final double NDVI_GREEN_THRESHOLD = 0.25d;
+    private static final float NDVI_SESSION_GAIN_MIN = 0.50f;
+    private static final float NDVI_SESSION_GAIN_MAX = 4.00f;
+    private static final int NDVI_SESSION_GAIN_PERCENTILE = 85;
+    private static final int NDVI_SESSION_GAIN_MIN_SAMPLES = 64;
+
+    private static final int NDVI_NODATA_COLOR = android.graphics.Color.BLACK;
+
+    private static final int NDVI_NON_VEGETATION_COLOR = android.graphics.Color.rgb(42, 42, 42);
+
+    private static final int NDVI_COLOR_LOW = android.graphics.Color.rgb(89, 10, 24);
+
+    private static final int NDVI_COLOR_RED = android.graphics.Color.rgb(201, 20, 36);
+
+    private static final int NDVI_COLOR_ORANGE = android.graphics.Color.rgb(255, 101, 0);
+
+    private static final int NDVI_COLOR_YELLOW = android.graphics.Color.rgb(255, 213, 42);
+
+    private static final int NDVI_COLOR_GREEN_START = android.graphics.Color.rgb(184, 230, 41);
+
+    private static final int NDVI_COLOR_GREEN_END = android.graphics.Color.rgb(13, 168, 59);
 
     // ---------------------------------------------------------------------
     // Performance defaults
+
     // ---------------------------------------------------------------------
 
     private static final double DEFAULT_PROCESSING_SCALE =
             0.75d;
+
     private static final double MIN_PROCESSING_SCALE =
             0.10d;
+
     private static final double MAX_PROCESSING_SCALE =
             1.00d;
 
     // ---------------------------------------------------------------------
     // State
+
     // ---------------------------------------------------------------------
 
     private volatile int calibratedSourceWidth =
             -1;
+
     private volatile int calibratedSourceHeight =
             -1;
+
     private volatile Rect rgbCropRect;
+
     private volatile Rect nirCropRect;
+
     private volatile boolean realNirAvailable;
+
+    /** True when ROI coordinates had to use the fixed geometry fallback. */
+
+    private volatile boolean roiFallbackUsed;
+
+    /** NIR-to-Red inverse affine registration; defaults are identity only. */
+
+    private volatile RegistrationTransform nirRegistration = RegistrationTransform.identity();
+
+    /** Cached because the NIR encoding of a camera stream is normally stable. */
+    private volatile Boolean nirLikelyColorEncodedCache;
+
+    /** Frozen preview balancing only; this is not radiometric calibration. */
+    private volatile float ndviNirGain = 1.0f;
+    private volatile boolean ndviNirGainCalibrated;
+
+    /** Preview-only visible-spectrum heuristic; never changes raw capture. */
+
+    private volatile boolean vegetationMaskEnabled = false;
+
     private volatile boolean grayscaleMode;
+
     private volatile int currentOutputWidth;
+
     private volatile int currentOutputHeight;
+
     private volatile double processingScale =
             DEFAULT_PROCESSING_SCALE;
 
@@ -136,6 +205,12 @@ public final class OpticalProcessor {
         rgbCropRect = null;
         nirCropRect = null;
         realNirAvailable = false;
+        roiFallbackUsed = false;
+        nirRegistration = RegistrationTransform.identity();
+        nirLikelyColorEncodedCache = null;
+        ndviNirGain = 1.0f;
+        ndviNirGainCalibrated = false;
+        vegetationMaskEnabled = false;
         grayscaleMode = false;
         currentOutputWidth = 0;
         currentOutputHeight = 0;
@@ -169,12 +244,10 @@ public final class OpticalProcessor {
         if (rawMode == null) {
             return false;
         }
-
         String mode = rawMode.trim().toUpperCase(Locale.US);
-
         switch (mode) {
             case "PERFORMANCE":
-                processingScale = 0.50d;
+                processingScale = 0.25d;
                 return true;
             case "BALANCED":
                 processingScale = 0.75d;
@@ -188,12 +261,86 @@ public final class OpticalProcessor {
         }
     }
 
+    /**
+     * Supplies a measured residual mapping from Red crop coordinates to NIR.
+     *
+     * Scale/translation values operate in normalized crop coordinates. A shift
+     * of 0.01 means 1% of the corresponding crop dimension. Values are
+     * intentionally not auto-estimated from the scene: scene content is not a
+     * calibration target and must not change the geometry between frames.
+     *
+     * Default identity values are a fallback, NOT proof of optical alignment.
+     */
+
+    public synchronized boolean setNirRegistration(
+            float scaleX,
+            float scaleY,
+            float rotationDegrees,
+            float shiftXNormalized,
+            float shiftYNormalized
+    ) {
+        if (!isFinite(scaleX) || !isFinite(scaleY)
+                || !isFinite(rotationDegrees)
+                || !isFinite(shiftXNormalized) || !isFinite(shiftYNormalized)) {
+            return false;
+        }
+        if (scaleX < 0.50f || scaleX > 2.00f
+                || scaleY < 0.50f || scaleY > 2.00f
+                || Math.abs(rotationDegrees) > 45.0f
+                || Math.abs(shiftXNormalized) > 0.25f
+                || Math.abs(shiftYNormalized) > 0.25f) {
+            return false;
+        }
+        final double radians = Math.toRadians(rotationDegrees);
+        nirRegistration = new RegistrationTransform(
+                scaleX,
+                scaleY,
+                (float) Math.cos(radians),
+                (float) Math.sin(radians),
+                shiftXNormalized,
+                shiftYNormalized,
+                true
+        );
+        ndviNirGain = 1.0f;
+        ndviNirGainCalibrated = false;
+        return true;
+    }
+
+    /** Restores identity registration and explicitly marks it uncalibrated. */
+
+    public synchronized void clearNirRegistration() {
+        nirRegistration = RegistrationTransform.identity();
+        ndviNirGain = 1.0f;
+        ndviNirGainCalibrated = false;
+    }
+
+    public boolean isNirRegistrationCalibrated() {
+        return nirRegistration.calibrated;
+    }
+
+    public boolean isRoiFallbackUsed() {
+        return roiFallbackUsed;
+    }
+
+    public void setVegetationMaskEnabled(boolean enabled) {
+        vegetationMaskEnabled = enabled;
+    }
+
+    public boolean isVegetationMaskEnabled() {
+        return vegetationMaskEnabled;
+    }
+
+    private boolean isFinite(float value) {
+        return !Float.isNaN(value) && !Float.isInfinite(value);
+    }
+
     public boolean hasNirRoi() {
         return realNirAvailable
                 && isUsableCrop(
                 nirCropRect,
                 calibratedSourceWidth,
                 calibratedSourceHeight
+
         );
     }
 
@@ -208,22 +355,24 @@ public final class OpticalProcessor {
         if (source == null || source.isRecycled()) {
             return;
         }
-
         int width = source.getWidth();
         int height = source.getHeight();
-
         if (width == calibratedSourceWidth
                 && height == calibratedSourceHeight
                 && rgbCropRect != null
                 && nirCropRect != null) {
             return;
         }
-
+        // A changed source geometry invalidates the session preview balance.
+        ndviNirGain = 1.0f;
+        ndviNirGainCalibrated = false;
+        nirLikelyColorEncodedCache = null;
         int opticalSplit = detectOpticalSplit(source);
         Rect detectedRgb = detectOpticalRoi(source, 0, opticalSplit);
         Rect detectedNir = detectOpticalRoi(source, opticalSplit, width);
-
+        boolean fallback = false;
         if (!isUsableCrop(detectedRgb, width, height)) {
+            fallback = true;
             detectedRgb = fallbackSquareCrop(
                     width,
                     height,
@@ -231,10 +380,11 @@ public final class OpticalProcessor {
                     FALLBACK_RGB_TOP,
                     FALLBACK_RGB_RIGHT,
                     FALLBACK_RGB_BOTTOM
+
             );
         }
-
         if (!isUsableCrop(detectedNir, width, height)) {
+            fallback = true;
             detectedNir = fallbackSquareCrop(
                     width,
                     height,
@@ -242,22 +392,26 @@ public final class OpticalProcessor {
                     FALLBACK_NIR_TOP,
                     FALLBACK_NIR_RIGHT,
                     FALLBACK_NIR_BOTTOM
+
             );
         }
-
         rgbCropRect = detectedRgb;
         nirCropRect = detectedNir;
+        nirLikelyColorEncodedCache = null;
         calibratedSourceWidth = width;
         calibratedSourceHeight = height;
         realNirAvailable = isUsableCrop(rgbCropRect, width, height)
                 && isUsableCrop(nirCropRect, width, height);
-
+        roiFallbackUsed = fallback;
         Log.i(
                 TAG,
                 "Dual optical calibration: "
                         + "RGB=" + rectToString(rgbCropRect)
                         + " NIR=" + rectToString(nirCropRect)
                         + " split=" + opticalSplit
+                        + " fallback=" + roiFallbackUsed
+                        + " registration=" + (nirRegistration.calibrated ? "CALIBRATED" : "IDENTITY_UNCALIBRATED")
+
         );
     }
 
@@ -268,31 +422,23 @@ public final class OpticalProcessor {
         if (source == null || source.isRecycled()) {
             return null;
         }
-
         ensureDualOpticalCalibration(source);
-
         String band = normalizeBand(rawBand);
-
         Rect rect = "NIR".equals(band)
                 ? nirCropRect
                 : rgbCropRect;
-
         if (!isUsableCrop(rect, source.getWidth(), source.getHeight())) {
             return null;
         }
-
         Bitmap crop = null;
         Bitmap transformed = null;
         Bitmap scaled = null;
-
         try {
             crop = createSafeBitmapCrop(source, rect);
             if (crop == null || crop.isRecycled()) {
                 return null;
             }
-
             transformed = crop;
-
             if ("R".equals(band)) {
                 transformed = channelBitmap(crop, 0);
             } else if ("G".equals(band)) {
@@ -300,232 +446,524 @@ public final class OpticalProcessor {
             } else if ("B".equals(band)) {
                 transformed = channelBitmap(crop, 2);
             } else if ("NIR".equals(band)) {
-                transformed = grayscaleBitmap(crop);
+                transformed = grayscaleNirBitmap(crop);
             }
-
             if (transformed == null || transformed.isRecycled()) {
                 return null;
             }
-
             scaled = scaleForProcessing(transformed);
-
             Bitmap output = scaled != null ? scaled : transformed;
-
             currentOutputWidth = output.getWidth();
             currentOutputHeight = output.getHeight();
-
             return bitmapToJpeg(output, IMAGE_JPEG_QUALITY);
-
         } finally {
-            recycleIfDifferent(scaled, transformed);
-            recycleIfDifferent(scaled, crop);
-
-            if (transformed != crop) {
-                recycleIfDifferent(transformed, scaled);
+            // Recycle only bitmaps owned by this method, exactly once.
+            if (scaled != null && scaled != crop && scaled != transformed
+                    && !scaled.isRecycled()) {
+                scaled.recycle();
             }
-
-            recycleIfDifferent(crop, scaled);
-
+            if (transformed != null && transformed != crop && !transformed.isRecycled()) {
+                transformed.recycle();
+            }
             if (crop != null && !crop.isRecycled()) {
                 crop.recycle();
             }
-
-            if (transformed != null
-                    && transformed != crop
-                    && transformed != scaled
-                    && !transformed.isRecycled()) {
-                transformed.recycle();
-            }
-
             if (scaled != null && !scaled.isRecycled()) {
                 scaled.recycle();
             }
         }
     }
 
+    /**
+     * Calculates a relative digital NDVI summary over all valid overlapping
+     * Red/NIR samples. Values are derived from JPEG-encoded pixels, so this is
+     * not radiometrically calibrated reflectance NDVI.
+     */
+
     public NdviResult calculateNdvi(Bitmap source) {
+        return calculateNdviInternal(source, false);
+    }
+
+    /**
+     * Calculates NDVI statistics only for visible-spectrum vegetation
+     * candidates. This is a heuristic mask, not proof of biological identity
+     * or health; synthetic foliage can still match it.
+     */
+
+    public NdviResult calculateVegetationNdvi(Bitmap source) {
+        return calculateNdviInternal(source, true);
+    }
+
+    private NdviResult calculateNdviInternal(Bitmap source, boolean foliageOnly) {
         if (source == null || source.isRecycled()) {
             return null;
         }
-
         ensureDualOpticalCalibration(source);
-
+        final Rect redRect = rgbCropRect;
+        final Rect nirRect = nirCropRect;
         if (!hasNirRoi()
-                || !isUsableCrop(
-                rgbCropRect,
-                source.getWidth(),
-                source.getHeight()
-        )) {
+                || !isUsableCrop(redRect, source.getWidth(), source.getHeight())) {
             return null;
         }
-
-        Rect redRect = rgbCropRect;
-        Rect nirRect = nirCropRect;
-
-        int redWidth = redRect.width();
-        int redHeight = redRect.height();
-        int nirWidth = nirRect.width();
-        int nirHeight = nirRect.height();
-
+        final int redWidth = redRect.width();
+        final int redHeight = redRect.height();
+        final int nirWidth = nirRect.width();
+        final int nirHeight = nirRect.height();
+        final RegistrationTransform registration = nirRegistration;
         if (redWidth <= 0 || redHeight <= 0 || nirWidth <= 0 || nirHeight <= 0) {
             return null;
         }
-
-        int sampleAxisLimit = ndviSampleAxisLimit();
-
-        int sampleWidth = Math.min(
-                sampleAxisLimit,
-                Math.min(redWidth, nirWidth)
-        );
-
-        int sampleHeight = Math.min(
-                sampleAxisLimit,
-                Math.min(redHeight, nirHeight)
-        );
-
-        sampleWidth = Math.max(NDVI_MIN_SAMPLES_PER_AXIS, sampleWidth);
-        sampleHeight = Math.max(NDVI_MIN_SAMPLES_PER_AXIS, sampleHeight);
-
-        double sum = 0.0;
+        final boolean colorEncodedNir = isNirLikelyColorEncoded(source);
+        ensureNdviSessionGain(source, redRect, nirRect, registration);
+        final int sampleAxisLimit = ndviSampleAxisLimit();
+        final int sampleWidth = Math.max(
+                1, Math.min(sampleAxisLimit, redWidth));
+        final int sampleHeight = Math.max(
+                1, Math.min(sampleAxisLimit, redHeight));
+        double sum = 0.0d;
         double min = Double.POSITIVE_INFINITY;
         double max = Double.NEGATIVE_INFINITY;
         int validPixels = 0;
-
+        int sampledPixels = 0;
         for (int sy = 0; sy < sampleHeight; sy++) {
-            float normalizedY = sampleHeight <= 1
-                    ? 0f
-                    : sy / (float) (sampleHeight - 1);
-
-            int redY = redRect.top + Math.min(
-                    redHeight - 1,
-                    Math.round(
-                            normalizedY * (redHeight - 1)
-                    )
-            );
-
-            int nirY = nirRect.top + Math.min(
-                    nirHeight - 1,
-                    Math.round(
-                            normalizedY * (nirHeight - 1)
-                    )
-            );
-
+            final float v = sampleHeight <= 1 ? 0.5f : sy / (float) (sampleHeight - 1);
+            final int redY = redRect.top + clampInt(Math.round(v * (redHeight - 1)), 0, redHeight - 1);
             for (int sx = 0; sx < sampleWidth; sx++) {
-                float normalizedX = sampleWidth <= 1
-                        ? 0f
-                        : sx / (float) (sampleWidth - 1);
-
-                int redX = redRect.left + Math.min(
-                        redWidth - 1,
-                        Math.round(
-                                normalizedX * (redWidth - 1)
-                        )
-                );
-
-                int nirX = nirRect.left + Math.min(
-                        nirWidth - 1,
-                        Math.round(
-                                normalizedX * (nirWidth - 1)
-                        )
-                );
-
-                int redColor = source.getPixel(redX, redY);
-                int nirColor = source.getPixel(nirX, nirY);
-
-                int red = (redColor >> 16) & 0xFF;
-                int nir = pixelLuma(nirColor);
-
-                int sumSignal = red + nir;
-
-                if (red < NDVI_MIN_INTENSITY && nir < NDVI_MIN_INTENSITY) {
+                sampledPixels++;
+                final float u = sampleWidth <= 1 ? 0.5f : sx / (float) (sampleWidth - 1);
+                final int redX = redRect.left + clampInt(Math.round(u * (redWidth - 1)), 0, redWidth - 1);
+                final long mapped = mapRedUvToNirPixel(u, v, nirWidth, nirHeight, registration);
+                if (mapped < 0L) {
                     continue;
                 }
-
-                if (sumSignal < NDVI_MIN_SIGNAL_SUM) {
+                final int nirX = nirRect.left + (int) (mapped >>> 32);
+                final int mappedNirY = nirRect.top + (int) mapped;
+                final int redColor = source.getPixel(redX, redY);
+                if (foliageOnly && !isFoliageCandidate(redColor)) {
                     continue;
                 }
-
-                double denominator = nir + red + NDVI_EPSILON;
-
-                double value = ((double) nir - (double) red) / denominator;
-
+                final int red8 = android.graphics.Color.red(redColor);
+                final int nir8 = pixelNirIntensity(source.getPixel(nirX, mappedNirY));
+                if (!isValidSignal(red8, nir8)) {
+                    continue;
+                }
+                final double red = srgbToLinear(red8 / 255.0d);
+                final double nir = srgbToLinear(nir8 / 255.0d) * ndviNirGain;
+                final double denominator = nir + red;
+                if (!(denominator > NDVI_EPSILON)) {
+                    continue;
+                }
+                final double value = clampDouble((nir - red) / denominator, -1.0d, 1.0d);
                 if (Double.isNaN(value) || Double.isInfinite(value)) {
                     continue;
                 }
-
-                value = Math.max(-1.0, Math.min(1.0, value));
-
                 sum += value;
                 min = Math.min(min, value);
                 max = Math.max(max, value);
                 validPixels++;
             }
         }
+        if (validPixels == 0) {
+            return new NdviResult(
+                    Double.NaN, Double.NaN, Double.NaN, 0,
+                    sampledPixels, 0.0d, registration.calibrated,
+                    colorEncodedNir, foliageOnly);
+        }
+        double validFraction = sampledPixels <= 0 ? 0.0d : validPixels / (double) sampledPixels;
+        return new NdviResult(
+                sum / validPixels, min, max, validPixels,
+                sampledPixels, validFraction, registration.calibrated,
+                colorEncodedNir, foliageOnly);
+    }
 
-        if (validPixels <= 0) {
+    /**
+     * Creates a pure NDVI false-colour JPEG on the Red crop coordinate plane.
+     * Pixels outside the registered overlap are black. Valid pixels outside
+     * the optional visible vegetation-candidate mask are neutral dark grey.
+     */
+
+    public byte[] processNdviPreviewJpeg(Bitmap source) {
+        if (source == null || source.isRecycled()) {
             return null;
         }
+        ensureDualOpticalCalibration(source);
+        final Rect redRect = rgbCropRect;
+        final Rect nirRect = nirCropRect;
+        if (!hasNirRoi()
+                || !isUsableCrop(redRect, source.getWidth(), source.getHeight())) {
+            return null;
+        }
+        final int redWidth = redRect.width();
+        final int redHeight = redRect.height();
+        final int nirWidth = nirRect.width();
+        final int nirHeight = nirRect.height();
+        final RegistrationTransform registration = nirRegistration;
+        if (redWidth < 2 || redHeight < 2 || nirWidth < 2 || nirHeight < 2) {
+            return null;
+        }
+        ensureNdviSessionGain(source, redRect, nirRect, registration);
+        double scale = Math.max(MIN_PROCESSING_SCALE,
+                Math.min(MAX_PROCESSING_SCALE, processingScale));
+        int outWidth = Math.max(16, (int) Math.round(redWidth * scale));
+        int outHeight = Math.max(16, (int) Math.round(redHeight * scale));
+        final double pixelBudgetScale = Math.sqrt(
+                NDVI_PREVIEW_MAX_PIXELS / (double) Math.max(1L, (long) outWidth * outHeight));
+        if (pixelBudgetScale < 1.0d) {
+            outWidth = Math.max(16, (int) Math.floor(outWidth * pixelBudgetScale));
+            outHeight = Math.max(16, (int) Math.floor(outHeight * pixelBudgetScale));
+        }
+        outWidth = Math.min(outWidth, MAX_PROCESSING_DIMENSION);
+        outHeight = Math.min(outHeight, MAX_PROCESSING_DIMENSION);
+        Bitmap output = null;
+        try {
+            output = Bitmap.createBitmap(outWidth, outHeight, Config.ARGB_8888);
+            final int[] pixels = new int[outWidth * outHeight];
+            for (int y = 0; y < outHeight; y++) {
+                final float v = y / (float) Math.max(1, outHeight - 1);
+                final int redY = redRect.top + clampInt(Math.round(v * (redHeight - 1)), 0, redHeight - 1);
+                for (int x = 0; x < outWidth; x++) {
+                    final int index = y * outWidth + x;
+                    final float u = x / (float) Math.max(1, outWidth - 1);
+                    final int redX = redRect.left + clampInt(Math.round(u * (redWidth - 1)), 0, redWidth - 1);
+                    final long mapped = mapRedUvToNirPixel(u, v, nirWidth, nirHeight, registration);
+                    if (mapped < 0L) {
+                        pixels[index] = NDVI_NODATA_COLOR;
+                        continue;
+                    }
+                    final int nirX = nirRect.left + (int) (mapped >>> 32);
+                    final int nirY = nirRect.top + (int) mapped;
+                    final int redColor = source.getPixel(redX, redY);
+                    if (vegetationMaskEnabled && !isFoliageCandidate(redColor)) {
+                        // This is excluded by the display mask, not a no-data pixel.
+                        pixels[index] = NDVI_NON_VEGETATION_COLOR;
+                        continue;
+                    }
+                    final int red8 = android.graphics.Color.red(redColor);
+                    final int nir8 = pixelNirIntensity(source.getPixel(nirX, nirY));
+                    if (!isValidSignal(red8, nir8)) {
+                        pixels[index] = NDVI_NODATA_COLOR;
+                        continue;
+                    }
+                    final double red = srgbToLinear(red8 / 255.0d);
+                    final double nir = srgbToLinear(nir8 / 255.0d) * ndviNirGain;
+                    final double denominator = red + nir;
+                    if (!(denominator > NDVI_EPSILON)) {
+                        pixels[index] = NDVI_NODATA_COLOR;
+                        continue;
+                    }
+                    final double ndvi = clampDouble((nir - red) / denominator, -1.0d, 1.0d);
+                    pixels[index] = ndviColor(ndvi);
+                }
+            }
+            output.setPixels(pixels, 0, outWidth, 0, 0, outWidth, outHeight);
+            currentOutputWidth = outWidth;
+            currentOutputHeight = outHeight;
+            return bitmapToJpeg(output, 90);
+        } catch (OutOfMemoryError error) {
+            Log.e(TAG, "NDVI preview allocation OOM", error);
+            return null;
+        } catch (Exception error) {
+            Log.e(TAG, "NDVI preview generation failed", error);
+            return null;
+        } finally {
+            if (output != null && !output.isRecycled()) {
+                output.recycle();
+            }
+        }
+    }
 
-        double mean = sum / validPixels;
+    /**
+     * The current composite sample shows the NIR field in magenta. Luma
+     * underweights that encoding because its green component is deliberately
+     * low. Use max(R,B) for pixels with a magenta signature and normal luma for
+     * neutral/grayscale pixels. This extracts display intensity, not radiance.
+     */
+    private int pixelNirIntensity(int color) {
+        final int r = android.graphics.Color.red(color);
+        final int g = android.graphics.Color.green(color);
+        final int b = android.graphics.Color.blue(color);
+        if (r > g + 12 && b > g + 12) {
+            return Math.max(r, b);
+        }
+        return pixelLuma(color);
+    }
 
-        return new NdviResult(
-                mean,
-                min,
-                max,
-                validPixels
-        );
+    /**
+     * Estimate one preview-only channel balance, then hold it stable until reset
+     * or source geometry changes. This is not radiometric calibration.
+     */
+    private synchronized void ensureNdviSessionGain(
+            Bitmap source,
+            Rect redRect,
+            Rect nirRect,
+            RegistrationTransform registration
+    ) {
+        if (ndviNirGainCalibrated || source == null || source.isRecycled()) {
+            return;
+        }
+        final int grid = 48;
+        final int[] redHistogram = new int[256];
+        final int[] nirHistogram = new int[256];
+        int valid = 0;
+        for (int gy = 0; gy < grid; gy++) {
+            final float v = gy / (float) (grid - 1);
+            final int redY = redRect.top + clampInt(Math.round(v * (redRect.height() - 1)), 0, redRect.height() - 1);
+            for (int gx = 0; gx < grid; gx++) {
+                final float u = gx / (float) (grid - 1);
+                final int redX = redRect.left + clampInt(Math.round(u * (redRect.width() - 1)), 0, redRect.width() - 1);
+                final long mapped = mapRedUvToNirPixel(u, v, nirRect.width(), nirRect.height(), registration);
+                if (mapped < 0L) {
+                    continue;
+                }
+                final int nirX = nirRect.left + (int) (mapped >>> 32);
+                final int nirY = nirRect.top + (int) mapped;
+                final int red = android.graphics.Color.red(source.getPixel(redX, redY));
+                final int nir = pixelNirIntensity(source.getPixel(nirX, nirY));
+                if (red < NDVI_MIN_CHANNEL_SIGNAL || nir < NDVI_MIN_CHANNEL_SIGNAL
+                        || red >= NDVI_SATURATION_LEVEL || nir >= NDVI_SATURATION_LEVEL) {
+                    continue;
+                }
+                redHistogram[red]++;
+                nirHistogram[nir]++;
+                valid++;
+            }
+        }
+        if (valid < NDVI_SESSION_GAIN_MIN_SAMPLES) {
+            return;
+        }
+        final int redReference = histogramPercentile(redHistogram, valid, NDVI_SESSION_GAIN_PERCENTILE);
+        final int nirReference = histogramPercentile(nirHistogram, valid, NDVI_SESSION_GAIN_PERCENTILE);
+        final double redLinear = srgbToLinear(redReference / 255.0d);
+        final double nirLinear = srgbToLinear(nirReference / 255.0d);
+        if (!(redLinear > NDVI_EPSILON) || !(nirLinear > NDVI_EPSILON)) {
+            return;
+        }
+        ndviNirGain = (float) clampDouble(
+                redLinear / nirLinear, NDVI_SESSION_GAIN_MIN, NDVI_SESSION_GAIN_MAX);
+        ndviNirGainCalibrated = true;
+        Log.i(TAG, "NDVI session display balance set once: gain=" + ndviNirGain
+                + ", p" + NDVI_SESSION_GAIN_PERCENTILE + " Red=" + redReference
+                + " NIR intensity=" + nirReference
+                + ". Relative digital index only, not radiometric calibration.");
+    }
+
+    private int histogramPercentile(int[] histogram, int count, int percentile) {
+        if (histogram == null || histogram.length == 0 || count <= 0) {
+            return 0;
+        }
+        final int target = (int) Math.round((count - 1)
+                * Math.max(0, Math.min(100, percentile)) / 100.0d);
+        int cumulative = 0;
+        for (int i = 0; i < histogram.length; i++) {
+            cumulative += histogram[i];
+            if (cumulative > target) {
+                return i;
+            }
+        }
+        return histogram.length - 1;
+    }
+
+    private Bitmap grayscaleNirBitmap(Bitmap source) {
+        if (source == null || source.isRecycled()) {
+            return null;
+        }
+        final int width = source.getWidth();
+        final int height = source.getHeight();
+        final int[] input = new int[width * height];
+        final int[] output = new int[width * height];
+        source.getPixels(input, 0, width, 0, 0, width, height);
+        for (int i = 0; i < input.length; i++) {
+            final int value = pixelNirIntensity(input[i]);
+            output[i] = android.graphics.Color.rgb(value, value, value);
+        }
+        return Bitmap.createBitmap(output, 0, width, width, height, Config.ARGB_8888);
+    }
+
+    private boolean isValidSignal(int red8, int nir8) {
+        return red8 >= NDVI_MIN_CHANNEL_SIGNAL
+                && nir8 >= NDVI_MIN_CHANNEL_SIGNAL
+                && red8 < NDVI_SATURATION_LEVEL
+                && nir8 < NDVI_SATURATION_LEVEL;
+    }
+
+    /**
+     * Inverse sRGB transfer approximates linear light for a JPEG preview. It
+     * does not undo camera tone curves or convert JPEG values to reflectance.
+     */
+
+    private double srgbToLinear(double encoded) {
+        double value = clampDouble(encoded, 0.0d, 1.0d);
+        return value <= 0.04045d
+                ? value / 12.92d
+                : Math.pow((value + 0.055d) / 1.055d, 2.4d);
+    }
+
+    private boolean isFoliageCandidate(int color) {
+        final double r = android.graphics.Color.red(color) / 255.0d;
+        final double g = android.graphics.Color.green(color) / 255.0d;
+        final double b = android.graphics.Color.blue(color) / 255.0d;
+        final double max = Math.max(r, Math.max(g, b));
+        final double min = Math.min(r, Math.min(g, b));
+        if (max < 24.0d / 255.0d || max - min < 16.0d / 255.0d) {
+            return false;
+        }
+        final double greenExcess = g - 0.5d * (r + b);
+        // Match CameraEngine's display-only foliage heuristic for GPU/CPU parity.
+        return g > r * 0.62d
+                && g > b * 1.10d
+                && greenExcess > 0.015d;
+    }
+
+    /** Classic continuous NDVI false-colour palette: red (-1), yellow (0), green (+1).
+     * Vegetation masking is intentionally opt-in because this camera's Red field
+     * is warm-tinted and RGB-green heuristics reject valid plant pixels.
+     */
+    private int ndviColor(double value) {
+        double v = clampDouble(value, -1.0d, 1.0d);
+        if (v <= 0.0d) {
+            return interpolateColor(NDVI_COLOR_RED, NDVI_COLOR_YELLOW, v + 1.0d);
+        }
+        return interpolateColor(NDVI_COLOR_YELLOW, NDVI_COLOR_GREEN_END, v);
+    }
+
+    private int interpolateColor(int from, int to, double fraction) {
+        double t = clampDouble(fraction, 0.0d, 1.0d);
+        int r = (int) Math.round(android.graphics.Color.red(from)
+                + (android.graphics.Color.red(to) - android.graphics.Color.red(from)) * t);
+        int g = (int) Math.round(android.graphics.Color.green(from)
+                + (android.graphics.Color.green(to) - android.graphics.Color.green(from)) * t);
+        int b = (int) Math.round(android.graphics.Color.blue(from)
+                + (android.graphics.Color.blue(to) - android.graphics.Color.blue(from)) * t);
+        return android.graphics.Color.rgb(r, g, b);
+    }
+
+    /** Returns true if more than 25% of sampled NIR-crop pixels are strongly chromatic. */
+
+    public synchronized boolean isNirLikelyColorEncoded(Bitmap source) {
+        if (source == null || source.isRecycled()) {
+            return false;
+        }
+        ensureDualOpticalCalibration(source);
+        if (nirLikelyColorEncodedCache != null) {
+            return nirLikelyColorEncodedCache;
+        }
+        final Rect rect = nirCropRect;
+        if (!isUsableCrop(rect, source.getWidth(), source.getHeight())) {
+            nirLikelyColorEncodedCache = false;
+            return false;
+        }
+        int examined = 0;
+        int chromatic = 0;
+        final int stepX = Math.max(1, rect.width() / 24);
+        final int stepY = Math.max(1, rect.height() / 24);
+        for (int y = rect.top + stepY / 2; y < rect.bottom; y += stepY) {
+            for (int x = rect.left + stepX / 2; x < rect.right; x += stepX) {
+                int c = source.getPixel(x, y);
+                int r = android.graphics.Color.red(c);
+                int g = android.graphics.Color.green(c);
+                int b = android.graphics.Color.blue(c);
+                if (Math.max(r, Math.max(g, b)) - Math.min(r, Math.min(g, b)) > 24) {
+                    chromatic++;
+                }
+                examined++;
+            }
+        }
+        boolean result = examined > 0 && chromatic / (double) examined > 0.25d;
+        nirLikelyColorEncodedCache = result;
+        if (result) {
+            Log.w(TAG, "NIR crop is chromatic; grayscale luma is only a digital approximation, not calibrated NIR intensity.");
+        }
+        return result;
+    }
+
+    /**
+     * Maps a Red crop UV to the nearest valid NIR crop pixel. The packed long
+     * avoids allocating a float array for every preview pixel. -1L means the
+     * transform falls outside the physical overlap.
+     */
+    private long mapRedUvToNirPixel(
+            float u,
+            float v,
+            int nirWidth,
+            int nirHeight,
+            RegistrationTransform transform
+    ) {
+        final float safeU = clampFloat(u, 0.0f, 1.0f);
+        final float safeV = clampFloat(v, 0.0f, 1.0f);
+        final float dx = safeU - 0.5f - transform.shiftX;
+        final float dy = safeV - 0.5f - transform.shiftY;
+        final float mappedU = 0.5f
+                + (dx * transform.cos + dy * transform.sin) / transform.scaleX;
+        final float mappedV = 0.5f
+                + (-dx * transform.sin + dy * transform.cos) / transform.scaleY;
+        if (mappedU < 0.0f || mappedU > 1.0f
+                || mappedV < 0.0f || mappedV > 1.0f) {
+            return -1L;
+        }
+        final int x = clampInt(Math.round(mappedU * (nirWidth - 1)), 0, nirWidth - 1);
+        final int y = clampInt(Math.round(mappedV * (nirHeight - 1)), 0, nirHeight - 1);
+        return (((long) x) << 32) | (y & 0xFFFFFFFFL);
+    }
+
+    private float clampFloat(float value, float min, float max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private int clampInt(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private double clampDouble(double value, double min, double max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     private Bitmap scaleForProcessing(Bitmap source) {
         if (source == null || source.isRecycled()) {
             return null;
         }
-
         double scale = processingScale;
         int width = source.getWidth();
         int height = source.getHeight();
-
         int targetWidth = Math.max(
                 16,
                 (int) Math.round(width * scale)
-        );
 
+        );
         int targetHeight = Math.max(
                 16,
                 (int) Math.round(height * scale)
-        );
 
+        );
         targetWidth = Math.min(targetWidth, width);
         targetHeight = Math.min(targetHeight, height);
-
         if (targetWidth > MAX_PROCESSING_DIMENSION
                 || targetHeight > MAX_PROCESSING_DIMENSION) {
             double ceilingScale = Math.min(
                     MAX_PROCESSING_DIMENSION / (double) targetWidth,
                     MAX_PROCESSING_DIMENSION / (double) targetHeight
-            );
 
+            );
             targetWidth = Math.max(
                     16,
                     (int) Math.round(targetWidth * ceilingScale)
-            );
 
+            );
             targetHeight = Math.max(
                     16,
                     (int) Math.round(targetHeight * ceilingScale)
+
             );
         }
-
         if (targetWidth == width && targetHeight == height) {
             return null;
         }
-
         try {
             return Bitmap.createScaledBitmap(
                     source,
                     targetWidth,
                     targetHeight,
                     true
+
             );
         } catch (OutOfMemoryError error) {
             Log.e(TAG, "Processing resize OOM", error);
@@ -540,92 +978,77 @@ public final class OpticalProcessor {
         double scale = processingScale;
         double areaAware = Math.sqrt(
                 Math.max(0.10d, Math.min(1.00d, scale))
-        );
 
+        );
         int result = (int) Math.round(
                 NDVI_MAX_SAMPLES_PER_AXIS * areaAware
-        );
 
+        );
         return Math.max(
                 NDVI_MIN_SAMPLES_PER_AXIS,
                 Math.min(NDVI_MAX_SAMPLES_PER_AXIS, result)
-        );
-    }
 
-    private void recycleIfDifferent(Bitmap bitmap, Bitmap other) {
-        if (bitmap == null || bitmap == other || bitmap.isRecycled()) {
-            return;
-        }
-        bitmap.recycle();
+        );
     }
 
     private int detectOpticalSplit(Bitmap source) {
         final int width = source.getWidth();
         final int height = source.getHeight();
         final float threshold = opticalBlackThreshold(source);
-
         int yStart = Math.max(
                 0,
                 Math.round(height * 0.22f)
-        );
 
+        );
         int yEnd = Math.min(
                 height,
                 Math.round(height * 0.78f)
-        );
 
+        );
         if (yEnd <= yStart) {
             return width / 2;
         }
-
         float[] darkProfile = new float[width];
-
         int samples = Math.max(
                 1,
                 (yEnd - yStart + ROI_SCAN_STEP - 1) / ROI_SCAN_STEP
-        );
 
+        );
         for (int x = 0; x < width; x++) {
             int dark = 0;
-
             for (int i = 0; i < samples; i++) {
                 int y = Math.min(
                         yEnd - 1,
                         yStart + i * ROI_SCAN_STEP
-                );
 
+                );
                 if (pixelLuma(source.getPixel(x, y)) <= threshold) {
                     dark++;
                 }
             }
-
             darkProfile[x] = dark / (float) samples;
         }
-
         smoothProfile(darkProfile, 12);
-
         int searchStart = Math.max(
                 1,
                 Math.round(width * 0.35f)
-        );
 
+        );
         int searchEnd = Math.min(
                 width - 1,
                 Math.round(width * 0.65f)
-        );
 
+        );
         int minimumRun = Math.max(
                 16,
                 Math.round(width * 0.015f)
-        );
 
+        );
         int bestStart = -1;
         int bestEnd = -1;
         int runStart = -1;
-
         for (int x = searchStart; x <= searchEnd; x++) {
             boolean dark = darkProfile[x] >= 0.82f;
-
             if (dark) {
                 if (runStart < 0) {
                     runStart = x;
@@ -643,11 +1066,9 @@ public final class OpticalProcessor {
                         bestEnd = x - 1;
                     }
                 }
-
                 runStart = -1;
             }
         }
-
         if (runStart >= 0
                 && searchEnd + 1 - runStart >= minimumRun) {
             if (isBetterSplitRun(
@@ -661,25 +1082,22 @@ public final class OpticalProcessor {
                 bestEnd = searchEnd;
             }
         }
-
         int split;
-
         if (bestStart >= 0 && bestEnd >= bestStart) {
             split = Math.round(
                     (bestStart + bestEnd) * 0.5f
+
             );
         } else {
             split = width / 2;
         }
-
         int minimumSplit = Math.round(width * 0.42f);
         int maximumSplit = Math.round(width * 0.58f);
-
         split = Math.max(
                 minimumSplit,
                 Math.min(maximumSplit, split)
-        );
 
+        );
         return split;
     }
 
@@ -693,25 +1111,21 @@ public final class OpticalProcessor {
         if (currentStart < 0 || currentEnd < currentStart) {
             return true;
         }
-
         int currentLength = currentEnd - currentStart + 1;
         int candidateLength = end - start + 1;
-
         float candidateCenter = (start + end) * 0.5f;
         float currentCenter = (currentStart + currentEnd) * 0.5f;
-
         float candidateDistance = Math.abs(
                 candidateCenter - width * 0.5f
-        );
 
+        );
         float currentDistance = Math.abs(
                 currentCenter - width * 0.5f
-        );
 
+        );
         if (candidateDistance + 2f < currentDistance) {
             return true;
         }
-
         return Math.abs(candidateDistance - currentDistance) <= 2f
                 && candidateLength > currentLength;
     }
@@ -723,37 +1137,35 @@ public final class OpticalProcessor {
     ) {
         final int width = source.getWidth();
         final int height = source.getHeight();
-
         xStart = Math.max(
                 0,
                 Math.min(width - 1, xStart)
-        );
 
+        );
         xEnd = Math.max(
                 xStart + 1,
                 Math.min(width, xEnd)
+
         );
-
         final float threshold = opticalBlackThreshold(source);
-
         int xSampleStart = xStart + Math.round(
                 (xEnd - xStart) * 0.20f
-        );
 
+        );
         int xSampleEnd = xStart + Math.round(
                 (xEnd - xStart) * 0.80f
-        );
 
+        );
         xSampleStart = Math.max(
                 xStart,
                 Math.min(xEnd - 1, xSampleStart)
-        );
 
+        );
         xSampleEnd = Math.max(
                 xSampleStart + 1,
                 Math.min(xEnd, xSampleEnd)
-        );
 
+        );
         int xSampleCount = Math.max(
                 9,
                 Math.min(
@@ -763,16 +1175,14 @@ public final class OpticalProcessor {
                                 (xSampleEnd - xSampleStart) / ROI_SCAN_STEP
                         )
                 )
-        );
 
+        );
         float[] yProfile = new float[Math.max(
                 1,
                 (height + ROI_SCAN_STEP - 1) / ROI_SCAN_STEP
         )];
-
         int[] rowPixels = new int[width];
         int yi = 0;
-
         for (int y = 0; y < height; y += ROI_SCAN_STEP) {
             source.getPixels(
                     rowPixels,
@@ -782,106 +1192,93 @@ public final class OpticalProcessor {
                     y,
                     width,
                     1
+
             );
-
             int nonBlack = 0;
-
             for (int i = 0; i < xSampleCount; i++) {
                 int x = interpolateInt(
                         xSampleStart,
                         xSampleEnd - 1,
                         i,
                         xSampleCount
-                );
 
+                );
                 if (pixelLuma(rowPixels[x]) > threshold) {
                     nonBlack++;
                 }
             }
-
             yProfile[yi++] = nonBlack / (float) xSampleCount;
         }
-
         smoothProfile(yProfile, ROI_PROFILE_SMOOTH_RADIUS);
-
         int[] yRun = bestProfileRun(
                 yProfile,
                 ROI_PROFILE_COVERAGE,
                 yProfile.length / 2
-        );
 
+        );
         if (yRun == null) {
             return null;
         }
-
         int top = yRun[0] * ROI_SCAN_STEP;
         int bottom = Math.min(
                 height,
                 (yRun[1] + 1) * ROI_SCAN_STEP
-        );
 
+        );
         if (bottom <= top) {
             return null;
         }
-
         float centerY = (top + bottom) * 0.5f;
         float radiusY = Math.max(
                 1f,
                 (bottom - top) * 0.5f
-        );
 
+        );
         int yBandTop = Math.max(
                 0,
                 Math.round(centerY - radiusY * 0.62f)
-        );
 
+        );
         int yBandBottom = Math.min(
                 height,
                 Math.round(centerY + radiusY * 0.62f)
-        );
 
+        );
         if (yBandBottom <= yBandTop) {
             return null;
         }
-
         int bandHeight = yBandBottom - yBandTop;
-
         int xProfileLength = Math.max(
                 1,
                 (xEnd - xStart + ROI_SCAN_STEP - 1) / ROI_SCAN_STEP
+
         );
-
         float[] xProfile = new float[xProfileLength];
-
         for (int i = 0; i < xProfileLength; i++) {
             int x = Math.min(
                     xEnd - 1,
                     xStart + i * ROI_SCAN_STEP
-            );
 
+            );
             int samples = Math.max(
                     1,
                     (bandHeight + ROI_SCAN_STEP - 1) / ROI_SCAN_STEP
+
             );
-
             int nonBlack = 0;
-
             for (int j = 0; j < samples; j++) {
                 int y = Math.min(
                         yBandBottom - 1,
                         yBandTop + j * ROI_SCAN_STEP
-                );
 
+                );
                 if (pixelLuma(source.getPixel(x, y)) > threshold) {
                     nonBlack++;
                 }
             }
-
             xProfile[i] = nonBlack / (float) samples;
         }
-
         smoothProfile(xProfile, ROI_PROFILE_SMOOTH_RADIUS);
-
         int expectedCenterIndex = Math.max(
                 0,
                 Math.min(
@@ -891,39 +1288,36 @@ public final class OpticalProcessor {
                                         / ROI_SCAN_STEP)
                         )
                 )
-        );
 
+        );
         int[] xRun = bestProfileRun(
                 xProfile,
                 ROI_PROFILE_COVERAGE,
                 expectedCenterIndex
-        );
 
+        );
         if (xRun == null) {
             return null;
         }
-
         int visibleLeft = xStart + xRun[0] * ROI_SCAN_STEP;
         int visibleRight = Math.min(
                 xEnd,
                 xStart + (xRun[1] + 1) * ROI_SCAN_STEP
-        );
 
+        );
         if (visibleRight <= visibleLeft) {
             return null;
         }
-
         boolean leftClipped = visibleLeft <= xStart + ROI_SCAN_STEP;
         boolean rightClipped = visibleRight >= xEnd - ROI_SCAN_STEP;
-
         float centerX;
         float radiusX;
-
         if (!leftClipped && !rightClipped) {
             centerX = (visibleLeft + visibleRight) * 0.5f;
             radiusX = Math.max(
                     1f,
                     (visibleRight - visibleLeft) * 0.5f
+
             );
         } else if (leftClipped && !rightClipped) {
             radiusX = radiusY;
@@ -935,17 +1329,16 @@ public final class OpticalProcessor {
             radiusX = radiusY;
             centerX = (xStart + xEnd) * 0.5f;
         }
-
         float safeRadiusX = Math.max(
                 1f,
                 Math.min(radiusX, radiusY)
-        );
 
+        );
         float safeRadiusY = Math.max(
                 1f,
                 Math.min(radiusY, radiusX)
-        );
 
+        );
         return largestSafeSquare(
                 centerX,
                 centerY,
@@ -954,6 +1347,7 @@ public final class OpticalProcessor {
                 width,
                 height,
                 ROI_SQUARE_SAFETY_FACTOR
+
         );
     }
 
@@ -968,10 +1362,8 @@ public final class OpticalProcessor {
     ) {
         float low = 16f;
         float high = 2f * Math.min(radiusX, radiusY);
-
         for (int i = 0; i < 32; i++) {
             float side = (low + high) * 0.5f;
-
             if (squareFitsEllipse(
                     side,
                     centerX,
@@ -986,65 +1378,60 @@ public final class OpticalProcessor {
                 high = side;
             }
         }
-
         float side = Math.max(
                 16f,
                 low * Math.max(
                         0.80f,
                         Math.min(1f, safetyFactor)
                 )
-        );
 
+        );
         side = Math.min(
                 side,
                 Math.min(sourceWidth, sourceHeight)
-        );
 
+        );
         int size = Math.max(
                 16,
                 (int) Math.floor(side)
+
         );
-
         size -= size % 2;
-
         if (size < 16) {
             size = 16;
         }
-
         float half = size * 0.5f;
-
         float squareCenterX = clamp(
                 centerX,
                 half,
                 sourceWidth - half
-        );
 
+        );
         float squareCenterY = clamp(
                 centerY,
                 half,
                 sourceHeight - half
-        );
 
+        );
         int left = Math.max(
                 0,
                 Math.min(
                         sourceWidth - size,
                         Math.round(squareCenterX - half)
                 )
-        );
 
+        );
         int top = Math.max(
                 0,
                 Math.min(
                         sourceHeight - size,
                         Math.round(squareCenterY - half)
                 )
-        );
 
+        );
         while (size >= 32) {
             float cx = left + size * 0.5f;
             float cy = top + size * 0.5f;
-
             if (squareFitsEllipse(
                     size,
                     cx,
@@ -1056,50 +1443,47 @@ public final class OpticalProcessor {
             )) {
                 break;
             }
-
             size -= 4;
             size -= size % 2;
-
             if (size < 16) {
                 size = 16;
             }
-
             half = size * 0.5f;
-
             squareCenterX = clamp(
                     centerX,
                     half,
                     sourceWidth - half
-            );
 
+            );
             squareCenterY = clamp(
                     centerY,
                     half,
                     sourceHeight - half
-            );
 
+            );
             left = Math.max(
                     0,
                     Math.min(
                             sourceWidth - size,
                             Math.round(squareCenterX - half)
                     )
-            );
 
+            );
             top = Math.max(
                     0,
                     Math.min(
                             sourceHeight - size,
                             Math.round(squareCenterY - half)
                     )
+
             );
         }
-
         return new Rect(
                 left,
                 top,
                 left + size,
                 top + size
+
         );
     }
 
@@ -1115,31 +1499,26 @@ public final class OpticalProcessor {
         if (side <= 0f || radiusX <= 0f || radiusY <= 0f) {
             return false;
         }
-
         float half = side * 0.5f;
-
         if (side > sourceWidth || side > sourceHeight) {
             return false;
         }
-
         float clampedCenterX = clamp(
                 centerX,
                 half,
                 sourceWidth - half
-        );
 
+        );
         float clampedCenterY = clamp(
                 centerY,
                 half,
                 sourceHeight - half
-        );
 
+        );
         float dx = Math.abs(clampedCenterX - centerX) + half;
         float dy = Math.abs(clampedCenterY - centerY) + half;
-
         float normalizedX = dx / radiusX;
         float normalizedY = dy / radiusY;
-
         return normalizedX * normalizedX
                 + normalizedY * normalizedY <= 1.0f;
     }
@@ -1148,7 +1527,6 @@ public final class OpticalProcessor {
         if (max < min) {
             return (min + max) * 0.5f;
         }
-
         return Math.max(min, Math.min(max, value));
     }
 
@@ -1166,44 +1544,41 @@ public final class OpticalProcessor {
                         width - 1,
                         Math.round(width * left)
                 )
-        );
 
+        );
         int rawTop = Math.max(
                 0,
                 Math.min(
                         height - 1,
                         Math.round(height * top)
                 )
-        );
 
+        );
         int rawRight = Math.max(
                 rawLeft + 1,
                 Math.min(
                         width,
                         Math.round(width * right)
                 )
-        );
 
+        );
         int rawBottom = Math.max(
                 rawTop + 1,
                 Math.min(
                         height,
                         Math.round(height * bottom)
                 )
+
         );
-
         float centerY = (rawTop + rawBottom) * 0.5f;
-
         float radiusY = Math.max(
                 1f,
                 (rawBottom - rawTop) * 0.5f
-        );
 
+        );
         boolean touchesLeft = rawLeft <= 1;
         boolean touchesRight = rawRight >= width - 1;
-
         float centerX;
-
         if (touchesLeft && !touchesRight) {
             centerX = rawRight - radiusY;
         } else if (!touchesLeft && touchesRight) {
@@ -1211,7 +1586,6 @@ public final class OpticalProcessor {
         } else {
             centerX = (rawLeft + rawRight) * 0.5f;
         }
-
         return largestSafeSquare(
                 centerX,
                 centerY,
@@ -1220,6 +1594,7 @@ public final class OpticalProcessor {
                 width,
                 height,
                 0.90f
+
         );
     }
 
@@ -1231,21 +1606,17 @@ public final class OpticalProcessor {
         if (rect == null) {
             return false;
         }
-
         if (sourceWidth <= 0 || sourceHeight <= 0) {
             return false;
         }
-
         if (rect.left < 0
                 || rect.top < 0
                 || rect.right > sourceWidth
                 || rect.bottom > sourceHeight) {
             return false;
         }
-
         int width = rect.width();
         int height = rect.height();
-
         return width == height
                 && width >= Math.max(160, sourceWidth / 10)
                 && height >= Math.max(160, sourceHeight / 10);
@@ -1258,19 +1629,15 @@ public final class OpticalProcessor {
         if (source == null || source.isRecycled() || rect == null) {
             return null;
         }
-
         int left = Math.max(0, rect.left);
         int top = Math.max(0, rect.top);
         int right = Math.min(source.getWidth(), rect.right);
         int bottom = Math.min(source.getHeight(), rect.bottom);
-
         int width = right - left;
         int height = bottom - top;
-
         if (width <= 0 || height <= 0) {
             return null;
         }
-
         try {
             return Bitmap.createBitmap(source, left, top, width, height);
         } catch (OutOfMemoryError error) {
@@ -1286,14 +1653,12 @@ public final class OpticalProcessor {
         if (source == null || source.isRecycled()) {
             return null;
         }
-
         float[] values = new float[]{
                 0f, 0f, 0f, 0f, 0f,
                 0f, 0f, 0f, 0f, 0f,
                 0f, 0f, 0f, 0f, 0f,
                 0f, 0f, 0f, 1f, 0f
         };
-
         if (channel == 0) {
             values[0] = 1f;
             values[5] = 1f;
@@ -1307,31 +1672,29 @@ public final class OpticalProcessor {
             values[7] = 1f;
             values[12] = 1f;
         }
-
         Bitmap output;
-
         try {
             output = Bitmap.createBitmap(
                     source.getWidth(),
                     source.getHeight(),
                     Config.ARGB_8888
+
             );
         } catch (OutOfMemoryError error) {
             Log.e(TAG, "Channel bitmap allocation OOM", error);
             return null;
         }
-
         Canvas canvas = new Canvas(output);
         Paint paint = new Paint(
                 Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG
-        );
 
+        );
         paint.setColorFilter(
                 new ColorMatrixColorFilter(
                         new ColorMatrix(values)
                 )
-        );
 
+        );
         canvas.drawBitmap(source, 0f, 0f, paint);
         return output;
     }
@@ -1340,38 +1703,35 @@ public final class OpticalProcessor {
         if (source == null || source.isRecycled()) {
             return null;
         }
-
         float[] values = new float[]{
                 0.299f, 0.587f, 0.114f, 0f, 0f,
                 0.299f, 0.587f, 0.114f, 0f, 0f,
                 0.299f, 0.587f, 0.114f, 0f, 0f,
                 0f, 0f, 0f, 1f, 0f
         };
-
         Bitmap output;
-
         try {
             output = Bitmap.createBitmap(
                     source.getWidth(),
                     source.getHeight(),
                     Config.ARGB_8888
+
             );
         } catch (OutOfMemoryError error) {
             Log.e(TAG, "Grayscale bitmap allocation OOM", error);
             return null;
         }
-
         Canvas canvas = new Canvas(output);
         Paint paint = new Paint(
                 Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG
-        );
 
+        );
         paint.setColorFilter(
                 new ColorMatrixColorFilter(
                         new ColorMatrix(values)
                 )
-        );
 
+        );
         canvas.drawBitmap(source, 0f, 0f, paint);
         return output;
     }
@@ -1380,20 +1740,17 @@ public final class OpticalProcessor {
         if (bitmap == null || bitmap.isRecycled()) {
             return null;
         }
-
         ByteArrayOutputStream output = new ByteArrayOutputStream();
-
         try {
             boolean compressed = bitmap.compress(
                     Bitmap.CompressFormat.JPEG,
                     quality,
                     output
-            );
 
+            );
             if (!compressed) {
                 return null;
             }
-
             return output.toByteArray();
         } catch (OutOfMemoryError error) {
             Log.e(TAG, "JPEG compression OOM", error);
@@ -1411,50 +1768,44 @@ public final class OpticalProcessor {
 
     private float opticalBlackThreshold(Bitmap source) {
         float border = estimateBorderBrightness(source);
-
         return Math.max(
                 ROI_BLACK_LUMA_THRESHOLD,
                 Math.min(34f, border + 10f)
+
         );
     }
 
     private float estimateBorderBrightness(Bitmap source) {
         int width = source.getWidth();
         int height = source.getHeight();
-
         int patchW = Math.max(
                 8,
                 Math.round(width * 0.035f)
-        );
 
+        );
         int patchH = Math.max(
                 8,
                 Math.round(height * 0.035f)
-        );
 
+        );
         long sum = 0L;
         long count = 0L;
-
         for (int y = 0; y < patchH; y += ROI_SCAN_STEP) {
             for (int x = 0; x < patchW; x += ROI_SCAN_STEP) {
                 int c = source.getPixel(x, y);
                 sum += pixelLuma(c);
                 count++;
-
                 c = source.getPixel(width - 1 - x, y);
                 sum += pixelLuma(c);
                 count++;
-
                 c = source.getPixel(x, height - 1 - y);
                 sum += pixelLuma(c);
                 count++;
-
                 c = source.getPixel(width - 1 - x, height - 1 - y);
                 sum += pixelLuma(c);
                 count++;
             }
         }
-
         return count <= 0 ? 2f : sum / (float) count;
     }
 
@@ -1462,7 +1813,6 @@ public final class OpticalProcessor {
         int r = (color >> 16) & 0xFF;
         int g = (color >> 8) & 0xFF;
         int b = color & 0xFF;
-
         return (299 * r + 587 * g + 114 * b) / 1000;
     }
 
@@ -1475,11 +1825,11 @@ public final class OpticalProcessor {
         if (count <= 1) {
             return start;
         }
-
         return start + Math.round(
                 (end - start) * (
                         index / (float) (count - 1)
                 )
+
         );
     }
 
@@ -1487,20 +1837,16 @@ public final class OpticalProcessor {
         if (profile == null || profile.length < 3 || radius <= 0) {
             return;
         }
-
         float[] copy = profile.clone();
-
         for (int i = 0; i < profile.length; i++) {
             int from = Math.max(0, i - radius);
             int to = Math.min(profile.length - 1, i + radius);
             float sum = 0f;
             int count = 0;
-
             for (int j = from; j <= to; j++) {
                 sum += copy[j];
                 count++;
             }
-
             profile[i] = count == 0 ? copy[i] : sum / count;
         }
     }
@@ -1513,10 +1859,8 @@ public final class OpticalProcessor {
         if (profile == null || profile.length == 0) {
             return null;
         }
-
         ArrayList<int[]> runs = new ArrayList<>();
         int start = -1;
-
         for (int i = 0; i < profile.length; i++) {
             if (profile[i] >= threshold) {
                 if (start < 0) {
@@ -1527,33 +1871,26 @@ public final class OpticalProcessor {
                 start = -1;
             }
         }
-
         if (start >= 0) {
             runs.add(new int[]{start, profile.length - 1});
         }
-
         if (runs.isEmpty()) {
             return null;
         }
-
         for (int[] run : runs) {
             if (preferredIndex >= run[0]
                     && preferredIndex <= run[1]) {
                 return run;
             }
         }
-
         int[] best = runs.get(0);
-
         for (int[] run : runs) {
             int bestLength = best[1] - best[0];
             int runLength = run[1] - run[0];
-
             if (runLength > bestLength) {
                 best = run;
             }
         }
-
         return best;
     }
 
@@ -1561,9 +1898,7 @@ public final class OpticalProcessor {
         if (raw == null || raw.trim().isEmpty()) {
             return "RGB";
         }
-
         String value = raw.trim().toUpperCase(Locale.US);
-
         if ("RGB".equals(value)
                 || "R".equals(value)
                 || "G".equals(value)
@@ -1571,7 +1906,6 @@ public final class OpticalProcessor {
                 || "NIR".equals(value)) {
             return value;
         }
-
         return "RGB";
     }
 
@@ -1579,9 +1913,41 @@ public final class OpticalProcessor {
         if (rect == null) {
             return "null";
         }
-
         return rect.left + "," + rect.top
                 + " " + rect.width() + "x" + rect.height();
+    }
+
+    private static final class RegistrationTransform {
+        final float scaleX;
+        final float scaleY;
+        final float cos;
+        final float sin;
+        final float shiftX;
+        final float shiftY;
+        final boolean calibrated;
+
+        RegistrationTransform(
+                float scaleX,
+                float scaleY,
+                float cos,
+                float sin,
+                float shiftX,
+                float shiftY,
+                boolean calibrated
+        ) {
+            this.scaleX = scaleX;
+            this.scaleY = scaleY;
+            this.cos = cos;
+            this.sin = sin;
+            this.shiftX = shiftX;
+            this.shiftY = shiftY;
+            this.calibrated = calibrated;
+        }
+
+        static RegistrationTransform identity() {
+            return new RegistrationTransform(1.0f, 1.0f, 1.0f, 0.0f,
+                    0.0f, 0.0f, false);
+        }
     }
 
     public static final class NdviResult {
@@ -1589,17 +1955,55 @@ public final class OpticalProcessor {
         public final double min;
         public final double max;
         public final int validPixels;
-
+        public final int sampledPixels;
+        public final double validFraction;
+        public final boolean registrationCalibrated;
+        public final boolean nirInputLikelyColorEncoded;
+        public final boolean vegetationFiltered;
+        /** Backwards-compatible constructor for existing callers. */
+        public NdviResult(double value, double min, double max, int validPixels) {
+            this(value, min, max, validPixels, validPixels,
+                    validPixels > 0 ? 1.0d : 0.0d, false, false, false);
+        }
         public NdviResult(
                 double value,
                 double min,
                 double max,
-                int validPixels
+                int validPixels,
+                int sampledPixels,
+                double validFraction,
+                boolean registrationCalibrated,
+                boolean nirInputLikelyColorEncoded,
+                boolean vegetationFiltered
         ) {
             this.value = value;
             this.min = min;
             this.max = max;
             this.validPixels = validPixels;
+            this.sampledPixels = sampledPixels;
+            this.validFraction = validFraction;
+            this.registrationCalibrated = registrationCalibrated;
+            this.nirInputLikelyColorEncoded = nirInputLikelyColorEncoded;
+            this.vegetationFiltered = vegetationFiltered;
+        }
+        public boolean hasUsableMeasurement() {
+            return validPixels > 0 && !Double.isNaN(value) && !Double.isInfinite(value);
+        }
+
+        /**
+         * This processor consumes encoded composite JPEG pixels and does not
+         * perform reflectance calibration. A finite result must not be reported
+         * as scientifically calibrated NDVI.
+         */
+        public boolean isRadiometricallyCalibrated() {
+            return false;
+        }
+
+        public boolean isSuitableForQuantitativeInterpretation() {
+            return isRadiometricallyCalibrated()
+                    && registrationCalibrated
+                    && !nirInputLikelyColorEncoded
+                    && hasUsableMeasurement();
         }
     }
 }

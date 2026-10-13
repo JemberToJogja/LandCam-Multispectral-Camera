@@ -422,7 +422,7 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
         }
         return result;
     }
-
+  
     private String normalizeCaptureOutput(Object value) {
         if (value == null) {
             return null;

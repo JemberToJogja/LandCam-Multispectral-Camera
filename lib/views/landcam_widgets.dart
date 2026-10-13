@@ -1022,8 +1022,9 @@ class _CameraPreview extends StatelessWidget {
 
   double get _previewAspectRatio {
     if (_isMultiViewPreview) {
-      // Native Multi-View montage: 3 columns x 2 rows of tiles.
-      return 1128 / 620;
+      // Native landscape montage: Full Frame + RGB on top, R/G/B below.
+      // Portrait mode uses a vertically scrollable full-width image instead.
+      return 1128 / 748;
     }
 
     if (_isFullFramePreview &&
@@ -1044,6 +1045,14 @@ class _CameraPreview extends StatelessWidget {
     final previewBorder = _hasPreview
         ? _uiBorderStrong(dark)
         : _uiBorder(dark);
+
+    // A tall five-panel native contact sheet must not be squeezed into a
+    // landscape AspectRatio in portrait. Give it the whole preview viewport
+    // and let the user scroll through the five full-width panels instead.
+    if (_isMultiViewPreview &&
+        MediaQuery.orientationOf(context) == Orientation.portrait) {
+      return _buildPortraitMultiView(previewBorder);
+    }
 
     return RepaintBoundary(
       child: DecoratedBox(
@@ -1133,6 +1142,94 @@ class _CameraPreview extends StatelessWidget {
                       ],
                     ),
                   ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPortraitMultiView(Color previewBorder) {
+    return RepaintBoundary(
+      child: SizedBox.expand(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.black,
+            border: Border.all(
+              color: previewBorder,
+              width: 1,
+            ),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(5),
+            child: Column(
+              children: [
+                Container(
+                  height: 34,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  color: _uiSurfaceAlt(dark),
+                  child: Row(
+                    children: [
+                      _PreviewTag(
+                        text: 'MULTI-VIEW',
+                        active: true,
+                        accent: _uiAccent(dark),
+                      ),
+                      const Spacer(),
+                      _PreviewTag(
+                        text: fps == null
+                            ? '-- FPS'
+                            : '${fps!.toStringAsFixed(1)} FPS',
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: _hasByteFrame
+                      ? LayoutBuilder(
+                          builder: (context, constraints) {
+                            return SingleChildScrollView(
+                              key: const PageStorageKey<String>(
+                                'landcam-multiview-portrait-scroll',
+                              ),
+                              scrollDirection: Axis.vertical,
+                              physics: const ClampingScrollPhysics(),
+                              child: Image.memory(
+                                frame!,
+                                width: constraints.maxWidth,
+                                fit: BoxFit.fitWidth,
+                                alignment: Alignment.topCenter,
+                                gaplessPlayback: true,
+                                filterQuality: FilterQuality.low,
+                                isAntiAlias: false,
+                                excludeFromSemantics: true,
+                              ),
+                            );
+                          },
+                        )
+                      : Center(
+                          child: _PreviewEmpty(
+                            link: link,
+                            band: currentBand,
+                            activating: nirActivating,
+                            ndviEnabled: false,
+                          ),
+                        ),
+                ),
+                Container(
+                  height: 26,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  color: _uiSurfaceAlt(dark),
+                  child: Row(
+                    children: [
+                      const _PreviewMeta(label: '5 PANELS / ONE FRAME'),
+                      const Spacer(),
+                      _PreviewMeta(label: _frameLabel()),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
