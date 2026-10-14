@@ -19,7 +19,7 @@ import java.util.Locale;
  *   - LEFT optical field  -> RGB / R / G / B
  *   - RIGHT optical field -> NIR
  *   - convert selected band to JPEG
- *   - calculate realtime relative/digital NDVI
+ *   - calculate relative/digital NDVI with fixed neutral digital gain
  *   - apply the processing-side quality/scale policy
  *
  * NDVI note:
@@ -114,15 +114,10 @@ public final class OpticalProcessor {
 
     /** False-colour display only: green is reserved for this NDVI and above. */
 
-    private static final double NDVI_GREEN_THRESHOLD = 0.25d;
-    private static final float NDVI_SESSION_GAIN_MIN = 0.50f;
-    private static final float NDVI_SESSION_GAIN_MAX = 4.00f;
-    private static final int NDVI_SESSION_GAIN_PERCENTILE = 85;
-    private static final int NDVI_SESSION_GAIN_MIN_SAMPLES = 64;
+    // Fixed neutral digital gain; this is not radiometric calibration.
+    private static final float NDVI_FIXED_NIR_GAIN = 1.0f;
 
     private static final int NDVI_NODATA_COLOR = android.graphics.Color.BLACK;
-
-    private static final int NDVI_NON_VEGETATION_COLOR = android.graphics.Color.rgb(42, 42, 42);
 
     private static final int NDVI_COLOR_LOW = android.graphics.Color.rgb(89, 10, 24);
 
@@ -178,14 +173,6 @@ public final class OpticalProcessor {
     /** Cached because the NIR encoding of a camera stream is normally stable. */
     private volatile Boolean nirLikelyColorEncodedCache;
 
-    /** Frozen preview balancing only; this is not radiometric calibration. */
-    private volatile float ndviNirGain = 1.0f;
-    private volatile boolean ndviNirGainCalibrated;
-
-    /** Preview-only visible-spectrum heuristic; never changes raw capture. */
-
-    private volatile boolean vegetationMaskEnabled = false;
-
     private volatile boolean grayscaleMode;
 
     private volatile int currentOutputWidth;
@@ -208,9 +195,6 @@ public final class OpticalProcessor {
         roiFallbackUsed = false;
         nirRegistration = RegistrationTransform.identity();
         nirLikelyColorEncodedCache = null;
-        ndviNirGain = 1.0f;
-        ndviNirGainCalibrated = false;
-        vegetationMaskEnabled = false;
         grayscaleMode = false;
         currentOutputWidth = 0;
         currentOutputHeight = 0;
@@ -254,6 +238,7 @@ public final class OpticalProcessor {
                 return true;
             case "HIGH_QUALITY":
             case "HIGH QUALITY":
+            case "HIGH-QUALITY":
                 processingScale = 1.00d;
                 return true;
             default:
@@ -301,8 +286,6 @@ public final class OpticalProcessor {
                 shiftYNormalized,
                 true
         );
-        ndviNirGain = 1.0f;
-        ndviNirGainCalibrated = false;
         return true;
     }
 
@@ -310,8 +293,6 @@ public final class OpticalProcessor {
 
     public synchronized void clearNirRegistration() {
         nirRegistration = RegistrationTransform.identity();
-        ndviNirGain = 1.0f;
-        ndviNirGainCalibrated = false;
     }
 
     public boolean isNirRegistrationCalibrated() {
@@ -322,12 +303,26 @@ public final class OpticalProcessor {
         return roiFallbackUsed;
     }
 
-    public void setVegetationMaskEnabled(boolean enabled) {
-        vegetationMaskEnabled = enabled;
+    /**
+     * A semantic vegetation mask cannot be enabled until a trained, validated model
+     * is actually loaded. A green-colour threshold is not accepted as a classifier.
+     * The return value reports whether the requested state was supported.
+     */
+    public synchronized boolean setVegetationMaskEnabled(boolean enabled) {
+        if (enabled) {
+            Log.w(TAG, "Vegetation mask unavailable: no trained semantic classifier is loaded.");
+            return false;
+        }
+        return true;
     }
 
     public boolean isVegetationMaskEnabled() {
-        return vegetationMaskEnabled;
+        return false;
+    }
+
+    /** No trained semantic vegetation model is bundled in this processor. */
+    public boolean isSemanticVegetationClassificationAvailable() {
+        return false;
     }
 
     private boolean isFinite(float value) {
@@ -351,78 +346,119 @@ public final class OpticalProcessor {
         };
     }
 
+    /** Cache-aware calibration for steady live-view frames. */
     public synchronized void ensureDualOpticalCalibration(Bitmap source) {
+        ensureDualOpticalCalibrationInternal(source, false);
+    }
+
+    /** Force ROI detection even if dimensions match a previous live-view frame. */
+    public synchronized void forceDualOpticalCalibration(Bitmap source) {
+        ensureDualOpticalCalibrationInternal(source, true);
+    }
+
+    /** Invalidates cached coordinates without discarding an explicitly supplied rig transform. */
+    public synchronized void invalidateCalibration() {
+        calibratedSourceWidth = -1;
+        calibratedSourceHeight = -1;
+        rgbCropRect = null;
+        nirCropRect = null;
+        realNirAvailable = false;
+        roiFallbackUsed = false;
+        nirLikelyColorEncodedCache = null;
+    }
+
+    public synchronized Rect getRgbCropRect() {
+        return rgbCropRect == null ? null : new Rect(rgbCropRect);
+    }
+
+    public synchronized Rect getNirCropRect() {
+        return nirCropRect == null ? null : new Rect(nirCropRect);
+    }
+
+    public synchronized int[] getCalibratedSourceSize() {
+        return calibratedSourceWidth > 0 && calibratedSourceHeight > 0
+                ? new int[]{calibratedSourceWidth, calibratedSourceHeight}
+                : new int[]{0, 0};
+    }
+
+    private void ensureDualOpticalCalibrationInternal(Bitmap source, boolean force) {
         if (source == null || source.isRecycled()) {
             return;
         }
-        int width = source.getWidth();
-        int height = source.getHeight();
-        if (width == calibratedSourceWidth
+        final int width = source.getWidth();
+        final int height = source.getHeight();
+        if (!force
+                && width == calibratedSourceWidth
                 && height == calibratedSourceHeight
                 && rgbCropRect != null
                 && nirCropRect != null) {
             return;
         }
-        // A changed source geometry invalidates the session preview balance.
-        ndviNirGain = 1.0f;
-        ndviNirGainCalibrated = false;
+
         nirLikelyColorEncodedCache = null;
-        int opticalSplit = detectOpticalSplit(source);
+        final int opticalSplit = detectOpticalSplit(source);
         Rect detectedRgb = detectOpticalRoi(source, 0, opticalSplit);
         Rect detectedNir = detectOpticalRoi(source, opticalSplit, width);
         boolean fallback = false;
+
         if (!isUsableCrop(detectedRgb, width, height)) {
             fallback = true;
-            detectedRgb = fallbackSquareCrop(
-                    width,
-                    height,
-                    FALLBACK_RGB_LEFT,
-                    FALLBACK_RGB_TOP,
-                    FALLBACK_RGB_RIGHT,
-                    FALLBACK_RGB_BOTTOM
-
-            );
+            detectedRgb = fallbackSquareCrop(width, height,
+                    FALLBACK_RGB_LEFT, FALLBACK_RGB_TOP,
+                    FALLBACK_RGB_RIGHT, FALLBACK_RGB_BOTTOM);
         }
         if (!isUsableCrop(detectedNir, width, height)) {
             fallback = true;
-            detectedNir = fallbackSquareCrop(
-                    width,
-                    height,
-                    FALLBACK_NIR_LEFT,
-                    FALLBACK_NIR_TOP,
-                    FALLBACK_NIR_RIGHT,
-                    FALLBACK_NIR_BOTTOM
+            detectedNir = fallbackSquareCrop(width, height,
+                    FALLBACK_NIR_LEFT, FALLBACK_NIR_TOP,
+                    FALLBACK_NIR_RIGHT, FALLBACK_NIR_BOTTOM);
+        }
 
-            );
+        // Do not publish unusable rectangles even if automatic detection and fallback both fail.
+        if (!isUsableCrop(detectedRgb, width, height)) {
+            detectedRgb = null;
+        }
+        if (!isUsableCrop(detectedNir, width, height)) {
+            detectedNir = null;
         }
         rgbCropRect = detectedRgb;
         nirCropRect = detectedNir;
-        nirLikelyColorEncodedCache = null;
         calibratedSourceWidth = width;
         calibratedSourceHeight = height;
-        realNirAvailable = isUsableCrop(rgbCropRect, width, height)
-                && isUsableCrop(nirCropRect, width, height);
+        realNirAvailable = detectedRgb != null && detectedNir != null;
         roiFallbackUsed = fallback;
-        Log.i(
-                TAG,
-                "Dual optical calibration: "
-                        + "RGB=" + rectToString(rgbCropRect)
-                        + " NIR=" + rectToString(nirCropRect)
-                        + " split=" + opticalSplit
-                        + " fallback=" + roiFallbackUsed
-                        + " registration=" + (nirRegistration.calibrated ? "CALIBRATED" : "IDENTITY_UNCALIBRATED")
 
-        );
+        Log.i(TAG, "Dual optical calibration: RGB=" + rectToString(rgbCropRect)
+                + " NIR=" + rectToString(nirCropRect)
+                + " split=" + opticalSplit
+                + " source=" + width + "x" + height
+                + " forced=" + force
+                + " fallback=" + roiFallbackUsed
+                + " registration=" + (nirRegistration.calibrated
+                    ? "CALIBRATED" : "IDENTITY_UNCALIBRATED")
+                + " metric=RELATIVE_DIGITAL_NDVI");
     }
 
-    public byte[] processBandJpeg(
-            Bitmap source,
-            String rawBand
-    ) {
+    public synchronized byte[] processBandJpeg(Bitmap source, String rawBand) {
+        return processBandJpegInternal(source, rawBand);
+    }
+
+    /** Process a still using forced ROIs while preserving the live-view calibration cache. */
+    public synchronized byte[] processCapturedStillBandJpeg(Bitmap source, String rawBand) {
+        CalibrationSnapshot previous = snapshotCalibrationState();
+        try {
+            ensureDualOpticalCalibrationInternal(source, true);
+            return processBandJpegInternal(source, rawBand);
+        } finally {
+            restoreCalibrationState(previous);
+        }
+    }
+
+    private byte[] processBandJpegInternal(Bitmap source, String rawBand) {
         if (source == null || source.isRecycled()) {
             return null;
         }
-        ensureDualOpticalCalibration(source);
+        ensureDualOpticalCalibrationInternal(source, false);
         String band = normalizeBand(rawBand);
         Rect rect = "NIR".equals(band)
                 ? nirCropRect
@@ -480,25 +516,34 @@ public final class OpticalProcessor {
      * not radiometrically calibrated reflectance NDVI.
      */
 
-    public NdviResult calculateNdvi(Bitmap source) {
+    public synchronized NdviResult calculateNdvi(Bitmap source) {
         return calculateNdviInternal(source, false);
     }
 
-    /**
-     * Calculates NDVI statistics only for visible-spectrum vegetation
-     * candidates. This is a heuristic mask, not proof of biological identity
-     * or health; synthetic foliage can still match it.
-     */
-
-    public NdviResult calculateVegetationNdvi(Bitmap source) {
-        return calculateNdviInternal(source, true);
+    /** Calculate still NDVI with forced ROIs, then restore the live-view cache. */
+    public synchronized NdviResult calculateCapturedStillNdvi(Bitmap source) {
+        CalibrationSnapshot previous = snapshotCalibrationState();
+        try {
+            return calculateNdviInternal(source, true);
+        } finally {
+            restoreCalibrationState(previous);
+        }
     }
 
-    private NdviResult calculateNdviInternal(Bitmap source, boolean foliageOnly) {
+    /**
+     * Semantic vegetation-only NDVI is intentionally unavailable without a trained,
+     * validated classifier. Returns null rather than treating green pixels as plants.
+     */
+    public synchronized NdviResult calculateVegetationNdvi(Bitmap source) {
+        Log.w(TAG, "Vegetation-only NDVI unavailable: no trained semantic classifier is loaded.");
+        return null;
+    }
+
+    private NdviResult calculateNdviInternal(Bitmap source, boolean forceCalibration) {
         if (source == null || source.isRecycled()) {
             return null;
         }
-        ensureDualOpticalCalibration(source);
+        ensureDualOpticalCalibrationInternal(source, forceCalibration);
         final Rect redRect = rgbCropRect;
         final Rect nirRect = nirCropRect;
         if (!hasNirRoi()
@@ -514,7 +559,6 @@ public final class OpticalProcessor {
             return null;
         }
         final boolean colorEncodedNir = isNirLikelyColorEncoded(source);
-        ensureNdviSessionGain(source, redRect, nirRect, registration);
         final int sampleAxisLimit = ndviSampleAxisLimit();
         final int sampleWidth = Math.max(
                 1, Math.min(sampleAxisLimit, redWidth));
@@ -539,16 +583,13 @@ public final class OpticalProcessor {
                 final int nirX = nirRect.left + (int) (mapped >>> 32);
                 final int mappedNirY = nirRect.top + (int) mapped;
                 final int redColor = source.getPixel(redX, redY);
-                if (foliageOnly && !isFoliageCandidate(redColor)) {
-                    continue;
-                }
                 final int red8 = android.graphics.Color.red(redColor);
                 final int nir8 = pixelNirIntensity(source.getPixel(nirX, mappedNirY));
                 if (!isValidSignal(red8, nir8)) {
                     continue;
                 }
                 final double red = srgbToLinear(red8 / 255.0d);
-                final double nir = srgbToLinear(nir8 / 255.0d) * ndviNirGain;
+                final double nir = srgbToLinear(nir8 / 255.0d) * NDVI_FIXED_NIR_GAIN;
                 final double denominator = nir + red;
                 if (!(denominator > NDVI_EPSILON)) {
                     continue;
@@ -567,26 +608,40 @@ public final class OpticalProcessor {
             return new NdviResult(
                     Double.NaN, Double.NaN, Double.NaN, 0,
                     sampledPixels, 0.0d, registration.calibrated,
-                    colorEncodedNir, foliageOnly);
+                    colorEncodedNir, false);
         }
         double validFraction = sampledPixels <= 0 ? 0.0d : validPixels / (double) sampledPixels;
         return new NdviResult(
                 sum / validPixels, min, max, validPixels,
                 sampledPixels, validFraction, registration.calibrated,
-                colorEncodedNir, foliageOnly);
+                colorEncodedNir, false);
     }
 
     /**
      * Creates a pure NDVI false-colour JPEG on the Red crop coordinate plane.
-     * Pixels outside the registered overlap are black. Valid pixels outside
-     * the optional visible vegetation-candidate mask are neutral dark grey.
+     * Pixels outside the registered overlap are black. Palette colour encodes only
+     * the relative digital index; it is not a biological vegetation classification.
      */
 
-    public byte[] processNdviPreviewJpeg(Bitmap source) {
+    public synchronized byte[] processNdviPreviewJpeg(Bitmap source) {
+        return processNdviPreviewJpegInternal(source, false);
+    }
+
+    /** Render still NDVI with fresh ROIs and restore live-view calibration after processing. */
+    public synchronized byte[] processCapturedStillNdviPreviewJpeg(Bitmap source) {
+        CalibrationSnapshot previous = snapshotCalibrationState();
+        try {
+            return processNdviPreviewJpegInternal(source, true);
+        } finally {
+            restoreCalibrationState(previous);
+        }
+    }
+
+    private byte[] processNdviPreviewJpegInternal(Bitmap source, boolean forceCalibration) {
         if (source == null || source.isRecycled()) {
             return null;
         }
-        ensureDualOpticalCalibration(source);
+        ensureDualOpticalCalibrationInternal(source, forceCalibration);
         final Rect redRect = rgbCropRect;
         final Rect nirRect = nirCropRect;
         if (!hasNirRoi()
@@ -601,7 +656,6 @@ public final class OpticalProcessor {
         if (redWidth < 2 || redHeight < 2 || nirWidth < 2 || nirHeight < 2) {
             return null;
         }
-        ensureNdviSessionGain(source, redRect, nirRect, registration);
         double scale = Math.max(MIN_PROCESSING_SCALE,
                 Math.min(MAX_PROCESSING_SCALE, processingScale));
         int outWidth = Math.max(16, (int) Math.round(redWidth * scale));
@@ -619,12 +673,15 @@ public final class OpticalProcessor {
             output = Bitmap.createBitmap(outWidth, outHeight, Config.ARGB_8888);
             final int[] pixels = new int[outWidth * outHeight];
             for (int y = 0; y < outHeight; y++) {
-                final float v = y / (float) Math.max(1, outHeight - 1);
-                final int redY = redRect.top + clampInt(Math.round(v * (redHeight - 1)), 0, redHeight - 1);
+                // Pixel-centre UVs match the GPU texture sampling convention.
+                final float v = (y + 0.5f) / (float) outHeight;
+                final int redY = redRect.top + clampInt(
+                        (int) Math.floor(v * redHeight), 0, redHeight - 1);
                 for (int x = 0; x < outWidth; x++) {
                     final int index = y * outWidth + x;
-                    final float u = x / (float) Math.max(1, outWidth - 1);
-                    final int redX = redRect.left + clampInt(Math.round(u * (redWidth - 1)), 0, redWidth - 1);
+                    final float u = (x + 0.5f) / (float) outWidth;
+                    final int redX = redRect.left + clampInt(
+                            (int) Math.floor(u * redWidth), 0, redWidth - 1);
                     final long mapped = mapRedUvToNirPixel(u, v, nirWidth, nirHeight, registration);
                     if (mapped < 0L) {
                         pixels[index] = NDVI_NODATA_COLOR;
@@ -633,11 +690,6 @@ public final class OpticalProcessor {
                     final int nirX = nirRect.left + (int) (mapped >>> 32);
                     final int nirY = nirRect.top + (int) mapped;
                     final int redColor = source.getPixel(redX, redY);
-                    if (vegetationMaskEnabled && !isFoliageCandidate(redColor)) {
-                        // This is excluded by the display mask, not a no-data pixel.
-                        pixels[index] = NDVI_NON_VEGETATION_COLOR;
-                        continue;
-                    }
                     final int red8 = android.graphics.Color.red(redColor);
                     final int nir8 = pixelNirIntensity(source.getPixel(nirX, nirY));
                     if (!isValidSignal(red8, nir8)) {
@@ -645,7 +697,7 @@ public final class OpticalProcessor {
                         continue;
                     }
                     final double red = srgbToLinear(red8 / 255.0d);
-                    final double nir = srgbToLinear(nir8 / 255.0d) * ndviNirGain;
+                    final double nir = srgbToLinear(nir8 / 255.0d) * NDVI_FIXED_NIR_GAIN;
                     final double denominator = red + nir;
                     if (!(denominator > NDVI_EPSILON)) {
                         pixels[index] = NDVI_NODATA_COLOR;
@@ -688,81 +740,6 @@ public final class OpticalProcessor {
         return pixelLuma(color);
     }
 
-    /**
-     * Estimate one preview-only channel balance, then hold it stable until reset
-     * or source geometry changes. This is not radiometric calibration.
-     */
-    private synchronized void ensureNdviSessionGain(
-            Bitmap source,
-            Rect redRect,
-            Rect nirRect,
-            RegistrationTransform registration
-    ) {
-        if (ndviNirGainCalibrated || source == null || source.isRecycled()) {
-            return;
-        }
-        final int grid = 48;
-        final int[] redHistogram = new int[256];
-        final int[] nirHistogram = new int[256];
-        int valid = 0;
-        for (int gy = 0; gy < grid; gy++) {
-            final float v = gy / (float) (grid - 1);
-            final int redY = redRect.top + clampInt(Math.round(v * (redRect.height() - 1)), 0, redRect.height() - 1);
-            for (int gx = 0; gx < grid; gx++) {
-                final float u = gx / (float) (grid - 1);
-                final int redX = redRect.left + clampInt(Math.round(u * (redRect.width() - 1)), 0, redRect.width() - 1);
-                final long mapped = mapRedUvToNirPixel(u, v, nirRect.width(), nirRect.height(), registration);
-                if (mapped < 0L) {
-                    continue;
-                }
-                final int nirX = nirRect.left + (int) (mapped >>> 32);
-                final int nirY = nirRect.top + (int) mapped;
-                final int red = android.graphics.Color.red(source.getPixel(redX, redY));
-                final int nir = pixelNirIntensity(source.getPixel(nirX, nirY));
-                if (red < NDVI_MIN_CHANNEL_SIGNAL || nir < NDVI_MIN_CHANNEL_SIGNAL
-                        || red >= NDVI_SATURATION_LEVEL || nir >= NDVI_SATURATION_LEVEL) {
-                    continue;
-                }
-                redHistogram[red]++;
-                nirHistogram[nir]++;
-                valid++;
-            }
-        }
-        if (valid < NDVI_SESSION_GAIN_MIN_SAMPLES) {
-            return;
-        }
-        final int redReference = histogramPercentile(redHistogram, valid, NDVI_SESSION_GAIN_PERCENTILE);
-        final int nirReference = histogramPercentile(nirHistogram, valid, NDVI_SESSION_GAIN_PERCENTILE);
-        final double redLinear = srgbToLinear(redReference / 255.0d);
-        final double nirLinear = srgbToLinear(nirReference / 255.0d);
-        if (!(redLinear > NDVI_EPSILON) || !(nirLinear > NDVI_EPSILON)) {
-            return;
-        }
-        ndviNirGain = (float) clampDouble(
-                redLinear / nirLinear, NDVI_SESSION_GAIN_MIN, NDVI_SESSION_GAIN_MAX);
-        ndviNirGainCalibrated = true;
-        Log.i(TAG, "NDVI session display balance set once: gain=" + ndviNirGain
-                + ", p" + NDVI_SESSION_GAIN_PERCENTILE + " Red=" + redReference
-                + " NIR intensity=" + nirReference
-                + ". Relative digital index only, not radiometric calibration.");
-    }
-
-    private int histogramPercentile(int[] histogram, int count, int percentile) {
-        if (histogram == null || histogram.length == 0 || count <= 0) {
-            return 0;
-        }
-        final int target = (int) Math.round((count - 1)
-                * Math.max(0, Math.min(100, percentile)) / 100.0d);
-        int cumulative = 0;
-        for (int i = 0; i < histogram.length; i++) {
-            cumulative += histogram[i];
-            if (cumulative > target) {
-                return i;
-            }
-        }
-        return histogram.length - 1;
-    }
-
     private Bitmap grayscaleNirBitmap(Bitmap source) {
         if (source == null || source.isRecycled()) {
             return null;
@@ -798,25 +775,9 @@ public final class OpticalProcessor {
                 : Math.pow((value + 0.055d) / 1.055d, 2.4d);
     }
 
-    private boolean isFoliageCandidate(int color) {
-        final double r = android.graphics.Color.red(color) / 255.0d;
-        final double g = android.graphics.Color.green(color) / 255.0d;
-        final double b = android.graphics.Color.blue(color) / 255.0d;
-        final double max = Math.max(r, Math.max(g, b));
-        final double min = Math.min(r, Math.min(g, b));
-        if (max < 24.0d / 255.0d || max - min < 16.0d / 255.0d) {
-            return false;
-        }
-        final double greenExcess = g - 0.5d * (r + b);
-        // Match CameraEngine's display-only foliage heuristic for GPU/CPU parity.
-        return g > r * 0.62d
-                && g > b * 1.10d
-                && greenExcess > 0.015d;
-    }
-
-    /** Classic continuous NDVI false-colour palette: red (-1), yellow (0), green (+1).
-     * Vegetation masking is intentionally opt-in because this camera's Red field
-     * is warm-tinted and RGB-green heuristics reject valid plant pixels.
+    /**
+     * Continuous false-colour palette for relative digital NDVI: red (-1), yellow (0), green (+1).
+     * Palette colours encode only the numerical index; no semantic vegetation mask is applied.
      */
     private int ndviColor(double value) {
         double v = clampDouble(value, -1.0d, 1.0d);
@@ -1538,64 +1499,32 @@ public final class OpticalProcessor {
             float right,
             float bottom
     ) {
-        int rawLeft = Math.max(
-                0,
-                Math.min(
-                        width - 1,
-                        Math.round(width * left)
-                )
-
-        );
-        int rawTop = Math.max(
-                0,
-                Math.min(
-                        height - 1,
-                        Math.round(height * top)
-                )
-
-        );
-        int rawRight = Math.max(
-                rawLeft + 1,
-                Math.min(
-                        width,
-                        Math.round(width * right)
-                )
-
-        );
-        int rawBottom = Math.max(
-                rawTop + 1,
-                Math.min(
-                        height,
-                        Math.round(height * bottom)
-                )
-
-        );
-        float centerY = (rawTop + rawBottom) * 0.5f;
-        float radiusY = Math.max(
-                1f,
-                (rawBottom - rawTop) * 0.5f
-
-        );
-        boolean touchesLeft = rawLeft <= 1;
-        boolean touchesRight = rawRight >= width - 1;
-        float centerX;
-        if (touchesLeft && !touchesRight) {
-            centerX = rawRight - radiusY;
-        } else if (!touchesLeft && touchesRight) {
-            centerX = rawLeft + radiusY;
-        } else {
-            centerX = (rawLeft + rawRight) * 0.5f;
+        if (width < 16 || height < 16) {
+            return null;
         }
-        return largestSafeSquare(
-                centerX,
-                centerY,
-                radiusY,
-                radiusY,
-                width,
-                height,
-                0.90f
+        int rawLeft = clampInt(Math.round(width * left), 0, width - 1);
+        int rawTop = clampInt(Math.round(height * top), 0, height - 1);
+        int rawRight = clampInt(Math.round(width * right), rawLeft + 1, width);
+        int rawBottom = clampInt(Math.round(height * bottom), rawTop + 1, height);
+        int boundsWidth = rawRight - rawLeft;
+        int boundsHeight = rawBottom - rawTop;
+        int maxSide = Math.min(boundsWidth, boundsHeight);
+        if (maxSide < 16) {
+            return null;
+        }
 
-        );
+        // Keep fallback ROI strictly inside the configured left/right field bounds.
+        // The older radiusY-based fallback could grow beyond the narrower optical field.
+        int side = Math.max(16, (int) Math.floor(maxSide * 0.90f));
+        side = Math.min(side, Math.min(width, height));
+        int centerX = (rawLeft + rawRight) / 2;
+        int centerY = (rawTop + rawBottom) / 2;
+        int cropLeft = clampInt(centerX - side / 2, rawLeft, rawRight - side);
+        int cropTop = clampInt(centerY - side / 2, rawTop, rawBottom - side);
+        cropLeft = clampInt(cropLeft, 0, width - side);
+        cropTop = clampInt(cropTop, 0, height - side);
+        Rect result = new Rect(cropLeft, cropTop, cropLeft + side, cropTop + side);
+        return isUsableCrop(result, width, height) ? result : null;
     }
 
     private boolean isUsableCrop(
@@ -1915,6 +1844,57 @@ public final class OpticalProcessor {
         }
         return rect.left + "," + rect.top
                 + " " + rect.width() + "x" + rect.height();
+    }
+
+    private CalibrationSnapshot snapshotCalibrationState() {
+        return new CalibrationSnapshot(
+                calibratedSourceWidth, calibratedSourceHeight,
+                rgbCropRect == null ? null : new Rect(rgbCropRect),
+                nirCropRect == null ? null : new Rect(nirCropRect),
+                realNirAvailable, roiFallbackUsed, nirLikelyColorEncodedCache,
+                currentOutputWidth, currentOutputHeight);
+    }
+
+    private void restoreCalibrationState(CalibrationSnapshot snapshot) {
+        if (snapshot == null) {
+            invalidateCalibration();
+            return;
+        }
+        calibratedSourceWidth = snapshot.width;
+        calibratedSourceHeight = snapshot.height;
+        rgbCropRect = snapshot.rgb == null ? null : new Rect(snapshot.rgb);
+        nirCropRect = snapshot.nir == null ? null : new Rect(snapshot.nir);
+        realNirAvailable = snapshot.nirAvailable;
+        roiFallbackUsed = snapshot.fallbackUsed;
+        nirLikelyColorEncodedCache = snapshot.nirColorEncoded;
+        currentOutputWidth = snapshot.outputWidth;
+        currentOutputHeight = snapshot.outputHeight;
+    }
+
+    private static final class CalibrationSnapshot {
+        final int width;
+        final int height;
+        final Rect rgb;
+        final Rect nir;
+        final boolean nirAvailable;
+        final boolean fallbackUsed;
+        final Boolean nirColorEncoded;
+        final int outputWidth;
+        final int outputHeight;
+
+        CalibrationSnapshot(int width, int height, Rect rgb, Rect nir,
+                            boolean nirAvailable, boolean fallbackUsed,
+                            Boolean nirColorEncoded, int outputWidth, int outputHeight) {
+            this.width = width;
+            this.height = height;
+            this.rgb = rgb;
+            this.nir = nir;
+            this.nirAvailable = nirAvailable;
+            this.fallbackUsed = fallbackUsed;
+            this.nirColorEncoded = nirColorEncoded;
+            this.outputWidth = outputWidth;
+            this.outputHeight = outputHeight;
+        }
     }
 
     private static final class RegistrationTransform {

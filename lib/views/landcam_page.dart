@@ -27,16 +27,13 @@ class LandCamPage extends StatefulWidget {
   });
 
   @override
-  State<LandCamPage> createState() =>
-      _LandCamPageState();
+  State<LandCamPage> createState() => _LandCamPageState();
 }
 
-class _LandCamPageState
-    extends State<LandCamPage> {
+class _LandCamPageState extends State<LandCamPage> {
   late final LandCamViewModel _viewModel;
 
-  final GlobalKey<
-      ScaffoldMessengerState> _messengerKey =
+  final GlobalKey<ScaffoldMessengerState> _messengerKey =
       GlobalKey<ScaffoldMessengerState>();
 
   bool _dark = true;
@@ -45,9 +42,7 @@ class _LandCamPageState
   void initState() {
     super.initState();
 
-    _viewModel =
-        LandCamViewModel();
-
+    _viewModel = LandCamViewModel();
     _viewModel.start();
   }
 
@@ -55,38 +50,24 @@ class _LandCamPageState
   // User actions
   // ---------------------------------------------------------------------------
 
-  Future<void> _onBandSelected(
-    SpectralBand band,
-  ) async {
-    final message =
-        await _viewModel.selectBand(
-      band,
-    );
+  Future<void> _onBandSelected(SpectralBand band) async {
+    final message = await _viewModel.selectBand(band);
 
-    if (!mounted ||
-        message == null ||
-        message.isEmpty) {
+    if (!mounted || message == null || message.isEmpty) {
       return;
     }
 
-    _showToast(
-      message,
-    );
+    _showToast(message);
   }
 
   Future<void> _onToggleNdvi() async {
-    final message =
-        await _viewModel.toggleNdvi();
+    final message = await _viewModel.toggleNdvi();
 
-    if (!mounted ||
-        message == null ||
-        message.isEmpty) {
+    if (!mounted || message == null || message.isEmpty) {
       return;
     }
 
-    _showToast(
-      message,
-    );
+    _showToast(message);
   }
 
   Future<void> _onCapture() async {
@@ -196,15 +177,11 @@ class _LandCamPageState
 
     final message = await _viewModel.applyAdvancedSettings(result);
 
-    if (!mounted ||
-        message == null ||
-        message.isEmpty) {
+    if (!mounted || message == null || message.isEmpty) {
       return;
     }
 
-    _showToast(
-      message,
-    );
+    _showToast(message);
   }
 
   // ---------------------------------------------------------------------------
@@ -234,7 +211,8 @@ class _LandCamPageState
               link: _viewModel.link,
               status: _viewModel.status,
               connectionOperation: _viewModel.connectionOperation,
-              operationInFlight: _viewModel.connectionOperationInFlight,
+              operationInFlight:
+                  _viewModel.connectionOperationInFlight,
               ssid: _viewModel.ssid,
               brand: _viewModel.brand,
               model: _viewModel.model,
@@ -323,26 +301,17 @@ class _LandCamPageState
       return;
     }
 
-    final orientation =
-        MediaQuery.orientationOf(
-      context,
-    );
+    final orientation = MediaQuery.orientationOf(context);
 
-    await SystemChrome
-        .setPreferredOrientations(
-      orientation ==
-              Orientation.portrait
+    await SystemChrome.setPreferredOrientations(
+      orientation == Orientation.portrait
           ? const [
-              DeviceOrientation
-                  .landscapeLeft,
-              DeviceOrientation
-                  .landscapeRight,
+              DeviceOrientation.landscapeLeft,
+              DeviceOrientation.landscapeRight,
             ]
           : const [
-              DeviceOrientation
-                  .portraitUp,
-              DeviceOrientation
-                  .portraitDown,
+              DeviceOrientation.portraitUp,
+              DeviceOrientation.portraitDown,
             ],
     );
   }
@@ -351,16 +320,12 @@ class _LandCamPageState
   // Transient UI
   // ---------------------------------------------------------------------------
 
-  void _showToast(
-    String message,
-  ) {
-    if (!mounted ||
-        message.isEmpty) {
+  void _showToast(String message) {
+    if (!mounted || message.isEmpty) {
       return;
     }
 
-    final messenger =
-        _messengerKey.currentState;
+    final messenger = _messengerKey.currentState;
 
     if (messenger == null) {
       return;
@@ -370,26 +335,15 @@ class _LandCamPageState
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
-          duration:
-              const Duration(
-            milliseconds: 1100,
-          ),
-          behavior:
-              SnackBarBehavior
-                  .floating,
-          content:
-              Text(
+          duration: const Duration(milliseconds: 1100),
+          behavior: SnackBarBehavior.floating,
+          content: Text(
             message,
-            textAlign:
-                TextAlign.center,
-            style:
-                const TextStyle(
-              fontSize:
-                  11,
-              fontWeight:
-                  FontWeight.w800,
-              letterSpacing:
-                  1.1,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.1,
             ),
           ),
         ),
@@ -400,9 +354,7 @@ class _LandCamPageState
     BuildContext sheetContext,
     String message,
   ) {
-    if (!mounted ||
-        !sheetContext.mounted ||
-        message.trim().isEmpty) {
+    if (!mounted || !sheetContext.mounted || message.trim().isEmpty) {
       return;
     }
 
@@ -463,142 +415,57 @@ class _LandCamPageState
   // ---------------------------------------------------------------------------
 
   @override
-  Widget build(
-    BuildContext context,
-  ) {
+  Widget build(BuildContext context) {
     return Theme(
-      data:
-          _buildTheme(
-        _dark,
-      ),
-      child:
-          ScaffoldMessenger(
-        key:
-            _messengerKey,
-        child:
-            ListenableBuilder(
-          listenable:
-              _viewModel,
-          builder:
-              (
-            context,
-            _,
-          ) {
+      data: _buildTheme(_dark),
+      child: ScaffoldMessenger(
+        key: _messengerKey,
+        child: ListenableBuilder(
+          listenable: _viewModel,
+          builder: (context, _) {
             return LandCamHome(
-              frame:
-                  _viewModel
-                      .activeFrame,
-
-              link:
-                  _viewModel
-                      .link,
-              status:
-                  _viewModel
-                      .status,
-              sourceLabel:
-                  _viewModel
-                      .sourceLabel,
-
-              dark:
-                  _dark,
-
-              capturing:
-                  _viewModel
-                      .capturing,
-
-              currentBand:
-                  _viewModel
-                      .band,
-              supportedBands:
-                  _viewModel
-                      .supportedBands,
-
-              frameCount:
-                  _viewModel
-                      .frameCount,
-              frameWidth:
-                  _viewModel
-                      .frameWidth,
-              frameHeight:
-                  _viewModel
-                      .frameHeight,
-              fps:
-                  _viewModel
-                      .measuredFps,
-              codec:
-                  _viewModel
-                      .codec,
-
-              cameraName:
-                  _viewModel
-                      .cameraDisplayName,
-              cameraEndpoint:
-                  _viewModel
-                      .cameraEndpoint,
-
-              captureMode:
-                  _viewModel
-                      .captureMode,
-
-              ndviEnabled:
-                  _viewModel
-                      .ndviEnabled,
-              previewMode:
-                  _viewModel.previewMode,
-              ndvi:
-                  _viewModel
-                      .ndvi,
-              ndviValidPixels:
-                  _viewModel
-                      .ndviValidPixels,
-
-              supportsCapture:
-                  _viewModel
-                      .supportsCapture,
-
-              nirActivating:
-                  _viewModel
-                      .nirActivating,
-
-              bandEnabled:
-                  _viewModel
-                      .isBandEnabled,
-
-              onBand:
-                  (band) {
-                unawaited(
-                  _onBandSelected(
-                    band,
-                  ),
-                );
+              frame: _viewModel.activeFrame,
+              link: _viewModel.link,
+              status: _viewModel.status,
+              sourceLabel: _viewModel.sourceLabel,
+              dark: _dark,
+              capturing: _viewModel.capturing,
+              currentBand: _viewModel.band,
+              supportedBands: _viewModel.supportedBands,
+              frameCount: _viewModel.frameCount,
+              frameWidth: _viewModel.frameWidth,
+              frameHeight: _viewModel.frameHeight,
+              fps: _viewModel.measuredFps,
+              codec: _viewModel.codec,
+              cameraName: _viewModel.cameraDisplayName,
+              cameraEndpoint: _viewModel.cameraEndpoint,
+              captureMode: _viewModel.captureMode,
+              ndviEnabled: _viewModel.ndviEnabled,
+              previewMode: _viewModel.previewMode,
+              // GPU NDVI frames are rendered directly into the native SurfaceTexture.
+              // Forward both pieces of state so LandCamHome can display that texture
+              // instead of retaining a stale byte-backed RGB/NIR preview.
+              ndviGpuActive: _viewModel.usesGpuNdviPreview,
+              ndviTextureId: _viewModel.ndviTextureId,
+              ndvi: _viewModel.ndvi,
+              ndviValidPixels: _viewModel.ndviValidPixels,
+              supportsCapture: _viewModel.supportsCapture,
+              nirActivating: _viewModel.nirActivating,
+              bandEnabled: _viewModel.isBandEnabled,
+              onBand: (band) {
+                unawaited(_onBandSelected(band));
               },
-
-              onNdvi:
-                  () {
-                unawaited(
-                  _onToggleNdvi(),
-                );
+              onNdvi: () {
+                unawaited(_onToggleNdvi());
               },
-
-              onConnection:
-                  () {
-                unawaited(
-                  _openConnectionPanel(),
-                );
+              onConnection: () {
+                unawaited(_openConnectionPanel());
               },
-
-              onSettings:
-                  () {
-                unawaited(
-                  _openSettingsPanel(),
-                );
+              onSettings: () {
+                unawaited(_openSettingsPanel());
               },
-
-              onCapture:
-                  () {
-                unawaited(
-                  _onCapture(),
-                );
+              onCapture: () {
+                unawaited(_onCapture());
               },
             );
           },
@@ -611,184 +478,79 @@ class _LandCamPageState
   // Theme
   // ---------------------------------------------------------------------------
 
-  ThemeData _buildTheme(
-    bool dark,
-  ) {
-    final background =
-        dark
-            ? const Color(
-                0xFF0A0D0B,
-              )
-            : const Color(
-                0xFFF2F5F3,
-              );
+  ThemeData _buildTheme(bool dark) {
+    final background = dark
+        ? const Color(0xFF0A0D0B)
+        : const Color(0xFFF2F5F3);
 
-    final foreground =
-        dark
-            ? const Color(
-                0xFFF2F6F3,
-              )
-            : const Color(
-                0xFF111612,
-              );
+    final foreground = dark
+        ? const Color(0xFFF2F6F3)
+        : const Color(0xFF111612);
 
-    const accent =
-        Color(0xFF55D98B);
+    const accent = Color(0xFF55D98B);
 
-    final scheme =
-        dark
-            ? ColorScheme.dark(
-                primary:
-                    accent,
-                onPrimary:
-                    Colors.black,
-                secondary:
-                    accent,
-                onSecondary:
-                    Colors.black,
-                surface:
-                    Color(
-                  0xFF101512,
-                ),
-                onSurface:
-                    foreground,
-                error:
-                    Color(
-                  0xFFE56B6F,
-                ),
-                onError:
-                    Colors.white,
-              )
-            : ColorScheme.light(
-                primary:
-                    Color(
-                  0xFF1D7E4B,
-                ),
-                onPrimary:
-                    Colors.white,
-                secondary:
-                    Color(
-                  0xFF1D7E4B,
-                ),
-                onSecondary:
-                    Colors.white,
-                surface:
-                    Colors.white,
-                onSurface:
-                    foreground,
-                error:
-                    Color(
-                  0xFFB64045,
-                ),
-                onError:
-                    Colors.white,
-              );
+    final scheme = dark
+        ? ColorScheme.dark(
+            primary: accent,
+            onPrimary: Colors.black,
+            secondary: accent,
+            onSecondary: Colors.black,
+            surface: const Color(0xFF101512),
+            onSurface: foreground,
+            error: const Color(0xFFE56B6F),
+            onError: Colors.white,
+          )
+        : ColorScheme.light(
+            primary: const Color(0xFF1D7E4B),
+            onPrimary: Colors.white,
+            secondary: const Color(0xFF1D7E4B),
+            onSecondary: Colors.white,
+            surface: Colors.white,
+            onSurface: foreground,
+            error: const Color(0xFFB64045),
+            onError: Colors.white,
+          );
 
     return ThemeData(
-      useMaterial3:
-          true,
-
-      brightness:
-          dark
-              ? Brightness.dark
-              : Brightness.light,
-
-      colorScheme:
-          scheme,
-
-      scaffoldBackgroundColor:
-          background,
-
-      canvasColor:
-          background,
-
-      cardColor:
-          background,
-
-      fontFamily:
-          'Roboto',
-
-      dividerColor:
-          foreground.withValues(
-        alpha: .10,
-      ),
-
-      splashColor:
-          accent.withValues(
-        alpha: .10,
-      ),
-
-      highlightColor:
-          accent.withValues(
-        alpha: .05,
-      ),
-
-      snackBarTheme:
-          SnackBarThemeData(
-        backgroundColor:
-            dark
-                ? const Color(
-                    0xFFE8EEE9,
-                  )
-                : const Color(
-                    0xFF111612,
-                  ),
-
-        contentTextStyle:
-            TextStyle(
-          color:
-              dark
-                  ? const Color(
-                      0xFF111612,
-                    )
-                  : const Color(
-                      0xFFF2F5F3,
-                    ),
-          fontWeight:
-              FontWeight.w800,
-          fontSize:
-              10,
+      useMaterial3: true,
+      brightness: dark ? Brightness.dark : Brightness.light,
+      colorScheme: scheme,
+      scaffoldBackgroundColor: background,
+      canvasColor: background,
+      cardColor: background,
+      fontFamily: 'Roboto',
+      dividerColor: foreground.withValues(alpha: .10),
+      splashColor: accent.withValues(alpha: .10),
+      highlightColor: accent.withValues(alpha: .05),
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: dark
+            ? const Color(0xFFE8EEE9)
+            : const Color(0xFF111612),
+        contentTextStyle: TextStyle(
+          color: dark
+              ? const Color(0xFF111612)
+              : const Color(0xFFF2F5F3),
+          fontWeight: FontWeight.w800,
+          fontSize: 10,
         ),
-
-        behavior:
-            SnackBarBehavior
-                .floating,
-
-        shape:
-            RoundedRectangleBorder(
-          borderRadius:
-              BorderRadius.circular(
-            7,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(7),
+        ),
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(14),
           ),
         ),
       ),
-
-      bottomSheetTheme:
-          const BottomSheetThemeData(
-        surfaceTintColor:
-            Colors.transparent,
-        shape:
-            RoundedRectangleBorder(
-          borderRadius:
-              BorderRadius.vertical(
-            top:
-                Radius.circular(
-              14,
-            ),
-          ),
-        ),
-      ),
-
-      appBarTheme:
-          AppBarTheme(
-        backgroundColor:
-            background,
-        foregroundColor:
-            foreground,
-        surfaceTintColor:
-            Colors.transparent,
-        elevation:
-            0,
+      appBarTheme: AppBarTheme(
+        backgroundColor: background,
+        foregroundColor: foreground,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
       ),
     );
   }
@@ -802,17 +564,12 @@ class _LandCamPageState
     _viewModel.dispose();
 
     unawaited(
-      SystemChrome
-          .setPreferredOrientations(
+      SystemChrome.setPreferredOrientations(
         const [
-          DeviceOrientation
-              .portraitUp,
-          DeviceOrientation
-              .portraitDown,
-          DeviceOrientation
-              .landscapeLeft,
-          DeviceOrientation
-              .landscapeRight,
+          DeviceOrientation.portraitUp,
+          DeviceOrientation.portraitDown,
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
         ],
       ),
     );

@@ -4,12 +4,19 @@ import '../models/landcam_models.dart';
 
 /// Flutter <-> Android native bridge.
 ///
-/// Flutter is the control/state plane. Android remains responsible for camera
-/// discovery, networking, image processing, crop/registration, NDVI rendering,
-/// capture and storage.
+/// Flutter owns UI and application state. Android owns camera discovery,
+/// networking, optical processing, registration, NDVI rendering, capture, and
+/// storage.
 ///
-/// Platform/plugin failures are converted to safe return values so a bridge
-/// failure does not escape into a widget callback as an uncaught exception.
+/// Keep names and payloads in sync with MainActivity.java and CameraEngine.java.
+/// Native capture-output values are canonicalized to:
+///   RAW
+///   PROCESSED
+///   RAW + PROCESSED
+///
+/// Performance scales are presets owned by CameraEngine. Values sent from
+/// Flutter are hints/compatibility data; the native side reports the active
+/// preset back to Flutter.
 class NativeBridge {
   NativeBridge();
 
@@ -17,10 +24,11 @@ class NativeBridge {
   static const EventChannel events = EventChannel('landcam/events');
 
   static const String defaultCaptureMode = 'PROCESSED';
+  static const String defaultCaptureOutput = 'PROCESSED';
   static const String defaultPreviewDisplayMode = 'PROCESSED';
   static const String defaultPerformanceMode = 'PERFORMANCE';
 
-  /// Native event stream.
+  /// Native event stream. Events are normally maps with `type` and `data` keys.
   static Stream<dynamic> get eventStream => events.receiveBroadcastStream();
 
   // ---------------------------------------------------------------------------
@@ -33,23 +41,25 @@ class NativeBridge {
 
   static Future<void> stopNfc() => _invokeVoid('stopNfc');
 
-  /// Requests network discovery on the currently available network.
+  /// Requests camera discovery on the currently available network.
   static Future<bool> probeCurrentNetwork() =>
       _invokeBool('probeCurrentNetwork');
 
-  /// Alias for UI/ViewModel code that calls this operation a network scan.
+  /// Alias retained for ViewModel/UI call sites that use the term scan.
   static Future<bool> scanNetwork() => probeCurrentNetwork();
 
-  /// Requests reconnection using the last saved camera Wi-Fi credentials.
+  /// Reconnects using the last camera Wi-Fi credentials known to native code.
   static Future<bool> connectLastWifi() => _invokeBool('connectLastWifi');
 
   static Future<void> refreshLiveview() => _invokeVoid('refreshLiveview');
 
   static Future<void> disconnect() => _invokeVoid('disconnect');
 
+  /// Starts one native still capture. Capture output selection is handled by
+  /// CameraEngine; this bridge must never invoke capture twice for dual output.
   static Future<void> capture() => _invokeVoid('capture');
 
-  /// Compatibility method; autofocus is configured automatically by native.
+  /// Compatibility command; native configures autofocus on startup.
   static Future<void> autofocus() => _invokeVoid('autofocus');
 
   // ---------------------------------------------------------------------------
@@ -68,32 +78,17 @@ class NativeBridge {
   // Preview display mode (independent from capture output)
   // ---------------------------------------------------------------------------
 
-  /// Valid display layouts supported by the current LANDCAM UI.
-  ///
-  /// The native method handler should pass the returned bool to Flutter and
-  /// accept either this map payload or a plain String for backward
-  /// compatibility: {'mode': 'PROCESSED' | 'FULL_FRAME' | 'MULTI_VIEW'}.
+  /// Sets one of PROCESSED, FULL_FRAME, or MULTI_VIEW.
+  /// Native accepts the map shape `{mode: value}` or a legacy plain string.
   static Future<bool> setPreviewDisplayMode(String rawMode) async {
     final mode = _normalizePreviewDisplayMode(rawMode);
     if (mode == null) return false;
 
-    try {
-      final result = await methods.invokeMethod<dynamic>(
-        'setPreviewDisplayMode',
-        <String, Object>{'mode': mode},
-      );
-      return _readAccepted(result);
-    } on MissingPluginException {
-      return false;
-    } on PlatformException {
-      return false;
-    } on Exception {
-      return false;
-    }
+    return _invokeBool('setPreviewDisplayMode', <String, Object>{'mode': mode});
   }
 
-  /// Returns the persisted native display layout. Older native builds that do
-  /// not implement this method use the safe PROCESSED fallback.
+  /// Reads the persisted native layout. Unknown/unavailable values fall back to
+  /// PROCESSED; capture output is never used to infer this setting.
   static Future<String> getPreviewDisplayMode() async {
     try {
       final result = await methods.invokeMethod<dynamic>(
@@ -113,6 +108,23 @@ class NativeBridge {
     }
   }
 
+  /// Returns native preview settings as a plain map, or null when unavailable.
+  static Future<Map<String, dynamic>?> getPreviewSettings() async {
+    try {
+      final value = await methods.invokeMapMethod<String, dynamic>(
+        'getPreviewSettings',
+      );
+      if (value == null) return null;
+      return Map<String, dynamic>.from(value);
+    } on MissingPluginException {
+      return null;
+    } on PlatformException {
+      return null;
+    } on Exception {
+      return null;
+    }
+  }
+
   static String? _normalizePreviewDisplayMode(String? rawMode) {
     if (rawMode == null) return null;
 
@@ -128,7 +140,7 @@ class NativeBridge {
         return 'PROCESSED';
       case 'FULL_FRAME':
       case 'FULLFRAME':
-      case 'RAW': // legacy preview name, not capture output
+      case 'RAW': // Legacy preview alias only; not capture output.
         return 'FULL_FRAME';
       case 'MULTI_VIEW':
       case 'MULTIVIEW':
@@ -140,27 +152,35 @@ class NativeBridge {
   }
 
   // ---------------------------------------------------------------------------
-  // Legacy capture mode compatibility
+  // Legacy two-state capture-mode compatibility
   // ---------------------------------------------------------------------------
 
-  /// Legacy two-option setter. Prefer [applyAdvancedSettings] for saved output.
+  /// Legacy setter supports only RAW and PROCESSED. Use setCaptureOutput or
+  /// applyAdvancedSettings to select RAW + PROCESSED.
   static Future<bool> setCaptureMode(String rawMode) {
     final mode = rawMode.trim().toUpperCase();
-    if (mode != 'RAW' && mode != 'PROCESSED') return Future.value(false);
+    if (mode != 'RAW' && mode != 'PROCESSED') {
+      return Future<bool>.value(false);
+    }
     return _invokeBool('setCaptureMode', mode);
   }
 
-  /// Legacy two-option getter. The result is never inferred from preview mode.
+  /// Legacy getter always returns RAW or PROCESSED. If native reports the
+  /// three-state dual-output policy, it maps to PROCESSED because this older API
+  /// cannot represent the third state. Use getAdvancedSettings for that state.
   static Future<String> getCaptureMode() async {
     try {
       final result = await methods.invokeMethod<dynamic>('getCaptureMode');
       final value = result is Map
-          ? result['captureMode'] ?? result['mode'] ?? result['value']
+          ? result['legacyCaptureMode'] ??
+              result['captureMode'] ??
+              result['captureOutput'] ??
+              result['mode'] ??
+              result['value']
           : result;
-      final mode = value?.toString().trim().toUpperCase() ?? '';
-      return mode == 'RAW' || mode == 'PROCESSED'
-          ? mode
-          : defaultCaptureMode;
+      final normalized = _normalizeCaptureOutput(value?.toString());
+      if (normalized == 'RAW') return 'RAW';
+      return defaultCaptureMode;
     } on MissingPluginException {
       return defaultCaptureMode;
     } on PlatformException {
@@ -171,42 +191,58 @@ class NativeBridge {
   }
 
   // ---------------------------------------------------------------------------
-  // Advanced Settings
+  // Capture output and Advanced Settings
   // ---------------------------------------------------------------------------
 
-  /// Applies capture output and performance as one native transaction.
+  /// Applies capture output and performance as a single native transaction.
+  ///
+  /// CameraEngine owns the accepted performance presets, so the config is
+  /// derived from the selected enum rather than accepting arbitrary scales.
   static Future<bool> applyAdvancedSettings(AdvancedSettings settings) async {
+    final captureOutput = _normalizeCaptureOutput(
+      settings.captureOutput.nativeName,
+    );
+    if (captureOutput == null) return false;
+
+    final performanceConfig = PerformanceConfig.fromMode(settings.performance);
     final payload = <String, Object?>{
       ...settings.toMap(),
-      // Explicit, stable keys make the contract clear even when the model's
-      // serialized map grows additional fields in the future.
-      'captureOutput': settings.captureOutput.nativeName,
+      // Explicit bridge contract keys override any legacy model-map aliases.
+      'captureOutput': captureOutput,
+      'captureMode': captureOutput,
       'performance': settings.performance.nativeName,
-      'performanceConfig': settings.performanceConfig.toMap(),
+      'performanceMode': settings.performance.nativeName,
+      'performanceConfig': performanceConfig.toMap(),
     };
     return _invokeBool('applyAdvancedSettings', payload);
   }
 
-  static Future<bool> setCaptureOutput(CaptureOutputMode mode) =>
-      _invokeBool('setCaptureOutput', mode.nativeName);
-
-  /// Native's MainActivity may accept a String or a Map. This bridge sends a
-  /// Map so both the selected preset and its resolved values reach the native
-  /// method handler.
-  static Future<bool> setPerformance(PerformanceMode mode) {
-    final config = PerformanceConfig.fromMode(mode);
-    return _invokeBool(
-      'setPerformance',
-      <String, Object?>{
-        'mode': mode.nativeName,
-        'config': config.toMap(),
-      },
-    );
+  /// Sets the full three-state capture-output policy.
+  static Future<bool> setCaptureOutput(CaptureOutputMode mode) {
+    final output = _normalizeCaptureOutput(mode.nativeName);
+    if (output == null) return Future<bool>.value(false);
+    return _invokeBool('setCaptureOutput', output);
   }
 
-  /// Retrieves persisted settings. Returns null only if the native method is
-  /// unavailable or the response cannot be interpreted. New installs should
-  /// use model defaults PROCESSED + PERFORMANCE.
+  /// Sets a native-owned performance preset.
+  ///
+  /// Both `config` (current bridge key) and `performanceConfig` (compatibility
+  /// key) are included so native builds can safely read either. Native resolves
+  /// the preset itself and reports the effective scales back to Flutter.
+  static Future<bool> setPerformance(PerformanceMode mode) {
+    final config = PerformanceConfig.fromMode(mode).toMap();
+    final payload = <String, Object?>{
+      'mode': mode.nativeName,
+      'performance': mode.nativeName,
+      'performanceMode': mode.nativeName,
+      'config': config,
+      'performanceConfig': config,
+    };
+    return _invokeBool('setPerformance', payload);
+  }
+
+  /// Reads persisted native settings. Null means that the native response was
+  /// unavailable or did not contain recognizable enum values.
   static Future<AdvancedSettings?> getAdvancedSettings() async {
     try {
       final value = await methods.invokeMapMethod<String, dynamic>(
@@ -217,7 +253,8 @@ class NativeBridge {
       final captureOutput = _captureOutputFromNative(
         value['captureOutput'] ??
             value['captureMode'] ??
-            value['capture_output'],
+            value['capture_output'] ??
+            value['captureOutputMode'],
       );
       final performance = _performanceFromNative(
         value['performance'] ??
@@ -227,6 +264,8 @@ class NativeBridge {
 
       if (captureOutput == null || performance == null) return null;
 
+      // AdvancedSettings derives its effective performance config from the
+      // enum preset; no unsupported named `performanceConfig` constructor arg.
       return AdvancedSettings(
         captureOutput: captureOutput,
         performance: performance,
@@ -240,8 +279,22 @@ class NativeBridge {
     }
   }
 
+  /// Reads the three-state capture output. Falls back to the declared default
+  /// if a legacy native build does not expose a recognizable output setting.
+  static Future<CaptureOutputMode> getCaptureOutput() async {
+    final settings = await getAdvancedSettings();
+    return settings?.captureOutput ?? CaptureOutputMode.processed;
+  }
+
+  /// Reads the selected performance preset, or returns the native-compatible
+  /// default if the current native build cannot supply settings.
+  static Future<PerformanceMode> getPerformanceMode() async {
+    final settings = await getAdvancedSettings();
+    return settings?.performance ?? PerformanceMode.performance;
+  }
+
   // ---------------------------------------------------------------------------
-  // Safe method-channel helpers
+  // Safe MethodChannel helpers
   // ---------------------------------------------------------------------------
 
   static Future<bool> _invokeBool(
@@ -260,14 +313,17 @@ class NativeBridge {
     }
   }
 
-  /// Accept common native result shapes: bool, {accepted: bool}, or
-  /// {success: bool}. A null/unknown response is not treated as success.
+  /// Accepts native bool responses and common object-wrapped responses.
+  /// Unknown or null responses are not treated as success.
   static bool _readAccepted(Object? result) {
     if (result is bool) return result;
     if (result is Map) {
-      if (result['accepted'] is bool) return result['accepted'] as bool;
-      if (result['success'] is bool) return result['success'] as bool;
-      if (result['ok'] is bool) return result['ok'] as bool;
+      final accepted = result['accepted'];
+      if (accepted is bool) return accepted;
+      final success = result['success'];
+      if (success is bool) return success;
+      final ok = result['ok'];
+      if (ok is bool) return ok;
     }
     return false;
   }
@@ -279,38 +335,53 @@ class NativeBridge {
     try {
       await methods.invokeMethod<dynamic>(method, arguments);
     } on MissingPluginException {
-      // Backward-compatible safe no-op when this native command is absent.
+      // Keep legacy UI callbacks safe when running against older native builds.
     } on PlatformException {
-      // Native rejected the command; the native event/log channel may contain
-      // the detailed reason.
+      // Native logs/events can provide the detailed reason for rejected calls.
     } on Exception {
-      // Keep ordinary bridge failures out of the UI callback.
+      // Do not let ordinary bridge exceptions escape into widget callbacks.
     }
   }
 
   // ---------------------------------------------------------------------------
-  // Native enum parsing
+  // Native enum parsing / canonicalization
   // ---------------------------------------------------------------------------
 
-  static CaptureOutputMode? _captureOutputFromNative(Object? value) {
-    if (value is! String) return null;
+  static String? _normalizeCaptureOutput(String? value) {
+    if (value == null) return null;
 
     final normalized = value
         .trim()
         .toUpperCase()
         .replaceAll('_', ' ')
-        .replaceAll('+', ' + ')
+        .replaceAll(RegExp(r'\s*\+\s*'), ' + ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
 
+    switch (normalized) {
+      case 'RAW':
+        return 'RAW';
+      case 'PROCESSED':
+        return 'PROCESSED';
+      case 'RAW + PROCESSED':
+      case 'RAW AND PROCESSED':
+      case 'RAW PROCESSED':
+      case 'BOTH':
+        // Canonical value shared by CaptureManager and CameraEngine.
+        return 'RAW + PROCESSED';
+      default:
+        return null;
+    }
+  }
+
+  static CaptureOutputMode? _captureOutputFromNative(Object? value) {
+    final normalized = _normalizeCaptureOutput(value?.toString());
     switch (normalized) {
       case 'RAW':
         return CaptureOutputMode.raw;
       case 'PROCESSED':
         return CaptureOutputMode.processed;
       case 'RAW + PROCESSED':
-      case 'RAW PROCESSED':
-      case 'BOTH':
         return CaptureOutputMode.rawAndProcessed;
       default:
         return null;
@@ -318,9 +389,10 @@ class NativeBridge {
   }
 
   static PerformanceMode? _performanceFromNative(Object? value) {
-    if (value is! String) return null;
+    if (value == null) return null;
 
     final normalized = value
+        .toString()
         .trim()
         .toUpperCase()
         .replaceAll('_', ' ')

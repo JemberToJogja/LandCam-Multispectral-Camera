@@ -84,7 +84,6 @@ import java.util.regex.Pattern;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-
 /**
  * LANDCAM camera engine.
  *
@@ -93,8 +92,6 @@ import org.json.JSONObject;
  * capture, storage and native events.
  */
 public class CameraEngine {
-
-
 
     private static final String TAG = "LandCamMonitor";
 
@@ -230,11 +227,7 @@ public class CameraEngine {
      * against a known reflectance target. Do not tune this to make a particular
      * scene look green: use a repeatable reference-target calibration instead.
      */
-    private static final float NDVI_FIXED_NIR_GAIN = 1.0f; // safe fallback before session preview balance
-    private static final float NDVI_NIR_GAIN_MIN = 0.50f;
-    private static final float NDVI_NIR_GAIN_MAX = 4.00f;
-    private static final int NDVI_GAIN_BALANCE_PERCENTILE = 85;
-    private static final int NDVI_MIN_GAIN_SAMPLES = 64;
+    private static final float NDVI_FIXED_NIR_GAIN = 1.0f; // neutral digital gain; not radiometric calibration
 
     // Visible-channel vegetation *candidate* mask for false-colour display.
     // These thresholds are a visible-colour heuristic for this warm-tinted
@@ -387,7 +380,6 @@ public class CameraEngine {
                     "actTakeInfraredPicture"
             );
 
-
     private ConnectivityManager connectivityManager;
 
     private ConnectivityManager.NetworkCallback networkCallback;
@@ -431,6 +423,11 @@ public class CameraEngine {
     private volatile int calibratedSourceHeight = -1;
     private volatile Rect rgbCropRect;
     private volatile Rect nirCropRect;
+
+    /** Serializes users of the shared live-view ROI state with still recalibration. */
+    private final Object opticalProcessingLock = new Object();
+    /** Single source of truth for live-view and still optical ROI detection. */
+    private final OpticalProcessor opticalProcessor = new OpticalProcessor();
     private volatile long lastQuadEventAt = 0L;
     private final AtomicLong spectralGeneration = new AtomicLong(0L);
 
@@ -530,8 +527,6 @@ public class CameraEngine {
     private volatile String cameraFriendlyName =
             "";
 
-
-
     public interface Listener {
         void onNativeEvent(String type, Object data);
 
@@ -617,7 +612,6 @@ public class CameraEngine {
     private volatile double lastNdviValue = Double.NaN;
     private volatile int lastNdviValidPixels = 0;
     private volatile float lastNdviNirGain = NDVI_FIXED_NIR_GAIN;
-    private volatile boolean ndviSessionGainCalibrated = false;
     private volatile long lastNdviStatisticsAt = 0L;
 
     private final Object gpuNdviLock = new Object();
@@ -704,7 +698,6 @@ public class CameraEngine {
         }
     }
 
-
     private boolean hasWifiPermission() {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             return context.checkSelfPermission(
@@ -720,7 +713,6 @@ public class CameraEngine {
 
         return true;
     }
-
 
     public void initialize() {
         loadPersistedSettings();
@@ -866,6 +858,7 @@ public class CameraEngine {
 
     public boolean setGrayscale(boolean enabled) {
         grayscaleMode = enabled;
+        opticalProcessor.setGrayscale(enabled);
         sendEvent("grayscaleChanged", grayscaleMode);
         return true;
     }
@@ -905,7 +898,6 @@ public class CameraEngine {
             lastNdviValue = Double.NaN;
             lastNdviValidPixels = 0;
             lastNdviNirGain = NDVI_FIXED_NIR_GAIN;
-            ndviSessionGainCalibrated = false;
             lastNdviStatisticsAt = 0L;
             ndviRendererMode = NDVI_RENDERER_UNKNOWN;
 
@@ -1080,6 +1072,7 @@ public class CameraEngine {
         }
 
         if ("RAW + PROCESSED".equals(mode)
+                || "RAW AND PROCESSED".equals(mode)
                 || "RAW PROCESSED".equals(mode)
                 || "BOTH".equals(mode)) {
             return CAPTURE_MODE_BOTH;
@@ -1240,6 +1233,7 @@ public class CameraEngine {
             // Do not intentionally discard every other processed frame. The
             // latest-frame-only queue already drops stale work when overloaded.
             processingEveryNFrames = 1;
+            opticalProcessor.setProcessingScale(processingScale);
             return;
         }
 
@@ -1247,12 +1241,14 @@ public class CameraEngine {
             previewScale = 1.00d;
             processingScale = 1.00d;
             processingEveryNFrames = 1;
+            opticalProcessor.setProcessingScale(processingScale);
             return;
         }
 
         previewScale = 0.75d;
         processingScale = 0.75d;
         processingEveryNFrames = 1;
+        opticalProcessor.setProcessingScale(processingScale);
     }
 
     private Map<String, Object> performanceConfigMap() {
@@ -1324,7 +1320,6 @@ public class CameraEngine {
         lastNdviValue = Double.NaN;
         lastNdviValidPixels = 0;
         lastNdviNirGain = NDVI_FIXED_NIR_GAIN;
-        ndviSessionGainCalibrated = false;
         lastNdviStatisticsAt = 0L;
 
         /*
@@ -1376,7 +1371,6 @@ public class CameraEngine {
     public void disconnect() {
         disconnectImpl();
     }
-
 
     private Credentials parseSonyCredentials(
             byte[] payload
@@ -2049,7 +2043,6 @@ public class CameraEngine {
         lastNdviValue = Double.NaN;
         lastNdviValidPixels = 0;
         lastNdviNirGain = NDVI_FIXED_NIR_GAIN;
-        ndviSessionGainCalibrated = false;
 
         updateSystemStatus(
                 "DISCOVERING CAMERA",
@@ -4592,6 +4585,34 @@ public class CameraEngine {
         }
     }
 
+    private int choosePreviewSampleSize(byte[] jpeg) {
+        if (jpeg == null || jpeg.length == 0
+                || PREVIEW_DISPLAY_FULL_FRAME.equals(previewDisplayMode)
+                || previewScale > 0.50d) {
+            return 1;
+        }
+
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeByteArray(jpeg, 0, jpeg.length, bounds);
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            return 1;
+        }
+
+        final double safeScale = Math.max(0.25d, Math.min(1.0d, previewScale));
+        final int targetSample = Math.max(1, (int) Math.floor(1.0d / safeScale));
+        int sample = 1;
+        // BitmapFactory samples efficiently at powers of two. Keep the decoded
+        // composite at least 640x360 where possible; smaller fields make circle
+        // detection fragile and historically caused severely incorrect crops.
+        while (sample * 2 <= targetSample
+                && bounds.outWidth / (sample * 2) >= 640
+                && bounds.outHeight / (sample * 2) >= 360) {
+            sample *= 2;
+        }
+        return sample;
+    }
+
     private void processAndEmitCompositeFrame(byte[] compositeJpeg) {
 
         if (compositeJpeg == null || compositeJpeg.length == 0) {
@@ -4629,18 +4650,17 @@ public class CameraEngine {
             }
         }
 
-        BitmapFactory.Options options =
-                new BitmapFactory.Options();
-        options.inPreferredConfig =
-                Bitmap.Config.ARGB_8888;
+        final int previewSampleSize = choosePreviewSampleSize(compositeJpeg);
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+        options.inSampleSize = previewSampleSize;
 
-        Bitmap source =
-                BitmapFactory.decodeByteArray(
-                        compositeJpeg,
-                        0,
-                        compositeJpeg.length,
-                        options
-                );
+        Bitmap source = BitmapFactory.decodeByteArray(
+                compositeJpeg,
+                0,
+                compositeJpeg.length,
+                options
+        );
 
         if (source == null) {
             log(
@@ -4650,6 +4670,7 @@ public class CameraEngine {
             return;
         }
 
+        synchronized (opticalProcessingLock) {
         try {
             if (source.getWidth() > MAX_PROCESSING_DIMENSION
                     || source.getHeight() > MAX_PROCESSING_DIMENSION) {
@@ -4903,7 +4924,11 @@ public class CameraEngine {
                     : activeSpectralBand;
             final long generation = spectralGeneration.get();
 
-            byte[] processed = processCompositeForBand(source, band);
+            final double previewOutputScale = Math.max(
+                    0.25d,
+                    Math.min(1.0d, processingScale * previewSampleSize)
+            );
+            byte[] processed = processCompositeForBand(source, band, previewOutputScale);
             if (processed == null || processed.length == 0) {
                 return;
             }
@@ -4930,6 +4955,7 @@ public class CameraEngine {
 
         } finally {
             source.recycle();
+        }
         }
     }
 
@@ -5001,81 +5027,86 @@ public class CameraEngine {
                 : 1;
         final int sampledWidth = (width + step - 1) / step;
         final int sampledHeight = (height + step - 1) / step;
-
-        final int[] rgbPixels = new int[width * height];
         final int nirWidth = nirRect.width();
         final int nirHeight = nirRect.height();
+
+        // Keep only one RGB scanline and one output scanline in memory. A full
+        // RGB crop + NIR crop + output int[] can exceed Android's heap on a
+        // 24 MP still even though the original capture bytes themselves are safe.
+        final int[] rgbRow = new int[width];
         final int[] nirPixels = new int[nirWidth * nirHeight];
-
-        source.getPixels(rgbPixels, 0, width, rgbRect.left, rgbRect.top, width, height);
-        source.getPixels(nirPixels, 0, nirWidth, nirRect.left, nirRect.top, nirWidth, nirHeight);
-
-        final int[] outputPixels = new int[sampledWidth * sampledHeight];
-        double ndviSum = 0.0d;
-        int valid = 0;
-
-        // The exact same normalized mapping, fixed gain, signal gates, sRGB
-        // linearization, and vegetation-aware palette are mirrored in the GPU shader.
-        for (int sy = 0; sy < sampledHeight; sy++) {
-            final int y = Math.min(height - 1, sy * step);
-            for (int sx = 0; sx < sampledWidth; sx++) {
-                final int x = Math.min(width - 1, sx * step);
-                final int outputIndex = sy * sampledWidth + sx;
-                final int rgbColor = rgbPixels[y * width + x];
-
-                final long mapped = mapUnifiedPixelToNir(
-                        x, y, width, height, nirWidth, nirHeight);
-                if (mapped < 0L) {
-                    outputPixels[outputIndex] = Color.BLACK; // outside calibrated overlap
-                    continue;
-                }
-
-                final int nirX = (int) (mapped >> 32);
-                final int nirY = (int) mapped;
-                final int nirColor = nirPixels[nirY * nirWidth + nirX];
-                final int redEncoded = Color.red(rgbColor);
-                final int nirEncoded = pixelNirIntensity(nirColor);
-                final float ndvi = calculateRelativeNdvi(redEncoded, nirEncoded);
-
-                if (!Float.isFinite(ndvi)) {
-                    outputPixels[outputIndex] = Color.BLACK; // no-data/low-signal pixel
-                    continue;
-                }
-
-                outputPixels[outputIndex] = ndviDisplayColor(ndvi, rgbColor);
-                ndviSum += ndvi;
-                valid++;
-            }
-        }
-
-        if (valid < 64) {
-            Log.w(TAG, "NDVI output rejected: too few valid registered samples (" + valid + ")");
-            return null;
-        }
-
-        lastNdviValue = ndviSum / (double) valid;
-        lastNdviValidPixels = valid;
-        lastNdviComputedAt = System.currentTimeMillis();
+        final int[] outputRow = new int[sampledWidth];
+        source.getPixels(
+                nirPixels, 0, nirWidth,
+                nirRect.left, nirRect.top, nirWidth, nirHeight
+        );
 
         Bitmap output = Bitmap.createBitmap(
-                outputPixels,
-                0,
-                sampledWidth,
                 sampledWidth,
                 sampledHeight,
                 Bitmap.Config.ARGB_8888
         );
-        if (output == null) {
-            return null;
-        }
+        double ndviSum = 0.0d;
+        int valid = 0;
 
         try {
+            // The exact same normalized mapping, fixed gain, signal gates and
+            // sRGB approximation are mirrored by the GPU shader. This is not a
+            // radiometrically calibrated reflectance measurement.
+            for (int sy = 0; sy < sampledHeight; sy++) {
+                final int y = Math.min(height - 1, sy * step);
+                source.getPixels(
+                        rgbRow, 0, width,
+                        rgbRect.left, rgbRect.top + y, width, 1
+                );
+
+                for (int sx = 0; sx < sampledWidth; sx++) {
+                    final int x = Math.min(width - 1, sx * step);
+                    final int rgbColor = rgbRow[x];
+                    final long mapped = mapUnifiedPixelToNir(
+                            x, y, width, height, nirWidth, nirHeight
+                    );
+                    if (mapped < 0L) {
+                        outputRow[sx] = Color.BLACK;
+                        continue;
+                    }
+
+                    final int nirX = (int) (mapped >> 32);
+                    final int nirY = (int) mapped;
+                    final int nirColor = nirPixels[nirY * nirWidth + nirX];
+                    final int redEncoded = Color.red(rgbColor);
+                    final int nirEncoded = pixelNirIntensity(nirColor);
+                    final float ndvi = calculateRelativeNdvi(redEncoded, nirEncoded);
+
+                    if (!Float.isFinite(ndvi)) {
+                        outputRow[sx] = Color.BLACK;
+                        continue;
+                    }
+
+                    outputRow[sx] = ndviDisplayColor(ndvi, rgbColor);
+                    ndviSum += ndvi;
+                    valid++;
+                }
+                output.setPixels(outputRow, 0, sampledWidth, 0, sy, sampledWidth, 1);
+            }
+
+            if (valid < 64) {
+                Log.w(TAG, "NDVI output rejected: too few valid registered samples (" + valid + ")");
+                return null;
+            }
+
+            lastNdviValue = ndviSum / (double) valid;
+            lastNdviValidPixels = valid;
+            lastNdviComputedAt = System.currentTimeMillis();
+
             return bitmapToJpeg(
                     output,
                     preview ? NDVI_PREVIEW_JPEG_QUALITY : NDVI_CAPTURE_JPEG_QUALITY
             );
         } finally {
-            output.recycle();
+            if (!output.isRecycled()) {
+                output.recycle();
+            }
         }
     }
 
@@ -5090,8 +5121,7 @@ public class CameraEngine {
             return;
         }
         final long now = System.currentTimeMillis();
-        final boolean statisticsDue = now - lastNdviStatisticsAt >= GPU_NDVI_STAT_INTERVAL_MS;
-        if (!statisticsDue && ndviSessionGainCalibrated) {
+        if (now - lastNdviStatisticsAt < GPU_NDVI_STAT_INTERVAL_MS) {
             return;
         }
 
@@ -5103,14 +5133,12 @@ public class CameraEngine {
         }
 
         final int grid = GPU_NDVI_STAT_SAMPLE_GRID;
-        final int[] redSamples = new int[grid * grid];
-        final int[] nirSamples = new int[grid * grid];
-        final int[] redHistogram = new int[256];
-        final int[] nirHistogram = new int[256];
-        int pairedSamples = 0;
+        double ndviSum = 0.0d;
+        int valid = 0;
 
-        // Samples remain paired by location. NIR is extracted from the strongest
-        // magenta channel when this camera stream colour-encodes its NIR field.
+        // Sample Red and NIR at paired spatial coordinates. The neutral NIR gain
+        // is deliberately fixed; scene-adaptive gain would change the numeric
+        // index according to scene content. This remains relative/digital NDVI.
         for (int gy = 0; gy < grid; gy++) {
             final int y = rgb.top + Math.round(
                     (float) gy / (float) Math.max(1, grid - 1)
@@ -5130,75 +5158,27 @@ public class CameraEngine {
                 final int redEncoded = Color.red(source.getPixel(x, y));
                 final int nirEncoded = pixelNirIntensity(source.getPixel(
                         nir.left + nirX, nir.top + nirY));
-                // Exclude shadows/noise and clipping from the session preview balance.
                 if (redEncoded < NDVI_MIN_VALID_SIGNAL || nirEncoded < NDVI_MIN_VALID_SIGNAL
                         || redEncoded >= 250 || nirEncoded >= 250) {
                     continue;
                 }
-                redSamples[pairedSamples] = redEncoded;
-                nirSamples[pairedSamples] = nirEncoded;
-                redHistogram[redEncoded]++;
-                nirHistogram[nirEncoded]++;
-                pairedSamples++;
+                final float value = calculateRelativeNdvi(redEncoded, nirEncoded);
+                if (Float.isFinite(value)) {
+                    ndviSum += value;
+                    valid++;
+                }
             }
         }
 
-        // The camera's two preview fields are independently colour/exposure
-        // encoded. Estimate one display-balancing gain for this NDVI session,
-        // then freeze it until NDVI is toggled/reconnected. This is NOT sensor
-        // reflectance calibration and must not be reported as scientific NDVI.
-        if (!ndviSessionGainCalibrated && pairedSamples >= NDVI_MIN_GAIN_SAMPLES) {
-            final int redReference = histogramPercentile(
-                    redHistogram, pairedSamples, NDVI_GAIN_BALANCE_PERCENTILE);
-            final int nirReference = histogramPercentile(
-                    nirHistogram, pairedSamples, NDVI_GAIN_BALANCE_PERCENTILE);
-            final float redLinear = decodeSrgb(redReference);
-            final float nirLinear = decodeSrgb(nirReference);
-            if (redLinear > 0.0001f && nirLinear > 0.0001f) {
-                lastNdviNirGain = clampFloat(
-                        redLinear / nirLinear, NDVI_NIR_GAIN_MIN, NDVI_NIR_GAIN_MAX);
-                ndviSessionGainCalibrated = true;
-                Log.i(TAG, "NDVI session preview balance set once: gain="
-                        + lastNdviNirGain + ", p" + NDVI_GAIN_BALANCE_PERCENTILE
-                        + " Red=" + redReference + " NIR-intensity=" + nirReference
-                        + ". Relative digital preview only; not radiometric calibration.");
-            }
-        }
-
-        if (!statisticsDue && !ndviSessionGainCalibrated) {
-            return;
-        }
-        double ndviSum = 0.0d;
-        int valid = 0;
-        for (int i = 0; i < pairedSamples; i++) {
-            final float value = calculateRelativeNdvi(redSamples[i], nirSamples[i]);
-            if (Float.isFinite(value)) {
-                ndviSum += value;
-                valid++;
-            }
-        }
         if (valid > 0) {
             lastNdviValue = ndviSum / (double) valid;
-            lastNdviValidPixels = valid; // sampled estimate, not full-frame count
-            lastNdviComputedAt = now;
+            lastNdviValidPixels = valid; // grid sample count, not full-frame pixel count
+        } else {
+            lastNdviValue = Double.NaN;
+            lastNdviValidPixels = 0;
         }
+        lastNdviComputedAt = now;
         lastNdviStatisticsAt = now;
-    }
-
-    private static int histogramPercentile(int[] histogram, int count, int percentile) {
-        if (histogram == null || histogram.length == 0 || count <= 0) {
-            return 0;
-        }
-        final int clampedPercentile = Math.max(0, Math.min(100, percentile));
-        final int target = (int) Math.round((count - 1) * (clampedPercentile / 100.0d));
-        int cumulative = 0;
-        for (int i = 0; i < histogram.length; i++) {
-            cumulative += histogram[i];
-            if (cumulative > target) {
-                return i;
-            }
-        }
-        return histogram.length - 1;
     }
 
     private boolean renderGpuNdvi(Bitmap source) {
@@ -5334,6 +5314,7 @@ public class CameraEngine {
                 true
         );
         event.put("registrationCalibrated", false);
+        event.put("semanticVegetationClassificationAvailable", false);
         event.put(
                 "registrationModel",
                 "NORMALIZED_AFFINE_GPU_UNCALIBRATED_DEFAULTS"
@@ -5461,10 +5442,9 @@ public class CameraEngine {
     }
 
     /**
-     * False-colour NDVI palette. Do not classify pixels from visible RGB here:
-     * the camera's Red ROI is warm/orange encoded, so a green-RGB heuristic
-     * incorrectly rejects nearly every leaf and makes the map appear red/grey.
-     * NDVI is mapped continuously from red (−1) through yellow (0) to green (+1).
+     * False-colour palette for the relative digital index only. Green is an
+     * index value, not a semantic claim that the object is biological vegetation.
+     * A trained classifier must be a separate, validated mask.
      */
     private static int ndviDisplayColor(float ndvi, int rgbColor) {
         final float value = clampFloat(ndvi, -1.0f, 1.0f);
@@ -5542,96 +5522,64 @@ public class CameraEngine {
         data.put("registrationModel", "NORMALIZED_AFFINE_UNCALIBRATED_DEFAULTS");
         data.put("registrationCalibrated", false);
         data.put("nirGain", lastNdviNirGain);
-        data.put("nirGainMethod", ndviSessionGainCalibrated ? "SESSION_PREVIEW_BALANCE_P85" : "NEUTRAL_FALLBACK");
+        data.put("nirGainMethod", "FIXED_NEUTRAL_GAIN_UNCALIBRATED");
         data.put("radiometricCalibration", false);
-        data.put("validPixelCountIsSampled", ndviRendererMode == NDVI_RENDERER_GPU);
+        data.put("semanticVegetationClassificationAvailable", false);
+        data.put("validPixelCountIsSampled", true);
 
         sendEvent("ndvi", data);
     }
 
     private void ensureDualOpticalCalibration(Bitmap source) {
+        ensureDualOpticalCalibration(source, false);
+    }
 
-        int width = source.getWidth();
-        int height = source.getHeight();
-
-        if (width == calibratedSourceWidth
+    /**
+     * Recalibrates the optical field bounds from the given image. Live view can
+     * reuse a stable calibration; still capture must force a new pass because
+     * shutter/lens movement can shift the fields without changing image dimensions.
+     */
+    private void ensureDualOpticalCalibration(Bitmap source, boolean force) {
+        if (source == null || source.isRecycled()) {
+            return;
+        }
+        final int width = source.getWidth();
+        final int height = source.getHeight();
+        if (!force
+                && width == calibratedSourceWidth
                 && height == calibratedSourceHeight
                 && rgbCropRect != null
                 && nirCropRect != null) {
             return;
         }
 
-        int opticalSplit = detectOpticalSplit(source);
-
-        Rect detectedRgb = detectOpticalRoi(
-                source,
-                0,
-                opticalSplit
-        );
-
-        Rect detectedNir = detectOpticalRoi(
-                source,
-                opticalSplit,
-                width
-        );
-
-        if (!isUsableCrop(detectedRgb, width, height)) {
-            detectedRgb = fallbackSquareCrop(
-                    width,
-                    height,
-                    FALLBACK_RGB_LEFT,
-                    FALLBACK_RGB_TOP,
-                    FALLBACK_RGB_RIGHT,
-                    FALLBACK_RGB_BOTTOM
-            );
+        // OpticalProcessor owns field detection and safe-square fallback. CameraEngine
+        // copies its rectangles so GPU rendering, CPU NDVI and capture use one ROI source.
+        if (force) {
+            opticalProcessor.forceDualOpticalCalibration(source);
+        } else {
+            opticalProcessor.ensureDualOpticalCalibration(source);
         }
+        final Rect detectedRgb = opticalProcessor.getRgbCropRect();
+        final Rect detectedNir = opticalProcessor.getNirCropRect();
+        final boolean validRgb = isUsableCrop(detectedRgb, width, height);
+        final boolean validNir = isUsableCrop(detectedNir, width, height);
+        final boolean changed = realNirAvailable != (validRgb && validNir);
 
-        if (!isUsableCrop(detectedNir, width, height)) {
-            detectedNir = fallbackSquareCrop(
-                    width,
-                    height,
-                    FALLBACK_NIR_LEFT,
-                    FALLBACK_NIR_TOP,
-                    FALLBACK_NIR_RIGHT,
-                    FALLBACK_NIR_BOTTOM
-            );
-        }
-
-        rgbCropRect = detectedRgb;
-        nirCropRect = detectedNir;
+        rgbCropRect = validRgb ? new Rect(detectedRgb) : null;
+        nirCropRect = validNir ? new Rect(detectedNir) : null;
         calibratedSourceWidth = width;
         calibratedSourceHeight = height;
+        realNirAvailable = validRgb && validNir;
 
-        boolean validDual =
-                isUsableCrop(rgbCropRect, width, height)
-                        && isUsableCrop(nirCropRect, width, height);
-
-        boolean changed = realNirAvailable != validDual;
-        realNirAvailable = validDual;
-
-        Rect unified = unifiedRgbRect();
-
-        log(
-                "INFO",
-                "Unified optical calibration: RGB="
-                        + rectToString(rgbCropRect)
-                        + " NIR="
-                        + rectToString(nirCropRect)
-                        + " UNIFIED="
-                        + rectToString(unified)
-                        + " REG="
-                        + NIR_REGISTRATION_SCALE_X
-                        + "x"
-                        + NIR_REGISTRATION_SCALE_Y
-                        + " rot="
-                        + NIR_REGISTRATION_ROTATION_DEG
-                        + " shift="
-                        + NIR_REGISTRATION_SHIFT_X_PX
-                        + ","
-                        + NIR_REGISTRATION_SHIFT_Y_PX
-        );
-
-        if (changed) {
+        log("INFO", "OpticalProcessor calibration: RGB=" + rectToString(rgbCropRect)
+                + " NIR=" + rectToString(nirCropRect)
+                + " UNIFIED_RGB=" + rectToString(unifiedRgbRect())
+                + " source=" + width + "x" + height
+                + " force=" + force
+                + " fallback=" + opticalProcessor.isRoiFallbackUsed()
+                + " registration=NORMALIZED_AFFINE_UNCALIBRATED_DEFAULTS");
+        if (changed && !force) {
             emitCapabilities(Collections.emptySet());
         }
     }
@@ -6392,12 +6340,11 @@ public class CameraEngine {
                 unified,
                 source.getWidth(),
                 source.getHeight()
-        )
-                || !isUsableCrop(
-                nirCropRect,
-                source.getWidth(),
-                source.getHeight()
         )) {
+            return null;
+        }
+        if ("NIR".equals(band)
+                && !isUsableCrop(nirCropRect, source.getWidth(), source.getHeight())) {
             return null;
         }
 
@@ -6467,53 +6414,22 @@ public class CameraEngine {
     }
 
     private Rect unifiedRgbRect() {
-        if (rgbCropRect == null
-                || nirCropRect == null) {
+        if (rgbCropRect == null) {
             return null;
         }
-
-        final int rgbSize =
-                Math.min(
-                        rgbCropRect.width(),
-                        rgbCropRect.height()
-                );
-
-        final int nirSize =
-                Math.min(
-                        nirCropRect.width(),
-                        nirCropRect.height()
-                );
-
-        final int size =
-                Math.min(
-                        rgbSize,
-                        nirSize
-                );
-
+        final int width = rgbCropRect.width();
+        final int height = rgbCropRect.height();
+        final int size = Math.min(width, height);
         if (size < 16) {
             return null;
         }
-
-        final int left =
-                rgbCropRect.left
-                        + Math.max(
-                                0,
-                                (rgbCropRect.width() - size) / 2
-                        );
-
-        final int top =
-                rgbCropRect.top
-                        + Math.max(
-                                0,
-                                (rgbCropRect.height() - size) / 2
-                        );
-
-        return new Rect(
-                left,
-                top,
-                left + size,
-                top + size
-        );
+        // RGB is the master output coordinate plane. If detection returns a
+        // slightly rectangular ROI, square it within the RGB ROI only. Never
+        // intersect it with or size it from the NIR crop: that shrinks the
+        // visible field whenever the right optical circle is detected smaller.
+        final int left = rgbCropRect.left + (width - size) / 2;
+        final int top = rgbCropRect.top + (height - size) / 2;
+        return new Rect(left, top, left + size, top + size);
     }
 
     private byte[] buildUnifiedNirJpeg(
@@ -6535,112 +6451,55 @@ public class CameraEngine {
             int quality,
             double requestedProcessingScale
     ) {
-        final int outputWidth =
-                unified.width();
+        final int outputWidth = unified.width();
+        final int outputHeight = unified.height();
+        final int nirWidth = nirCropRect.width();
+        final int nirHeight = nirCropRect.height();
 
-        final int outputHeight =
-                unified.height();
-
-        final int nirWidth =
-                nirCropRect.width();
-
-        final int nirHeight =
-                nirCropRect.height();
-
-        final int[] nirPixels =
-                new int[nirWidth * nirHeight];
-
+        // Cache only the NIR ROI. Generate the output bitmap a row at a time to
+        // avoid keeping both a full output int[] and a full output Bitmap alive.
+        final int[] nirPixels = new int[nirWidth * nirHeight];
         source.getPixels(
-                nirPixels,
-                0,
-                nirWidth,
-                nirCropRect.left,
-                nirCropRect.top,
-                nirWidth,
-                nirHeight
+                nirPixels, 0, nirWidth,
+                nirCropRect.left, nirCropRect.top, nirWidth, nirHeight
         );
 
-        final int[] outputPixels =
-                new int[
-                        outputWidth * outputHeight
-                ];
-
-        for (int y = 0; y < outputHeight; y++) {
-            for (int x = 0; x < outputWidth; x++) {
-                final long mapped =
-                        mapUnifiedPixelToNir(
-                                x,
-                                y,
-                                outputWidth,
-                                outputHeight,
-                                nirWidth,
-                                nirHeight
-                        );
-
-                if (mapped < 0L) {
-                    outputPixels[
-                            y * outputWidth + x
-                    ] = android.graphics.Color.BLACK;
-                    continue;
-                }
-
-                final int sourceX =
-                        (int) (mapped >> 32);
-
-                final int sourceY =
-                        (int) mapped;
-
-                final int color =
-                        nirPixels[
-                                sourceY
-                                        * nirWidth
-                                        + sourceX
-                        ];
-
-                final int value =
-                        pixelNirIntensity(color);
-
-                outputPixels[
-                        y * outputWidth + x
-                ] = android.graphics.Color.rgb(
-                        value,
-                        value,
-                        value
-                );
-            }
-        }
-
-        Bitmap output =
-                Bitmap.createBitmap(
-                        outputPixels,
-                        0,
-                        outputWidth,
-                        outputWidth,
-                        outputHeight,
-                        Bitmap.Config.ARGB_8888
-                );
-
-        Bitmap scaledOutput =
-                null;
+        final int[] outputRow = new int[outputWidth];
+        Bitmap output = Bitmap.createBitmap(
+                outputWidth,
+                outputHeight,
+                Bitmap.Config.ARGB_8888
+        );
+        Bitmap scaledOutput = null;
 
         try {
-            scaledOutput =
-                    scaleBitmap(
-                            output,
-                            requestedProcessingScale
+            for (int y = 0; y < outputHeight; y++) {
+                for (int x = 0; x < outputWidth; x++) {
+                    final long mapped = mapUnifiedPixelToNir(
+                            x, y, outputWidth, outputHeight, nirWidth, nirHeight
                     );
+                    if (mapped < 0L) {
+                        outputRow[x] = Color.BLACK;
+                        continue;
+                    }
 
-            return bitmapToJpeg(
-                    scaledOutput,
-                    quality
-            );
+                    final int sourceX = (int) (mapped >> 32);
+                    final int sourceY = (int) mapped;
+                    final int color = nirPixels[sourceY * nirWidth + sourceX];
+                    final int value = pixelNirIntensity(color);
+                    outputRow[x] = Color.rgb(value, value, value);
+                }
+                output.setPixels(outputRow, 0, outputWidth, 0, y, outputWidth, 1);
+            }
+
+            scaledOutput = scaleBitmap(output, requestedProcessingScale);
+            return bitmapToJpeg(scaledOutput, quality);
         } finally {
             if (scaledOutput != null
                     && scaledOutput != output
                     && !scaledOutput.isRecycled()) {
                 scaledOutput.recycle();
             }
-
             if (!output.isRecycled()) {
                 output.recycle();
             }
@@ -6775,8 +6634,7 @@ public class CameraEngine {
 
         try {
             final Rect unified = unifiedRgbRect();
-            if (!isUsableCrop(unified, source.getWidth(), source.getHeight())
-                    || !isUsableCrop(nirCropRect, source.getWidth(), source.getHeight())) {
+            if (!isUsableCrop(unified, source.getWidth(), source.getHeight())) {
                 return null;
             }
 
@@ -7492,7 +7350,6 @@ public class CameraEngine {
         executor.execute(() -> {
             Network network = currentNetwork;
             CameraEndpoint endpoint = currentEndpoint();
-            byte[] fallbackFrame = lastCompositeFrameBytes;
 
             if (network == null || endpoint == null) {
                 sendEvent("captureError", "CAMERA NOT READY");
@@ -7501,7 +7358,13 @@ public class CameraEngine {
 
             final String requestedMode = captureMode;
             final String requestedPerformance = performanceMode;
-            final double requestedProcessingScale = processingScale;
+            // Performance presets apply to live view only. Still processing keeps
+            // the full decoded optical ROI; the untouched original bytes are saved separately.
+            final double requestedProcessingScale = 1.0d;
+            final String requestedBand = activeSpectralBand == null
+                    ? "RGB"
+                    : activeSpectralBand;
+            final boolean requestedNdvi = ndviEnabled;
             final boolean saveRaw =
                     CAPTURE_MODE_RAW.equals(requestedMode)
                             || CAPTURE_MODE_BOTH.equals(requestedMode);
@@ -7511,11 +7374,10 @@ public class CameraEngine {
 
             try {
                 /*
-                 * Sony Camera Remote API returns the captured postview image
-                 * from actTakePicture. Ask for its original size before opening
-                 * the shutter; otherwise many models default to a 2 MP image.
+                 * Ask for the camera's original still size for every capture mode.
+                 * PROCESSED must also start from the still photo, not a 2 MP postview.
                  */
-                if (saveRaw) {
+                if (saveRaw || saveProcessed) {
                     try {
                         JSONArray originalSize = new JSONArray();
                         originalSize.put("Original");
@@ -7587,17 +7449,10 @@ public class CameraEngine {
                  * the original 6000x4000 capture.
                  */
                 if (composite == null || composite.length == 0) {
-                    if (saveRaw) {
-                        throw new IllegalStateException(
-                                "ORIGINAL PHOTO URL UNAVAILABLE; no low-resolution "
-                                        + "liveview frame was saved as RAW"
-                        );
-                    }
-                    composite = fallbackFrame;
-                }
-
-                if (composite == null || composite.length == 0) {
-                    throw new IllegalStateException("NO CAPTURE IMAGE AVAILABLE");
+                    throw new IllegalStateException(
+                            "CAMERA STILL IMAGE URL UNAVAILABLE; refusing to substitute "
+                                    + "a live-view frame for the requested capture"
+                    );
                 }
 
                 // Read image dimensions without allocating a full-resolution bitmap.
@@ -7621,13 +7476,16 @@ public class CameraEngine {
                 if (saveRaw
                         && (captureWidth != RAW_ORIGINAL_WIDTH
                         || captureHeight != RAW_ORIGINAL_HEIGHT)) {
-                    throw new IllegalStateException(
-                            "CAMERA RETURNED " + captureWidth + "x" + captureHeight
-                                    + ", expected original "
+                    // The exact camera body is not fixed by this engine. Preserve
+                    // the camera-returned bytes instead of discarding a legitimate
+                    // original still solely because it differs from one expected
+                    // sensor size. The saved metadata reports the actual dimensions.
+                    log(
+                            "WARN",
+                            "Camera original still is " + captureWidth + "x" + captureHeight
+                                    + ", not the configured reference size "
                                     + RAW_ORIGINAL_WIDTH + "x" + RAW_ORIGINAL_HEIGHT
-                                    + ". Check that the camera supports setPostviewImageSize=Original "
-                                    + "and can save stills at 6000x4000. No resized or preview "
-                                    + "image was saved as RAW."
+                                    + ". Original camera bytes will be preserved unchanged."
                     );
                 }
 
@@ -7648,13 +7506,12 @@ public class CameraEngine {
                         }
                     }
 
-                    String band = activeSpectralBand == null
-                            ? "RGB"
-                            : activeSpectralBand;
+                    String band = requestedBand;
 
                     String rawFileName = null;
                     String processedFileName = null;
                     String processedBand = null;
+                    CaptureProcessingResult captureProcessingResult = null;
                     HashMap<String, Object> data = new HashMap<>();
 
                     /* The original JPEG bytes are preserved without resizing or re-encoding. */
@@ -7663,24 +7520,18 @@ public class CameraEngine {
                     }
 
                     if (saveProcessed) {
-                        ensureDualOpticalCalibration(source);
-
-                        byte[] processed;
-                        if (ndviEnabled) {
-                            processed = buildNdviJpeg(source, false);
-                            processedBand = "NDVI";
-                        } else {
-                            processed = processCompositeForBand(
-                                    source,
-                                    band,
-                                    requestedProcessingScale
-                            );
-                            processedBand = band;
-                        }
+                        captureProcessingResult = processCapturedStill(
+                                source,
+                                band,
+                                requestedNdvi,
+                                requestedProcessingScale
+                        );
+                        byte[] processed = captureProcessingResult.bytes;
+                        processedBand = requestedNdvi ? "NDVI" : band;
 
                         if (processed == null || processed.length == 0) {
                             throw new IllegalStateException(
-                                    "FAILED TO BUILD UNIFIED " + processedBand + " CROP"
+                                    "FAILED TO BUILD " + processedBand + " OPTICAL OUTPUT"
                             );
                         }
 
@@ -7700,6 +7551,8 @@ public class CameraEngine {
                     data.put("captureMode", requestedMode);
                     data.put("output", requestedMode);
                     data.put("raw", rawFileName != null);
+                    data.put("originalBytesPreserved", rawFileName != null);
+                    data.put("sensorRawFileAvailable", false);
                     data.put("processed", processedFileName != null);
                     data.put("rawFileName", rawFileName);
                     data.put("processedFileName", processedFileName);
@@ -7708,23 +7561,34 @@ public class CameraEngine {
                     data.put("band", processedBand != null ? processedBand : "COMPOSITE");
                     data.put(
                             "source",
-                            processedFileName != null
-                                    ? (ndviEnabled
-                                            ? "UNIFIED_RGB_NIR_REGISTERED_NDVI"
-                                            : "UNIFIED_DUAL_OPTICAL_CROP")
-                                    : "FULL_COMPOSITE"
+                            processedFileName == null
+                                    ? "FULL_CAMERA_STILL_COMPOSITE"
+                                    : ("NDVI".equals(processedBand)
+                                            ? "RELATIVE_DIGITAL_NDVI_RED_VS_NIR"
+                                            : ("NIR".equals(processedBand)
+                                                    ? "NIR_RIGHT_ROI_NORMALIZED_TO_RGB_CROP"
+                                                    : "RGB_LEFT_OPTICAL_ROI"))
                     );
                     data.put("unifiedSpectralCrop", processedFileName != null);
-                    data.put("registrationApplied", processedFileName != null);
-                    data.put(
-                            "registrationModel",
-                            processedFileName != null ? "CENTERED_AFFINE" : "NONE"
-                    );
+                    final boolean registrationUsed = processedFileName != null
+                            && ("NIR".equals(processedBand) || "NDVI".equals(processedBand));
+                    data.put("registrationApplied", registrationUsed);
+                    data.put("registrationCalibrated", false);
+                    data.put("registrationModel", registrationUsed
+                            ? "NORMALIZED_AFFINE_UNCALIBRATED_DEFAULTS"
+                            : "NONE");
+                    data.put("semanticVegetationClassificationAvailable", false);
+                    if ("NDVI".equals(processedBand)) {
+                        data.put("metric", "RELATIVE_DIGITAL_NDVI");
+                    }
                     data.put("width", captureWidth);
                     data.put("height", captureHeight);
                     data.put("nirGain", lastNdviNirGain);
-                    if (!Double.isNaN(lastNdviValue)) {
-                        data.put("ndvi", lastNdviValue);
+                    if (requestedNdvi && captureProcessingResult != null
+                            && Double.isFinite(captureProcessingResult.ndvi)) {
+                        data.put("ndvi", captureProcessingResult.ndvi);
+                        data.put("ndviValidPixels", captureProcessingResult.validPixels);
+                        data.put("ndviMetric", "RELATIVE_DIGITAL_NDVI");
                     }
 
                     sendEvent("captureSaved", data);
@@ -7744,6 +7608,67 @@ public class CameraEngine {
                 );
             }
         });
+    }
+
+    private static final class CaptureProcessingResult {
+        final byte[] bytes;
+        final double ndvi;
+        final int validPixels;
+
+        CaptureProcessingResult(byte[] bytes, double ndvi, int validPixels) {
+            this.bytes = bytes;
+            this.ndvi = ndvi;
+            this.validPixels = validPixels;
+        }
+    }
+
+    private CaptureProcessingResult processCapturedStill(
+            Bitmap source,
+            String band,
+            boolean useNdvi,
+            double requestedProcessingScale
+    ) {
+        synchronized (opticalProcessingLock) {
+            final Rect previousRgb = rgbCropRect == null ? null : new Rect(rgbCropRect);
+            final Rect previousNir = nirCropRect == null ? null : new Rect(nirCropRect);
+            final boolean previousNirAvailable = realNirAvailable;
+            final float previousGain = lastNdviNirGain;
+            final double previousNdvi = lastNdviValue;
+            final int previousValidPixels = lastNdviValidPixels;
+            final long previousNdviComputedAt = lastNdviComputedAt;
+
+            byte[] result;
+            double captureNdvi = Double.NaN;
+            int captureValidPixels = 0;
+            try {
+                ensureDualOpticalCalibration(source, true);
+                if (useNdvi) {
+                    result = buildNdviJpeg(source, false);
+                    captureNdvi = lastNdviValue;
+                    captureValidPixels = lastNdviValidPixels;
+                } else {
+                    result = processCompositeForBand(source, band, requestedProcessingScale);
+                }
+            } finally {
+                // Keep live-view's state separate from the still's coordinate plane.
+                rgbCropRect = previousRgb;
+                nirCropRect = previousNir;
+                realNirAvailable = previousNirAvailable;
+                // Force fresh live-view calibration on the next decoded preview frame.
+                calibratedSourceWidth = -1;
+                calibratedSourceHeight = -1;
+                opticalProcessor.invalidateCalibration();
+                lastNdviNirGain = previousGain;
+                lastNdviValue = previousNdvi;
+                lastNdviValidPixels = previousValidPixels;
+                lastNdviComputedAt = previousNdviComputedAt;
+            }
+            return new CaptureProcessingResult(
+                    result,
+                    useNdvi ? captureNdvi : Double.NaN,
+                    useNdvi ? captureValidPixels : 0
+            );
+        }
     }
 
     private byte[] downloadBytes(
@@ -8495,11 +8420,13 @@ public class CameraEngine {
         lastCompositeFrameBytes = null;
         lastFrameBytes = null;
         lastNdviNirGain = NDVI_FIXED_NIR_GAIN;
-        ndviSessionGainCalibrated = false;
         calibratedSourceWidth = -1;
         calibratedSourceHeight = -1;
         rgbCropRect = null;
         nirCropRect = null;
+        opticalProcessor.reset();
+        opticalProcessor.setProcessingScale(processingScale);
+        opticalProcessor.setGrayscale(grayscaleMode);
         lastQuadEventAt = 0L;
         spectralGeneration.incrementAndGet();
         previewGeneration.incrementAndGet();
@@ -10053,8 +9980,6 @@ public class CameraEngine {
         return text;
     }
 
-
-
     private void sendEvent(String type, Object data) {
         if (type == null || type.trim().isEmpty()) {
             return;
@@ -10376,7 +10301,6 @@ public class CameraEngine {
         lastNdviValue = Double.NaN;
         lastNdviValidPixels = 0;
         lastNdviNirGain = NDVI_FIXED_NIR_GAIN;
-        ndviSessionGainCalibrated = false;
         lastNdviStatisticsAt = 0L;
         ndviRendererMode = NDVI_RENDERER_UNKNOWN;
         previewGeneration.incrementAndGet();
@@ -10963,6 +10887,5 @@ public class CameraEngine {
             return apiUrl;
         }
     }
-
 
 }

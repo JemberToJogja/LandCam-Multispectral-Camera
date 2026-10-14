@@ -18,6 +18,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import io.flutter.embedding.android.FlutterActivity;
 import io.flutter.embedding.engine.FlutterEngine;
@@ -30,23 +32,23 @@ import io.flutter.view.TextureRegistry;
  * LANDCAM Android entry point and Flutter/native bridge.
  * Camera processing and persistence are delegated to CameraEngine.
  */
-public class MainActivity extends FlutterActivity implements CameraEngine.Listener {
 
+public class MainActivity extends FlutterActivity implements CameraEngine.Listener {
     private static final String TAG = "LandCamMonitor";
     private static final String METHOD_CHANNEL = "landcam/native";
     private static final String EVENT_CHANNEL = "landcam/events";
     private static final int WIFI_PERMISSION_REQUEST = 100;
     private static final int GPU_NDVI_TEXTURE_WIDTH = 960;
     private static final int GPU_NDVI_TEXTURE_HEIGHT = 960;
-
     private volatile EventChannel.EventSink eventSink;
     private final List<Map<String, Object>> pendingEvents = new ArrayList<>();
+    private final AtomicReference<Map<String, Object>> pendingPreviewEvent = new AtomicReference<>();
+    private final AtomicBoolean previewEventDispatchScheduled = new AtomicBoolean(false);
     private CameraEngine cameraEngine;
     private TextureRegistry.SurfaceTextureEntry ndviTextureEntry;
     private NfcAdapter nfcAdapter;
     private PendingIntent nfcPendingIntent;
     private boolean nfcDispatchEnabled = false;
-
     // CameraEngine is the source of truth; these fields form the bridge payload.
     private String advancedCaptureOutput = "PROCESSED";
     private String advancedPerformance = "PERFORMANCE";
@@ -59,7 +61,6 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
         setupFullscreen();
         setupNfc();
         checkPermissions();
-
         cameraEngine = new CameraEngine(this, this);
         syncAdvancedSettingsFromEngine();
         handleNfcIntent(getIntent());
@@ -70,21 +71,20 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
         super.configureFlutterEngine(flutterEngine);
         ensureEngine();
         ensureNdviTexture(flutterEngine);
-
         new MethodChannel(
                 flutterEngine.getDartExecutor().getBinaryMessenger(),
                 METHOD_CHANNEL
         ).setMethodCallHandler(this::handleMethodCall);
-
         new EventChannel(
                 flutterEngine.getDartExecutor().getBinaryMessenger(),
                 EVENT_CHANNEL
         ).setStreamHandler(new EventChannel.StreamHandler() {
+
             @Override
             public void onListen(Object arguments, EventChannel.EventSink events) {
                 eventSink = events;
+                pendingPreviewEvent.set(null);
                 sendEventNow("ready", null);
-
                 if (ndviTextureEntry != null) {
                     sendEventNow("gpuTextureReady", mapOf(
                             "textureId", ndviTextureEntry.id(),
@@ -96,7 +96,6 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
                             "reason", "TEXTURE_SETUP_FAILED"
                     ));
                 }
-
                 syncAdvancedSettingsFromEngine();
                 sendEventNow("advancedSettingsChanged", buildAdvancedSettingsPayload());
                 sendEventNow("previewSettingsChanged", ensureEngine().getPreviewSettings());
@@ -106,6 +105,7 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
             @Override
             public void onCancel(Object arguments) {
                 eventSink = null;
+                pendingPreviewEvent.set(null);
             }
         });
     }
@@ -122,56 +122,45 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
                     syncAdvancedSettingsFromEngine();
                     result.success(true);
                     return;
-
                 case "startNfc":
                     result.success(startNfcListening());
                     return;
-
                 case "stopNfc":
                     stopNfcListening();
                     result.success(true);
                     return;
-
                 case "connectLastWifi":
                     result.success(ensureEngine().connectLastWifi());
                     return;
-
                 case "probeCurrentNetwork":
                     ensureEngine().probeCurrentNetwork();
                     result.success(true);
                     return;
-
                 case "refreshLiveview":
                     ensureEngine().refreshLiveview();
                     result.success(true);
                     return;
-
                 case "capture":
                     ensureEngine().capture();
                     result.success(true);
                     return;
-
                 case "autofocus":
                     ensureEngine().triggerAutoFocus();
                     result.success(true);
                     return;
-
                 case "toggleViewMode":
                     result.success(ensureEngine().toggleViewMode());
                     return;
-
                 case "setGrayscale":
                     result.success(ensureEngine().setGrayscale(
                             call.arguments instanceof Boolean && (Boolean) call.arguments
                     ));
                     return;
-
                 case "setSpectralBand":
                     result.success(ensureEngine().setSpectralBand(
                             call.arguments == null ? null : String.valueOf(call.arguments)
                     ));
                     return;
-
                 // Legacy two-state capture control; kept for existing Flutter callers.
                 case "setCaptureMode": {
                     String mode = normalizeCaptureMode(
@@ -188,11 +177,9 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
                     result.success(accepted);
                     return;
                 }
-
                 case "getCaptureMode":
                     result.success(ensureEngine().getCaptureMode());
                     return;
-
                 // Preview layout is independent of the output saved by Capture.
                 case "setPreviewDisplayMode": {
                     Map<String, Object> payload = readMapArguments(call.arguments);
@@ -214,15 +201,12 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
                     result.success(accepted);
                     return;
                 }
-
                 case "getPreviewDisplayMode":
                     result.success(ensureEngine().getPreviewDisplayMode());
                     return;
-
                 case "getPreviewSettings":
                     result.success(ensureEngine().getPreviewSettings());
                     return;
-
                 case "setNdviEnabled":
                     if (!(call.arguments instanceof Boolean)) {
                         result.success(false);
@@ -230,11 +214,9 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
                     }
                     result.success(ensureEngine().setNdviEnabled((Boolean) call.arguments));
                     return;
-
                 case "getNdviEnabled":
                     result.success(ensureEngine().isNdviEnabled());
                     return;
-
                 case "applyAdvancedSettings": {
                     Map<String, Object> payload = readMapArguments(call.arguments);
                     if (payload == null) {
@@ -244,29 +226,24 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
                     result.success(applyAdvancedSettingsPayload(payload));
                     return;
                 }
-
                 case "setCaptureOutput": {
                     String mode = normalizeCaptureOutput(call.arguments);
                     result.success(mode != null && applyCaptureOutput(mode));
                     return;
                 }
-
                 case "setPerformance": {
                     PerformancePayload payload = parsePerformancePayload(call.arguments);
                     result.success(payload != null && applyPerformance(payload));
                     return;
                 }
-
                 case "getAdvancedSettings":
                     syncAdvancedSettingsFromEngine();
                     result.success(buildAdvancedSettingsPayload());
                     return;
-
                 case "disconnect":
                     ensureEngine().disconnect();
                     result.success(true);
                     return;
-
                 default:
                     result.notImplemented();
             }
@@ -290,35 +267,20 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
                         ? payload.get("performance")
                         : payload.get("performanceMode")
         );
-
         if (captureOutput == null || performance == null) {
             Log.w(TAG, "Invalid Advanced Settings payload");
             sendEvent("error", "INVALID ADVANCED SETTINGS");
             return false;
         }
-
-        Map<String, Object> config = readPerformanceConfig(
-                payload.get("performanceConfig"), performance
-        );
-        if (config == null) {
-            Log.w(TAG, "Invalid performance configuration");
-            sendEvent("error", "INVALID PERFORMANCE CONFIG");
-            return false;
-        }
-
-        boolean accepted = ensureEngine().applyAdvancedSettings(
-                captureOutput,
-                performance,
-                config
-        );
+        // CameraEngine owns the supported presets. Legacy performanceConfig values
+        // are accepted by the bridge for compatibility, but are not falsely reported
+        // as active when CameraEngine intentionally derives scales from the preset.
+        boolean accepted = ensureEngine().applyAdvancedSettings(captureOutput, performance);
         if (!accepted) {
             Log.w(TAG, "CameraEngine rejected Advanced Settings");
             return false;
         }
-
-        advancedCaptureOutput = captureOutput;
-        advancedPerformance = performance;
-        advancedPerformanceConfig = new HashMap<>(config);
+        syncAdvancedSettingsFromEngine();
         sendEvent("advancedSettingsChanged", buildAdvancedSettingsPayload());
         sendEvent("captureOutputChanged", advancedCaptureOutput);
         sendEvent("performanceChanged", mapOf(
@@ -344,12 +306,12 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
     }
 
     private boolean applyPerformance(PerformancePayload payload) {
-        boolean accepted = ensureEngine().setPerformance(payload.mode, payload.config);
+        // Do not imply that arbitrary scales were accepted: CameraEngine currently
+        // exposes three authoritative performance presets.
+        boolean accepted = ensureEngine().setPerformance(payload.mode);
         if (!accepted) {
             return false;
         }
-        advancedPerformance = payload.mode;
-        advancedPerformanceConfig = new HashMap<>(payload.config);
         syncAdvancedSettingsFromEngine();
         sendEvent("performanceChanged", mapOf(
                 "mode", advancedPerformance,
@@ -366,18 +328,20 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
         if (normalized == null) {
             return;
         }
-        advancedCaptureOutput = "RAW".equals(normalized) ? "RAW" : "PROCESSED";
-        advancedPerformanceConfig = defaultPerformanceConfig(advancedPerformance);
+        // setCaptureMode() has already updated CameraEngine. Pull the canonical
+        // state/config back instead of manufacturing a second settings state.
+        syncAdvancedSettingsFromEngine();
         sendEvent("captureOutputChanged", advancedCaptureOutput);
         sendEvent("advancedSettingsChanged", buildAdvancedSettingsPayload());
     }
 
     private void syncAdvancedSettingsFromEngine() {
-        if (cameraEngine == null) {
+        CameraEngine engine = cameraEngine;
+        if (engine == null) {
             return;
         }
         try {
-            Map<String, Object> nativeSettings = cameraEngine.getAdvancedSettings();
+            Map<String, Object> nativeSettings = engine.getAdvancedSettings();
             String output = normalizeCaptureOutput(nativeSettings.get("captureOutput"));
             if (output == null) {
                 output = normalizeCaptureOutput(nativeSettings.get("captureMode"));
@@ -393,19 +357,51 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
             if (performance != null) {
                 advancedPerformance = performance;
             }
-            advancedPerformanceConfig = defaultPerformanceConfig(advancedPerformance);
+            advancedPerformanceConfig = performanceConfigFromNativeSettings(
+                    nativeSettings, advancedPerformance);
         } catch (Exception e) {
             Log.w(TAG, "Could not read settings from CameraEngine", e);
         }
     }
 
+    private Map<String, Object> performanceConfigFromNativeSettings(
+            Map<String, Object> nativeSettings, String mode) {
+        Double previewScale = parseDouble(nativeSettings.get("previewScale"));
+        Double processingScale = parseDouble(nativeSettings.get("processingScale"));
+        Integer everyN = parseInt(nativeSettings.get("processingEveryNFrames"));
+        if (previewScale == null || processingScale == null || everyN == null
+                || !isValidScale(previewScale) || !isValidScale(processingScale)
+                || everyN < 1 || everyN > 60) {
+            return defaultPerformanceConfig(mode);
+        }
+        return mapOf(
+                "previewScale", previewScale,
+                "processingScale", processingScale,
+                "processingEveryNFrames", everyN
+        );
+    }
+
     private Map<String, Object> buildAdvancedSettingsPayload() {
         HashMap<String, Object> payload = new HashMap<>();
+        Map<String, Object> config = new HashMap<>(advancedPerformanceConfig);
         payload.put("captureOutput", advancedCaptureOutput);
         payload.put("captureMode", advancedCaptureOutput);
         payload.put("performance", advancedPerformance);
         payload.put("performanceMode", advancedPerformance);
-        payload.put("performanceConfig", new HashMap<>(advancedPerformanceConfig));
+        // Keep direct keys for older bridge/view-model consumers and nested config
+        // for the Advanced Settings page. Every value reflects the active native preset.
+        payload.put("previewScale", config.get("previewScale"));
+        payload.put("processingScale", config.get("processingScale"));
+        payload.put("processingEveryNFrames", config.get("processingEveryNFrames"));
+        double previewScale = ((Number) config.get("previewScale")).doubleValue();
+        double processingScale = ((Number) config.get("processingScale")).doubleValue();
+        int everyN = ((Number) config.get("processingEveryNFrames")).intValue();
+        payload.put("previewPolicy", previewScale >= 0.999d
+                ? "SOURCE" : (previewScale <= 0.50d ? "LOW" : "MEDIUM"));
+        payload.put("processingPolicy", processingScale >= 0.999d
+                ? "SOURCE" : (processingScale <= 0.50d ? "LOW" : "MEDIUM"));
+        payload.put("framePolicy", everyN > 1 ? "SKIP" : "FULL");
+        payload.put("performanceConfig", config);
         return payload;
     }
 
@@ -422,13 +418,14 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
         }
         return result;
     }
-  
+
     private String normalizeCaptureOutput(Object value) {
         if (value == null) {
             return null;
         }
         String normalized = String.valueOf(value)
                 .trim().toUpperCase(Locale.US)
+                .replace('_', ' ')
                 .replace("+", " + ")
                 .replaceAll("\\s+", " ")
                 .trim();
@@ -437,11 +434,12 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
                 return "RAW";
             case "PROCESSED":
                 return "PROCESSED";
-            case "RAW_AND_PROCESSED":
+            case "RAW AND PROCESSED":
             case "RAW + PROCESSED":
             case "RAW PROCESSED":
             case "BOTH":
-                return "RAW_AND_PROCESSED";
+                // Canonical string used by CameraEngine and CaptureManager.
+                return "RAW + PROCESSED";
             default:
                 return null;
         }
@@ -484,28 +482,10 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
     }
 
     private Map<String, Object> readPerformanceConfig(Object rawConfig, String performanceMode) {
-        if (rawConfig == null) {
-            return defaultPerformanceConfig(performanceMode);
-        }
-        if (!(rawConfig instanceof Map)) {
-            return null;
-        }
-        Map<?, ?> source = (Map<?, ?>) rawConfig;
-        Double previewScale = parseDouble(source.get("previewScale"));
-        Double processingScale = parseDouble(source.get("processingScale"));
-        Integer everyN = parseInt(source.get("processingEveryNFrames"));
-        if (previewScale == null || processingScale == null || everyN == null) {
-            return null;
-        }
-        if (!isValidScale(previewScale) || !isValidScale(processingScale)
-                || everyN < 1 || everyN > 60) {
-            return null;
-        }
-        return mapOf(
-                "previewScale", previewScale,
-                "processingScale", processingScale,
-                "processingEveryNFrames", everyN
-        );
+        // Compatibility adapter only: current CameraEngine ignores arbitrary scale
+        // values and applies the preset below. Returning the same preset prevents the
+        // bridge from claiming that unsupported custom values are active.
+        return defaultPerformanceConfig(performanceMode);
     }
 
     private boolean isValidScale(double value) {
@@ -515,8 +495,8 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
 
     private Map<String, Object> defaultPerformanceConfig(String mode) {
         if ("PERFORMANCE".equals(mode)) {
-            return mapOf("previewScale", 0.50d, "processingScale", 0.50d,
-                    "processingEveryNFrames", 2);
+            return mapOf("previewScale", 0.25d, "processingScale", 0.25d,
+                    "processingEveryNFrames", 1);
         }
         if ("HIGH_QUALITY".equals(mode)) {
             return mapOf("previewScale", 1.00d, "processingScale", 1.00d,
@@ -557,21 +537,22 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
     private PerformancePayload parsePerformancePayload(Object arguments) {
         if (arguments instanceof Map) {
             Map<?, ?> map = (Map<?, ?>) arguments;
-            Object rawMode = map.containsKey("mode") ? map.get("mode") : map.get("performance");
+            Object rawMode = map.containsKey("mode") ? map.get("mode")
+                    : (map.containsKey("performance") ? map.get("performance")
+                    : map.get("performanceMode"));
             String mode = normalizePerformance(rawMode);
             if (mode == null) {
                 return null;
             }
-            Map<String, Object> config = readPerformanceConfig(map.get("config"), mode);
-            if (config == null) {
-                return null;
-            }
-            return new PerformancePayload(mode, config);
+            // Accept both historical config keys; values are resolved to the preset.
+            Object rawConfig = map.containsKey("config")
+                    ? map.get("config") : map.get("performanceConfig");
+            return new PerformancePayload(mode, readPerformanceConfig(rawConfig, mode));
         }
         String mode = normalizePerformance(arguments);
-        return mode == null ? null : new PerformancePayload(mode, defaultPerformanceConfig(mode));
+        return mode == null ? null
+                : new PerformancePayload(mode, defaultPerformanceConfig(mode));
     }
-
     private static final class PerformancePayload {
         final String mode;
         final Map<String, Object> config;
@@ -725,19 +706,16 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
                 && !NfcAdapter.ACTION_TAG_DISCOVERED.equals(action)) {
             return;
         }
-
         android.os.Parcelable[] rawMessages;
         try {
             rawMessages = intent.getParcelableArrayExtra(NfcAdapter.EXTRA_NDEF_MESSAGES);
         } catch (Exception e) {
             rawMessages = null;
         }
-
         if (rawMessages == null || rawMessages.length == 0) {
             sendEvent("nfcDetected", mapOf("payloadDetected", false));
             return;
         }
-
         CameraEngine engine = ensureEngine();
         boolean payloadForwarded = false;
         for (android.os.Parcelable raw : rawMessages) {
@@ -839,6 +817,34 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
     public void onNativeEvent(String type, Object data) {
         if ("captureModeChanged".equals(type)) {
             synchronizeAdvancedCaptureOutputFromEvent(data);
+            Map<String, Object> event = readMapArguments(data);
+            if (event == null) {
+                event = new HashMap<>();
+            }
+            event.put("mode", advancedCaptureOutput);
+            event.put("captureOutput", advancedCaptureOutput);
+            event.put("captureMode", advancedCaptureOutput);
+            sendEvent(type, event);
+            return;
+        }
+        if ("advancedSettingsChanged".equals(type)) {
+            syncAdvancedSettingsFromEngine();
+            sendEvent(type, buildAdvancedSettingsPayload());
+            return;
+        }
+        if ("performanceChanged".equals(type)) {
+            syncAdvancedSettingsFromEngine();
+            sendEvent(type, mapOf(
+                    "mode", advancedPerformance,
+                    "performance", advancedPerformance,
+                    "config", new HashMap<>(advancedPerformanceConfig)
+            ));
+            return;
+        }
+        if ("captureOutputChanged".equals(type)) {
+            syncAdvancedSettingsFromEngine();
+            sendEvent(type, advancedCaptureOutput);
+            return;
         }
         sendEvent(type, data);
     }
@@ -870,17 +876,16 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
         } else if (data != null) {
             mode = String.valueOf(data);
         }
-
         String normalized = normalizeCaptureOutput(mode);
         if (normalized == null) {
             normalized = normalizeCaptureMode(mode);
         }
-        if (normalized == null) {
-            return;
+        if (normalized != null) {
+            advancedCaptureOutput = normalized;
         }
-        advancedCaptureOutput = normalized;
-        advancedPerformanceConfig = defaultPerformanceConfig(advancedPerformance);
-        sendEvent("advancedSettingsChanged", buildAdvancedSettingsPayload());
+        // The event is emitted after CameraEngine updates its state, so its snapshot
+        // wins over any legacy two-state bridge cache.
+        syncAdvancedSettingsFromEngine();
     }
 
     // ---------------------------------------------------------------------
@@ -892,10 +897,9 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
             return;
         }
         if ("liveviewFrame".equals(type) || "spectralFrame".equals(type)) {
-            sendEventNow(type, data);
+            queueLatestPreviewEvent(type, data);
             return;
         }
-
         EventChannel.EventSink sink = eventSink;
         if (sink == null) {
             synchronized (pendingEvents) {
@@ -910,6 +914,42 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
             return;
         }
         sendEventNow(type, data);
+    }
+
+    private void queueLatestPreviewEvent(String type, Object data) {
+        if (eventSink == null) {
+            return;
+        }
+        HashMap<String, Object> event = new HashMap<>();
+        event.put("type", type);
+        event.put("data", data);
+        pendingPreviewEvent.set(event);
+        schedulePreviewEventDrain();
+    }
+
+    private void schedulePreviewEventDrain() {
+        if (previewEventDispatchScheduled.compareAndSet(false, true)) {
+            runOnUiThread(this::drainLatestPreviewEvent);
+        }
+    }
+
+    private void drainLatestPreviewEvent() {
+        try {
+            Map<String, Object> event = pendingPreviewEvent.getAndSet(null);
+            EventChannel.EventSink current = eventSink;
+            if (event != null && current != null) {
+                try {
+                    current.success(event);
+                } catch (Exception e) {
+                    Log.e(TAG, "Preview event delivery failed", e);
+                }
+            }
+        } finally {
+            previewEventDispatchScheduled.set(false);
+            if (pendingPreviewEvent.get() != null && eventSink != null) {
+                schedulePreviewEventDrain();
+            }
+        }
     }
 
     private void sendEventNow(String type, Object data) {
@@ -985,7 +1025,6 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
     protected void onDestroy() {
         nfcDispatchEnabled = false;
         disableNfcForegroundDispatch();
-
         if (cameraEngine != null) {
             try {
                 cameraEngine.detachGpuNdviSurfaceTexture();
@@ -999,10 +1038,10 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
             }
             cameraEngine = null;
         }
-
         synchronized (pendingEvents) {
             pendingEvents.clear();
         }
+        pendingPreviewEvent.set(null);
         if (ndviTextureEntry != null) {
             try {
                 ndviTextureEntry.release();
