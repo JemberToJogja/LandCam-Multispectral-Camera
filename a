@@ -1,8 +1,6 @@
-OpticalProcessor.java	Crop, registrasi, kalkulasi NDVI, mask invalid, color mapping
-CameraEngine.java	Pipeline frame, pekerjaan per frame, buffer, waktu pemrosesan
-MainActivity.java	Event channel, transfer frame, konfigurasi preview dan texture
-native_bridge.dart	Kontrak event dan transfer metadata ke Flutter
-landcam_view_model.dart	Frekuensi update state, penerimaan frame, pembaruan statistik
-landcam_page.dart	Lifecycle, pengikatan state dan preview GPU
-landcam_widgets.dart	Rendering frame, ukuran preview, repaint dan informasi diagnostik
-CaptureManager.java	Memastikan optimasi preview tidak merusak capture atau file hasil
+16	android/app/src/main/java/com/example/landcam/UsbPtpTransport.java (baru)	Menangani deteksi USB, permission perangkat, koneksi, perintah dan transfer yang didukung protokol kamera.
+17	android/app/src/main/java/com/example/landcam/BluetoothCapabilityService.java (baru)	Menangani pemeriksaan dan fungsi Bluetooth yang benar-benar didukung, tanpa menganggapnya sebagai pengganti penuh Sony Camera API.
+18	android/app/src/main/java/com/example/landcam/UvcVideoSource.java (baru)	Menerima video dari HDMI capture card yang kompatibel dengan USB UVC dan mengirimkan frame ke pipeline LandCam.
+19	android/app/src/main/java/com/example/landcam/OpticalProcessor.java	Mengintegrasikan validasi format dan karakteristik frame dari sumber baru, sekaligus mencegah sumber yang tidak memiliki kanal Red–NIR menghasilkan NDVI seolah-olah valid.
+20	android/app/src/main/java/com/example/landcam/CaptureManager.java	Menyatukan penanganan hasil capture, transfer gambar, metadata, dan penyimpanan berdasarkan kemampuan transport aktif.
+21	test/services/connection_methods_test.dart (baru)	Menguji state koneksi, pergantian transport, reconnect, serta pelaporan kemampuan dan error.

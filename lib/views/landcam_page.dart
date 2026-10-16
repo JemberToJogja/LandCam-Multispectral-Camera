@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/landcam_models.dart';
-import '../viewmodels/landcam_view_model.dart';
+import '../view_models/landcam_view_model.dart';
 import 'advanced_settings_page.dart';
 import 'landcam_sheets.dart';
 import 'landcam_widgets.dart';
@@ -19,12 +19,9 @@ import 'landcam_widgets.dart';
 /// - manage orientation
 /// - show transient UI feedback
 ///
-/// Camera state and native event processing belong to
-/// [LandCamViewModel].
+/// Camera state and native event processing belong to [LandCamViewModel].
 class LandCamPage extends StatefulWidget {
-  const LandCamPage({
-    super.key,
-  });
+  const LandCamPage({super.key});
 
   @override
   State<LandCamPage> createState() => _LandCamPageState();
@@ -37,11 +34,11 @@ class _LandCamPageState extends State<LandCamPage> {
       GlobalKey<ScaffoldMessengerState>();
 
   bool _dark = true;
+  bool _openingAdvancedSettings = false;
 
   @override
   void initState() {
     super.initState();
-
     _viewModel = LandCamViewModel();
     _viewModel.start();
   }
@@ -51,27 +48,31 @@ class _LandCamPageState extends State<LandCamPage> {
   // ---------------------------------------------------------------------------
 
   Future<void> _onBandSelected(SpectralBand band) async {
-    final message = await _viewModel.selectBand(band);
-
-    if (!mounted || message == null || message.isEmpty) {
-      return;
+    try {
+      final message = await _viewModel.selectBand(band);
+      if (!mounted || message == null || message.isEmpty) return;
+      _showToast(message);
+    } catch (error) {
+      if (mounted) _showToast('BAND CHANGE FAILED: $error');
     }
-
-    _showToast(message);
   }
 
   Future<void> _onToggleNdvi() async {
-    final message = await _viewModel.toggleNdvi();
-
-    if (!mounted || message == null || message.isEmpty) {
-      return;
+    try {
+      final message = await _viewModel.toggleNdvi();
+      if (!mounted || message == null || message.isEmpty) return;
+      _showToast(message);
+    } catch (error) {
+      if (mounted) _showToast('NDVI CHANGE FAILED: $error');
     }
-
-    _showToast(message);
   }
 
   Future<void> _onCapture() async {
-    await _viewModel.capture();
+    try {
+      await _viewModel.capture();
+    } catch (error) {
+      if (mounted) _showToast('CAPTURE FAILED: $error');
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -79,20 +80,18 @@ class _LandCamPageState extends State<LandCamPage> {
   // ---------------------------------------------------------------------------
 
   Future<void> _openSettingsPanel() async {
-    if (!mounted) {
-      return;
-    }
+    if (!mounted) return;
 
-    await showModalBottomSheet<void>(
+    // The sheet returns true when the user requests Advanced Settings. Waiting
+    // for this route to close before pushing the next route avoids overlapping
+    // Navigator transitions and the occasional bottom-sheet route race.
+    final shouldOpenAdvancedSettings = await showModalBottomSheet<bool>(
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withValues(alpha: .78),
       builder: (sheetContext) {
-        // Bottom sheets are separate routes. Listen to the ViewModel here as
-        // well as on the page so settings values stay current while the sheet
-        // remains open.
         return ListenableBuilder(
           listenable: _viewModel,
           builder: (context, _) {
@@ -103,50 +102,38 @@ class _LandCamPageState extends State<LandCamPage> {
               previewChangeInFlight:
                   _viewModel.status.startsWith('SWITCHING PREVIEW:'),
               onPreviewDisplayMode: (mode) async {
-                final message =
-                    await _viewModel.setPreviewDisplayMode(mode);
-
-                if (!mounted || !sheetContext.mounted) {
-                  return;
-                }
-
+                final message = await _viewModel.setPreviewDisplayMode(mode);
+                if (!mounted || !sheetContext.mounted) return;
                 if (message != null && message.isNotEmpty) {
                   _showSheetToast(sheetContext, message);
                 }
               },
               onTheme: () {
-                if (!mounted) {
-                  return;
-                }
-
-                setState(() {
-                  _dark = !_dark;
-                });
-
+                if (!mounted) return;
+                setState(() => _dark = !_dark);
                 if (sheetContext.mounted) {
-                  Navigator.of(sheetContext).pop();
+                  Navigator.of(sheetContext).pop(false);
                 }
               },
               onRotate: () async {
                 await _toggleOrientation();
-
                 if (sheetContext.mounted) {
-                  Navigator.of(sheetContext).pop();
+                  Navigator.of(sheetContext).pop(false);
                 }
               },
               onAdvancedSettings: () {
-                if (!mounted) {
-                  return;
+                if (sheetContext.mounted) {
+                  Navigator.of(sheetContext).pop(true);
                 }
-
-                Navigator.of(sheetContext).pop();
-                unawaited(_openAdvancedSettings());
               },
             );
           },
         );
       },
     );
+
+    if (!mounted || shouldOpenAdvancedSettings != true) return;
+    await _openAdvancedSettings();
   }
 
   /// Opens Advanced Settings using the current ViewModel state.
@@ -154,34 +141,30 @@ class _LandCamPageState extends State<LandCamPage> {
   /// The page edits a local draft. Nothing is applied to the running
   /// camera/native pipeline until the user taps APPLY CHANGES.
   Future<void> _openAdvancedSettings() async {
-    if (!mounted) {
-      return;
-    }
+    if (!mounted || _openingAdvancedSettings) return;
+    _openingAdvancedSettings = true;
 
-    // AdvancedSettingsPage returns the AdvancedSettings model directly.
-    // Keep the route's generic type and returned value aligned with that
-    // contract.
-    final result = await Navigator.of(context).push<AdvancedSettings>(
-      MaterialPageRoute<AdvancedSettings>(
-        builder: (_) => AdvancedSettingsPage(
-          dark: _dark,
-          initialCaptureOutput: _viewModel.captureOutput,
-          initialPerformance: _viewModel.performance,
+    try {
+      final result = await Navigator.of(context).push<AdvancedSettings>(
+        MaterialPageRoute<AdvancedSettings>(
+          builder: (_) => AdvancedSettingsPage(
+            dark: _dark,
+            initialCaptureOutput: _viewModel.captureOutput,
+            initialPerformance: _viewModel.performance,
+          ),
         ),
-      ),
-    );
+      );
 
-    if (!mounted || result == null) {
-      return;
+      if (!mounted || result == null) return;
+
+      final message = await _viewModel.applyAdvancedSettings(result);
+      if (!mounted || message == null || message.isEmpty) return;
+      _showToast(message);
+    } catch (error) {
+      if (mounted) _showToast('ADVANCED SETTINGS FAILED: $error');
+    } finally {
+      _openingAdvancedSettings = false;
     }
-
-    final message = await _viewModel.applyAdvancedSettings(result);
-
-    if (!mounted || message == null || message.isEmpty) {
-      return;
-    }
-
-    _showToast(message);
   }
 
   // ---------------------------------------------------------------------------
@@ -189,9 +172,7 @@ class _LandCamPageState extends State<LandCamPage> {
   // ---------------------------------------------------------------------------
 
   Future<void> _openConnectionPanel() async {
-    if (!mounted) {
-      return;
-    }
+    if (!mounted) return;
 
     await showModalBottomSheet<void>(
       context: context,
@@ -200,9 +181,8 @@ class _LandCamPageState extends State<LandCamPage> {
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withValues(alpha: .78),
       builder: (sheetContext) {
-        // This is the key fix for stale connection-panel data: logs, status,
-        // camera metadata and capabilities are immutable snapshots passed to
-        // ConnectionSheet, so rebuild this sheet whenever the ViewModel emits.
+        // Rebuild the sheet whenever the ViewModel changes so status, logs,
+        // camera metadata and capabilities cannot become stale while it is open.
         return ListenableBuilder(
           listenable: _viewModel,
           builder: (context, _) {
@@ -211,8 +191,7 @@ class _LandCamPageState extends State<LandCamPage> {
               link: _viewModel.link,
               status: _viewModel.status,
               connectionOperation: _viewModel.connectionOperation,
-              operationInFlight:
-                  _viewModel.connectionOperationInFlight,
+              operationInFlight: _viewModel.connectionOperationInFlight,
               ssid: _viewModel.ssid,
               brand: _viewModel.brand,
               model: _viewModel.model,
@@ -225,8 +204,7 @@ class _LandCamPageState extends State<LandCamPage> {
               supportsLiveView: _viewModel.supportsLiveView,
               supportsCapture: _viewModel.supportsCapture,
               supportsAutofocus: _viewModel.supportsAutofocus,
-              dualOpticalRoiAvailable:
-                  _viewModel.dualOpticalRoiAvailable,
+              dualOpticalRoiAvailable: _viewModel.dualOpticalRoiAvailable,
               currentBand: _viewModel.band,
               sourceLabel: _viewModel.sourceLabel,
               frameWidth: _viewModel.frameWidth,
@@ -261,20 +239,22 @@ class _LandCamPageState extends State<LandCamPage> {
               },
               onClear: _viewModel.clearLogs,
               onCopy: () async {
-                await Clipboard.setData(
-                  ClipboardData(text: _viewModel.logsText),
-                );
-
-                if (sheetContext.mounted) {
-                  _showSheetToast(sheetContext, 'LOG COPIED');
+                try {
+                  await Clipboard.setData(
+                    ClipboardData(text: _viewModel.logsText),
+                  );
+                  if (sheetContext.mounted) {
+                    _showSheetToast(sheetContext, 'LOG COPIED');
+                  }
+                } catch (error) {
+                  if (sheetContext.mounted) {
+                    _showSheetToast(sheetContext, 'COPY FAILED: $error');
+                  }
                 }
               },
               onDisconnect: () async {
                 await _viewModel.disconnect();
-
-                if (!sheetContext.mounted) {
-                  return;
-                }
+                if (!sheetContext.mounted) return;
 
                 if (_viewModel.link == CameraLink.idle) {
                   Navigator.of(sheetContext).pop();
@@ -297,23 +277,39 @@ class _LandCamPageState extends State<LandCamPage> {
   // ---------------------------------------------------------------------------
 
   Future<void> _toggleOrientation() async {
-    if (!mounted) {
-      return;
+    if (!mounted) return;
+
+    try {
+      final orientation = MediaQuery.orientationOf(context);
+      await SystemChrome.setPreferredOrientations(
+        orientation == Orientation.portrait
+            ? const [
+                DeviceOrientation.landscapeLeft,
+                DeviceOrientation.landscapeRight,
+              ]
+            : const [
+                DeviceOrientation.portraitUp,
+                DeviceOrientation.portraitDown,
+              ],
+      );
+    } on PlatformException catch (error) {
+      if (mounted) _showToast('ORIENTATION CHANGE FAILED: ${error.message ?? error.code}');
+    } catch (error) {
+      if (mounted) _showToast('ORIENTATION CHANGE FAILED: $error');
     }
+  }
 
-    final orientation = MediaQuery.orientationOf(context);
-
-    await SystemChrome.setPreferredOrientations(
-      orientation == Orientation.portrait
-          ? const [
-              DeviceOrientation.landscapeLeft,
-              DeviceOrientation.landscapeRight,
-            ]
-          : const [
-              DeviceOrientation.portraitUp,
-              DeviceOrientation.portraitDown,
-            ],
-    );
+  Future<void> _restoreOrientations() async {
+    try {
+      await SystemChrome.setPreferredOrientations(const [
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    } catch (_) {
+      // Do not throw asynchronous platform errors while this State is disposing.
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -321,47 +317,42 @@ class _LandCamPageState extends State<LandCamPage> {
   // ---------------------------------------------------------------------------
 
   void _showToast(String message) {
-    if (!mounted || message.isEmpty) {
-      return;
-    }
+    if (!mounted || message.trim().isEmpty) return;
 
     final messenger = _messengerKey.currentState;
+    if (messenger == null || !messenger.mounted) return;
 
-    if (messenger == null) {
-      return;
-    }
-
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          duration: const Duration(milliseconds: 1100),
-          behavior: SnackBarBehavior.floating,
-          content: Text(
-            message,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.1,
+    try {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            duration: const Duration(milliseconds: 1100),
+            behavior: SnackBarBehavior.floating,
+            content: Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.1,
+              ),
             ),
           ),
-        ),
-      );
+        );
+    } on FlutterError {
+      // A messenger can temporarily have no registered Scaffold during route
+      // transitions. The next user action can display feedback normally.
+    } on AssertionError {
+      // Keep a transient UI race from becoming an uncaught assertion.
+    }
   }
 
-  void _showSheetToast(
-    BuildContext sheetContext,
-    String message,
-  ) {
-    if (!mounted || !sheetContext.mounted || message.trim().isEmpty) {
-      return;
-    }
+  void _showSheetToast(BuildContext sheetContext, String message) {
+    if (!mounted || !sheetContext.mounted || message.trim().isEmpty) return;
 
-    // A modal bottom sheet is a separate Navigator route. Looking up the
-    // messenger from sheetContext can return the app-level messenger, which
-    // may have no registered Scaffold because the page owns a nested
-    // ScaffoldMessenger. Prefer the page's explicitly keyed messenger.
+    // Prefer the page's explicitly keyed messenger. A sheet context can resolve
+    // to a messenger that has no registered Scaffold during route transitions.
     final messenger = _messengerKey.currentState;
     if (messenger != null && messenger.mounted) {
       try {
@@ -383,16 +374,14 @@ class _LandCamPageState extends State<LandCamPage> {
           );
         return;
       } on FlutterError {
-        // There can briefly be no registered Scaffold during route/lifecycle
-        // transitions. Fall through to a dialog, which doesn't need a Scaffold.
+        // Fall through to a dialog if no descendant Scaffold is registered.
       } on AssertionError {
-        // showSnackBar uses an assertion when the messenger currently has no
-        // descendant Scaffold. Treat that transition as a UI fallback case.
+        // Same fallback for debug assertions from showSnackBar.
       }
     }
 
-    // Safe fallback: never allow a feedback message to trigger an unhandled
-    // ScaffoldMessenger assertion or hide the real native bridge error.
+    // A dialog does not depend on an available ScaffoldMessenger. Use the
+    // still-mounted sheet route as its context.
     unawaited(
       showDialog<void>(
         context: sheetContext,
@@ -442,9 +431,7 @@ class _LandCamPageState extends State<LandCamPage> {
               captureMode: _viewModel.captureMode,
               ndviEnabled: _viewModel.ndviEnabled,
               previewMode: _viewModel.previewMode,
-              // GPU NDVI frames are rendered directly into the native SurfaceTexture.
-              // Forward both pieces of state so LandCamHome can display that texture
-              // instead of retaining a stale byte-backed RGB/NIR preview.
+              // GPU NDVI frames are rendered directly into the native texture.
               ndviGpuActive: _viewModel.usesGpuNdviPreview,
               ndviTextureId: _viewModel.ndviTextureId,
               ndvi: _viewModel.ndvi,
@@ -452,21 +439,11 @@ class _LandCamPageState extends State<LandCamPage> {
               supportsCapture: _viewModel.supportsCapture,
               nirActivating: _viewModel.nirActivating,
               bandEnabled: _viewModel.isBandEnabled,
-              onBand: (band) {
-                unawaited(_onBandSelected(band));
-              },
-              onNdvi: () {
-                unawaited(_onToggleNdvi());
-              },
-              onConnection: () {
-                unawaited(_openConnectionPanel());
-              },
-              onSettings: () {
-                unawaited(_openSettingsPanel());
-              },
-              onCapture: () {
-                unawaited(_onCapture());
-              },
+              onBand: (band) => unawaited(_onBandSelected(band)),
+              onNdvi: () => unawaited(_onToggleNdvi()),
+              onConnection: () => unawaited(_openConnectionPanel()),
+              onSettings: () => unawaited(_openSettingsPanel()),
+              onCapture: () => unawaited(_onCapture()),
             );
           },
         ),
@@ -482,11 +459,9 @@ class _LandCamPageState extends State<LandCamPage> {
     final background = dark
         ? const Color(0xFF0A0D0B)
         : const Color(0xFFF2F5F3);
-
     final foreground = dark
         ? const Color(0xFFF2F6F3)
         : const Color(0xFF111612);
-
     const accent = Color(0xFF55D98B);
 
     final scheme = dark
@@ -562,18 +537,7 @@ class _LandCamPageState extends State<LandCamPage> {
   @override
   void dispose() {
     _viewModel.dispose();
-
-    unawaited(
-      SystemChrome.setPreferredOrientations(
-        const [
-          DeviceOrientation.portraitUp,
-          DeviceOrientation.portraitDown,
-          DeviceOrientation.landscapeLeft,
-          DeviceOrientation.landscapeRight,
-        ],
-      ),
-    );
-
+    unawaited(_restoreOrientations());
     super.dispose();
   }
 }

@@ -1,5 +1,12 @@
+
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- =========================================================== -->
+    <!-- HARDWARE FEATURES                                           -->
+    <!-- Optional features keep LandCam installable on compatible    -->
+    <!-- Android devices even when some connection methods are absent. -->
+    <!-- =========================================================== -->
 
     <uses-feature
         android:name="android.hardware.nfc"
@@ -9,27 +16,113 @@
         android:name="android.hardware.wifi"
         android:required="false" />
 
-    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- QR scanning uses the phone camera. -->
+    <uses-feature
+        android:name="android.hardware.camera.any"
+        android:required="false" />
 
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
-    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
 
-    <uses-permission android:name="android.permission.NFC" />
+    <!-- Bluetooth and Bluetooth Low Energy. -->
+    <uses-feature
+        android:name="android.hardware.bluetooth"
+        android:required="false" />
 
+    <uses-feature
+        android:name="android.hardware.bluetooth_le"
+        android:required="false" />
+
+    <!-- USB host for compatible PTP devices and UVC capture cards. -->
+    <uses-feature
+        android:name="android.hardware.usb.host"
+        android:required="false" />
+
+
+    <!-- =========================================================== -->
+    <!-- NETWORK PERMISSIONS                                         -->
+    <!-- =========================================================== -->
+
+    <uses-permission
+        android:name="android.permission.INTERNET" />
+
+    <uses-permission
+        android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <uses-permission
+        android:name="android.permission.ACCESS_WIFI_STATE" />
+
+    <uses-permission
+        android:name="android.permission.CHANGE_WIFI_STATE" />
+
+    <uses-permission
+        android:name="android.permission.CHANGE_NETWORK_STATE" />
+
+    <uses-permission
+        android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+
+    <!-- Wi-Fi discovery compatibility on Android 12 and earlier. -->
     <uses-permission
         android:name="android.permission.ACCESS_FINE_LOCATION"
         android:maxSdkVersion="32" />
 
+    <!-- Wi-Fi network requests on Android 13 and later. -->
     <uses-permission
         android:name="android.permission.NEARBY_WIFI_DEVICES"
         android:usesPermissionFlags="neverForLocation" />
 
+
+    <!-- =========================================================== -->
+    <!-- NFC PAIRING                                                  -->
+    <!-- =========================================================== -->
+
+    <uses-permission
+        android:name="android.permission.NFC" />
+
+
+    <!-- =========================================================== -->
+    <!-- QR CODE SCANNING                                             -->
+    <!-- =========================================================== -->
+
+    <uses-permission
+        android:name="android.permission.CAMERA" />
+
+
+    <!-- =========================================================== -->
+    <!-- BLUETOOTH                                                    -->
+    <!-- Legacy permissions for Android 11 and earlier. -->
+    <!-- =========================================================== -->
+
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30" />
+
+    <!-- Android 12 and later. -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_CONNECT" />
+
+
+    <!-- =========================================================== -->
+    <!-- STORAGE COMPATIBILITY                                       -->
+    <!-- =========================================================== -->
+
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
+
+
+    <!-- =========================================================== -->
+    <!-- APPLICATION                                                  -->
+    <!-- =========================================================== -->
 
     <application
         android:name="${applicationName}"
@@ -54,17 +147,20 @@
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme" />
 
+            <!-- Normal Flutter entry point. -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- General NFC NDEF discovery. -->
             <intent-filter>
                 <action android:name="android.nfc.action.NDEF_DISCOVERED" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="*/*" />
             </intent-filter>
 
+            <!-- Sony NFC payload compatibility. -->
             <intent-filter>
                 <action android:name="android.nfc.action.NDEF_DISCOVERED" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -79,13 +175,16 @@
 
     </application>
 
-    <queries>
 
+    <!-- =========================================================== -->
+    <!-- PACKAGE VISIBILITY                                          -->
+    <!-- =========================================================== -->
+
+    <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT" />
             <data android:mimeType="text/plain" />
         </intent>
-
     </queries>
 
 </manifest>

@@ -150,7 +150,7 @@ public class CameraEngine {
      * responsive even when bitmap analysis briefly takes longer.
      */
     private static final long NDVI_PREVIEW_INTERVAL_MS =
-            40L;
+            40L; // Keep the established ~25 FPS budget; skip wasted decode work before processing.
 
     private static final int NDVI_MIN_VALID_SIGNAL = 6;
     private static final int NDVI_MAX_PREVIEW_PIXELS = 100000;
@@ -730,6 +730,50 @@ public class CameraEngine {
             return false;
         }
 
+        connectWifi(lastSsid, lastPassword);
+        return true;
+    }
+
+    /**
+     * Public credential entry point for CameraTransport implementations.
+     *
+     * <p>This deliberately shares the engine's existing Wi-Fi callback,
+     * discovery, Sony API and live-view lifecycle. It does not create a second
+     * transport/network session and does not masquerade as an NFC scan.</p>
+     *
+     * @return true when the native connection request was accepted
+     */
+    public boolean connectWifiCredentialsFromTransport(String ssid, String password) {
+        String cleanSsid = ssid == null ? "" : ssid.trim();
+        String cleanPassword = password == null ? "" : password.trim();
+
+        if (!SONY_SSID_PATTERN.matcher(cleanSsid).matches()
+                || cleanSsid.getBytes(StandardCharsets.UTF_8).length > 32) {
+            sendEvent("engineWarning", "INVALID SONY CAMERA SSID");
+            return false;
+        }
+        if (!cleanPassword.matches("[A-Za-z0-9]{8,63}")) {
+            sendEvent("engineWarning", "SONY CAMERA PASSWORD MUST BE 8-63 ALPHANUMERIC CHARACTERS");
+            return false;
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            sendEvent("networkUnavailable", "ANDROID 10+ REQUIRED FOR CAMERA WI-FI REQUEST");
+            updateSystemStatus("WIFI API NOT SUPPORTED", false);
+            return false;
+        }
+        if (!hasWifiPermission()) {
+            sendEvent("networkUnavailable", "WIFI PERMISSION NOT GRANTED");
+            updateSystemStatus("WIFI PERMISSION REQUIRED", false);
+            return false;
+        }
+        if (connectivityManager == null) {
+            sendEvent("networkUnavailable", "CONNECTIVITY SERVICE UNAVAILABLE");
+            updateSystemStatus("CONNECTIVITY SERVICE UNAVAILABLE", false);
+            return false;
+        }
+
+        lastSsid = cleanSsid;
+        lastPassword = cleanPassword;
         connectWifi(lastSsid, lastPassword);
         return true;
     }
@@ -4628,6 +4672,25 @@ public class CameraEngine {
                 previewGeneration.get();
 
         /*
+         * NDVI is rendered directly to the GPU texture. Frames that arrive before
+         * either the next display commit or the next scalar-statistics update are
+         * not useful: decoding them only burns CPU and delays the latest frame.
+         * Drop them before the JPEG bounds pass and BitmapFactory decode. The
+         * latest-frame queue still supplies a fresh frame when work is due.
+         */
+        if (ndviEnabled) {
+            final long now = System.currentTimeMillis();
+            final boolean previewNotDue =
+                    now - lastNdviPreviewAt < NDVI_PREVIEW_INTERVAL_MS;
+            final boolean statisticsNotDue =
+                    now - lastNdviStatisticsAt < GPU_NDVI_STAT_INTERVAL_MS;
+            if (previewNotDue && statisticsNotDue) {
+                emitNdviIfDue(null);
+                return;
+            }
+        }
+
+        /*
          * Apply the configured cadence before BitmapFactory decode for every
          * non-NDVI display mode. This reduces CPU/memory pressure rather than
          * merely dropping completed results. NDVI keeps its own cadence.
@@ -5133,35 +5196,47 @@ public class CameraEngine {
         }
 
         final int grid = GPU_NDVI_STAT_SAMPLE_GRID;
+        final int rgbWidth = rgb.width();
+        final int rgbHeight = rgb.height();
+        final int nirWidth = nir.width();
+        final int nirHeight = nir.height();
+        final int[] rgbRow = new int[rgbWidth];
+        final int[] nirRow = new int[nirWidth];
+        int cachedNirY = -1;
         double ndviSum = 0.0d;
         int valid = 0;
 
-        // Sample Red and NIR at paired spatial coordinates. The neutral NIR gain
-        // is deliberately fixed; scene-adaptive gain would change the numeric
-        // index according to scene content. This remains relative/digital NDVI.
+        // Sample paired spatial positions, but fetch each sampled scanline in one
+        // Bitmap.getPixels() call instead of crossing the Bitmap API for every
+        // individual red/NIR sample. This reduces JNI overhead on slow devices.
+        // The NIR row cache also works for non-identity calibrated transforms:
+        // it refreshes whenever the transform maps the next sample to another row.
         for (int gy = 0; gy < grid; gy++) {
-            final int y = rgb.top + Math.round(
+            final int localY = Math.round(
                     (float) gy / (float) Math.max(1, grid - 1)
-                            * Math.max(0, rgb.height() - 1));
+                            * Math.max(0, rgbHeight - 1));
+            final int y = rgb.top + localY;
+            source.getPixels(rgbRow, 0, rgbWidth, rgb.left, y, rgbWidth, 1);
+
             for (int gx = 0; gx < grid; gx++) {
-                final int x = rgb.left + Math.round(
+                final int localX = Math.round(
                         (float) gx / (float) Math.max(1, grid - 1)
-                                * Math.max(0, rgb.width() - 1));
+                                * Math.max(0, rgbWidth - 1));
                 final long mapped = mapUnifiedPixelToNir(
-                        x - rgb.left, y - rgb.top, rgb.width(), rgb.height(),
-                        nir.width(), nir.height());
+                        localX, localY, rgbWidth, rgbHeight, nirWidth, nirHeight);
                 if (mapped < 0L) {
                     continue;
                 }
                 final int nirX = (int) (mapped >> 32);
                 final int nirY = (int) mapped;
-                final int redEncoded = Color.red(source.getPixel(x, y));
-                final int nirEncoded = pixelNirIntensity(source.getPixel(
-                        nir.left + nirX, nir.top + nirY));
-                if (redEncoded < NDVI_MIN_VALID_SIGNAL || nirEncoded < NDVI_MIN_VALID_SIGNAL
-                        || redEncoded >= 250 || nirEncoded >= 250) {
-                    continue;
+                if (nirY != cachedNirY) {
+                    source.getPixels(
+                            nirRow, 0, nirWidth,
+                            nir.left, nir.top + nirY, nirWidth, 1);
+                    cachedNirY = nirY;
                 }
+                final int redEncoded = Color.red(rgbRow[localX]);
+                final int nirEncoded = pixelNirIntensity(nirRow[nirX]);
                 final float value = calculateRelativeNdvi(redEncoded, nirEncoded);
                 if (Float.isFinite(value)) {
                     ndviSum += value;
@@ -5413,13 +5488,23 @@ public class CameraEngine {
         return Math.max(min, Math.min(max, value));
     }
 
-    /** Decode an 8-bit sRGB-like JPEG channel to linear-light intensity. */
-    private static float decodeSrgb(int encodedByte) {
-        final float c = clampFloat(encodedByte / 255.0f, 0.0f, 1.0f);
-        if (c <= 0.04045f) {
-            return c / 12.92f;
+    /** Precomputed exact sRGB transfer values for the 256 possible JPEG byte values. */
+    private static final float[] SRGB_TO_LINEAR_LUT = createSrgbToLinearLut();
+
+    private static float[] createSrgbToLinearLut() {
+        final float[] lut = new float[256];
+        for (int i = 0; i < lut.length; i++) {
+            final float c = i / 255.0f;
+            lut[i] = c <= 0.04045f
+                    ? c / 12.92f
+                    : (float) Math.pow((c + 0.055f) / 1.055f, 2.4f);
         }
-        return (float) Math.pow((c + 0.055f) / 1.055f, 2.4f);
+        return lut;
+    }
+
+    /** Decode an 8-bit sRGB-like JPEG channel with a precomputed exact lookup. */
+    private static float decodeSrgb(int encodedByte) {
+        return SRGB_TO_LINEAR_LUT[clampInt(encodedByte, 0, 255)];
     }
 
     /**

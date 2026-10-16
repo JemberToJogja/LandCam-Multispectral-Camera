@@ -1,0 +1,25 @@
+
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Standard USB Still Image class:
+         supports compatible PTP digital cameras. -->
+    <usb-device
+        class="6"
+        subclass="1"
+        protocol="1" />
+
+    <!-- Vendor-specific MTP/PTP devices:
+         compatibility filter also used by Android's MTP service. -->
+    <usb-device
+        class="255"
+        subclass="255"
+        protocol="0" />
+
+    <!-- USB Video Class (UVC):
+         USB video devices and compatible HDMI capture cards.
+         USB Video class code 14 decimal = 0x0E. -->
+    <usb-device
+        class="14" />
+
+</resources>
