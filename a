@@ -1,6 +1,0 @@
-16	android/app/src/main/java/com/example/landcam/UsbPtpTransport.java (baru)	Menangani deteksi USB, permission perangkat, koneksi, perintah dan transfer yang didukung protokol kamera.
-17	android/app/src/main/java/com/example/landcam/BluetoothCapabilityService.java (baru)	Menangani pemeriksaan dan fungsi Bluetooth yang benar-benar didukung, tanpa menganggapnya sebagai pengganti penuh Sony Camera API.
-18	android/app/src/main/java/com/example/landcam/UvcVideoSource.java (baru)	Menerima video dari HDMI capture card yang kompatibel dengan USB UVC dan mengirimkan frame ke pipeline LandCam.
-19	android/app/src/main/java/com/example/landcam/OpticalProcessor.java	Mengintegrasikan validasi format dan karakteristik frame dari sumber baru, sekaligus mencegah sumber yang tidak memiliki kanal Red–NIR menghasilkan NDVI seolah-olah valid.
-20	android/app/src/main/java/com/example/landcam/CaptureManager.java	Menyatukan penanganan hasil capture, transfer gambar, metadata, dan penyimpanan berdasarkan kemampuan transport aktif.
-21	test/services/connection_methods_test.dart (baru)	Menguji state koneksi, pergantian transport, reconnect, serta pelaporan kemampuan dan error.

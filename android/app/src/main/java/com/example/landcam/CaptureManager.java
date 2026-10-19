@@ -7,31 +7,37 @@ import java.util.Map;
 /**
  * LANDCAM capture-output policy.
  *
- * This class does not own camera transport, shutter control, decoding, image
- * processing, or file I/O. CameraEngine remains responsible for executing a
- * single still capture and saving the requested outputs from the returned bytes.
+ * <p>This class owns only the selection policy. It does not own camera
+ * transport, shutter control, response decoding, optical processing, or file
+ * I/O. CameraEngine remains responsible for executing one still-capture
+ * operation and using the returned bytes to produce the requested outputs.</p>
  *
- * Canonical output values shared by CaptureManager, CameraEngine, MainActivity,
- * and Flutter:
- *   RAW
- *   PROCESSED
- *   RAW + PROCESSED
+ * <p>Canonical values shared by CaptureManager, CapturePlan, CameraEngine,
+ * MainActivity, and Flutter:</p>
+ * <ul>
+ *     <li>{@code RAW}</li>
+ *     <li>{@code PROCESSED}</li>
+ *     <li>{@code RAW + PROCESSED}</li>
+ * </ul>
  *
- * RAW means the original bytes returned by the camera; it does not imply a
- * sensor RAW format unless the camera actually returns one.
+ * <p>{@code RAW} means the original bytes returned by the camera. It does not
+ * imply a sensor RAW format unless the camera actually returns one.</p>
+ *
+ * <p>Call {@link #snapshot()} once at the beginning of each capture and use
+ * that immutable plan for every output decision during that capture. This
+ * prevents a UI settings change from changing the save policy halfway through
+ * an in-flight capture.</p>
  */
 public final class CaptureManager {
 
     public static final String OUTPUT_RAW = "RAW";
     public static final String OUTPUT_PROCESSED = "PROCESSED";
-
-    /** Canonical spelling used by CameraEngine and MainActivity. */
     public static final String OUTPUT_RAW_AND_PROCESSED = "RAW + PROCESSED";
 
-    /** Accepted for compatibility with older clients; never emitted as canonical. */
+    /** Accepted for compatibility; canonical output never uses this spelling. */
     public static final String LEGACY_OUTPUT_RAW_AND_PROCESSED = "RAW_AND_PROCESSED";
 
-    /** Keep the policy default consistent with CameraEngine and persisted settings. */
+    /** Must match CameraEngine's persisted setting default and Flutter's default. */
     public static final String DEFAULT_CAPTURE_OUTPUT = OUTPUT_PROCESSED;
 
     private String captureOutput = DEFAULT_CAPTURE_OUTPUT;
@@ -39,14 +45,19 @@ public final class CaptureManager {
     public CaptureManager() {
     }
 
-    /** Returns the current canonical capture-output policy. */
+    /** Returns the currently selected canonical capture-output policy. */
     public synchronized String getCaptureOutput() {
         return captureOutput;
     }
 
-    /** Sets the policy. Returns false without changing state when input is invalid. */
+    /**
+     * Sets the capture-output policy.
+     *
+     * @param output canonical value or a supported compatibility alias
+     * @return {@code true} if accepted; otherwise leaves the current policy unchanged
+     */
     public synchronized boolean setCaptureOutput(String output) {
-        String normalized = normalizeCaptureOutput(output);
+        final String normalized = normalizeCaptureOutput(output);
         if (normalized == null) {
             return false;
         }
@@ -55,13 +66,11 @@ public final class CaptureManager {
     }
 
     public synchronized boolean shouldSaveRaw() {
-        return OUTPUT_RAW.equals(captureOutput)
-                || OUTPUT_RAW_AND_PROCESSED.equals(captureOutput);
+        return shouldSaveRaw(captureOutput);
     }
 
     public synchronized boolean shouldSaveProcessed() {
-        return OUTPUT_PROCESSED.equals(captureOutput)
-                || OUTPUT_RAW_AND_PROCESSED.equals(captureOutput);
+        return shouldSaveProcessed(captureOutput);
     }
 
     public synchronized boolean saveBothOutputs() {
@@ -69,49 +78,44 @@ public final class CaptureManager {
     }
 
     /**
-     * Maps the three-state policy to the legacy two-state mode. The dual-output
-     * mode maps to PROCESSED for old APIs; use CapturePlan for actual save flags.
+     * Maps the three-state policy onto the legacy two-state API. The dual-output
+     * policy maps to PROCESSED for compatibility; use {@link #snapshot()} for
+     * the actual save flags.
      */
     public synchronized String getLegacyCaptureMode() {
         return OUTPUT_RAW.equals(captureOutput) ? OUTPUT_RAW : OUTPUT_PROCESSED;
     }
 
-    /** Returns an immutable snapshot suitable for one in-flight capture. */
+    /** Returns an immutable policy snapshot for a single in-flight capture. */
     public synchronized CapturePlan snapshot() {
         return new CapturePlan(captureOutput);
     }
 
-    /** Returns a bridge-safe representation of current state. */
+    /** Returns a bridge-friendly map of the current setting. */
     public synchronized Map<String, Object> toMap() {
         return toMap(captureOutput);
     }
 
     /**
-     * Builds a map for a supplied policy. Invalid values fail closed to the
-     * ordinary PROCESSED default, and the "valid" field tells callers that the
-     * original input was invalid. A malformed setting must never unexpectedly
-     * trigger saving both outputs.
+     * Converts the supplied value into a bridge-friendly policy map. Invalid
+     * input fails closed to PROCESSED and is marked with {@code valid=false}; a
+     * malformed value can never accidentally enable dual-output saving.
      */
     public static Map<String, Object> toMap(String output) {
-        String normalized = normalizeCaptureOutput(output);
-        boolean valid = normalized != null;
-        if (!valid) {
-            normalized = DEFAULT_CAPTURE_OUTPUT;
-        }
-        return buildMap(normalized, valid);
+        final String normalized = normalizeCaptureOutput(output);
+        final boolean valid = normalized != null;
+        return buildMap(valid ? normalized : DEFAULT_CAPTURE_OUTPUT, valid);
     }
 
     private static Map<String, Object> buildMap(String normalized, boolean valid) {
-        boolean saveRaw = OUTPUT_RAW.equals(normalized)
-                || OUTPUT_RAW_AND_PROCESSED.equals(normalized);
-        boolean saveProcessed = OUTPUT_PROCESSED.equals(normalized)
-                || OUTPUT_RAW_AND_PROCESSED.equals(normalized);
-        boolean saveBoth = OUTPUT_RAW_AND_PROCESSED.equals(normalized);
+        final boolean saveRaw = shouldSaveRaw(normalized);
+        final boolean saveProcessed = shouldSaveProcessed(normalized);
+        final boolean saveBoth = OUTPUT_RAW_AND_PROCESSED.equals(normalized);
 
         HashMap<String, Object> map = new HashMap<>();
         map.put("captureOutput", normalized);
         map.put("captureOutputMode", normalized);
-        // Backward-compatible aliases consumed by older Flutter/native callers.
+        // Backward-compatible aliases used by older native and Flutter callers.
         map.put("captureMode", normalized);
         map.put("saveRaw", saveRaw);
         map.put("saveProcessed", saveProcessed);
@@ -122,17 +126,28 @@ public final class CaptureManager {
         return map;
     }
 
+    private static boolean shouldSaveRaw(String normalized) {
+        return OUTPUT_RAW.equals(normalized)
+                || OUTPUT_RAW_AND_PROCESSED.equals(normalized);
+    }
+
+    private static boolean shouldSaveProcessed(String normalized) {
+        return OUTPUT_PROCESSED.equals(normalized)
+                || OUTPUT_RAW_AND_PROCESSED.equals(normalized);
+    }
+
     /**
-     * Normalizes input into the exact canonical spelling used across the native
-     * bridge. Accepted aliases include RAW_AND_PROCESSED, RAW AND PROCESSED,
+     * Normalizes supported values to the exact shared canonical spelling.
+     * Examples accepted include RAW_AND_PROCESSED, RAW AND PROCESSED,
      * RAW + PROCESSED, RAW+PROCESSED, RAW PROCESSED, and BOTH.
+     * Returns {@code null} for unknown values so callers can reject them.
      */
     public static String normalizeCaptureOutput(String value) {
         if (value == null) {
             return null;
         }
 
-        String normalized = value.trim()
+        final String normalized = value.trim()
                 .toUpperCase(Locale.US)
                 .replace('_', ' ')
                 .replace('-', ' ')
@@ -154,12 +169,17 @@ public final class CaptureManager {
         }
     }
 
-    /** Immutable policy snapshot for a single capture operation. */
+    /** Immutable policy snapshot for one capture operation. */
     public static final class CapturePlan {
         private final String captureOutput;
+        private final boolean saveRaw;
+        private final boolean saveProcessed;
 
-        private CapturePlan(String captureOutput) {
-            this.captureOutput = captureOutput;
+        private CapturePlan(String canonicalCaptureOutput) {
+            // Only the manager constructs plans, and it holds canonical values.
+            this.captureOutput = canonicalCaptureOutput;
+            this.saveRaw = CaptureManager.shouldSaveRaw(canonicalCaptureOutput);
+            this.saveProcessed = CaptureManager.shouldSaveProcessed(canonicalCaptureOutput);
         }
 
         public String getCaptureOutput() {
@@ -167,26 +187,33 @@ public final class CaptureManager {
         }
 
         public boolean shouldSaveRaw() {
-            return OUTPUT_RAW.equals(captureOutput)
-                    || OUTPUT_RAW_AND_PROCESSED.equals(captureOutput);
+            return saveRaw;
         }
 
         public boolean shouldSaveProcessed() {
-            return OUTPUT_PROCESSED.equals(captureOutput)
-                    || OUTPUT_RAW_AND_PROCESSED.equals(captureOutput);
+            return saveProcessed;
         }
 
         public boolean saveBothOutputs() {
-            return OUTPUT_RAW_AND_PROCESSED.equals(captureOutput);
+            return saveRaw && saveProcessed;
         }
 
         public String getLegacyCaptureMode() {
-            return OUTPUT_RAW.equals(captureOutput)
-                    ? OUTPUT_RAW : OUTPUT_PROCESSED;
+            return saveRaw && !saveProcessed ? OUTPUT_RAW : OUTPUT_PROCESSED;
         }
 
+        /** Returns a new map; mutations cannot alter this immutable plan. */
         public Map<String, Object> toMap() {
             return buildMap(captureOutput, true);
+        }
+
+        @Override
+        public String toString() {
+            return "CapturePlan{" +
+                    "captureOutput='" + captureOutput + '\'' +
+                    ", saveRaw=" + saveRaw +
+                    ", saveProcessed=" + saveProcessed +
+                    '}';
         }
     }
 }

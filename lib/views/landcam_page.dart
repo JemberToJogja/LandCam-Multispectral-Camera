@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/landcam_models.dart';
-import '../view_models/landcam_view_model.dart';
+import '../viewmodels/landcam_view_model.dart';
 import 'advanced_settings_page.dart';
 import 'landcam_sheets.dart';
 import 'landcam_widgets.dart';
