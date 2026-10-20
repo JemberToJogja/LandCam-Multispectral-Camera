@@ -37,10 +37,12 @@ class SettingsSheet extends StatelessWidget {
 
   String get _selectedPreviewMode {
     final value = previewDisplayMode?.trim().toUpperCase();
+
     if (value != null &&
         const {'PROCESSED', 'FULL_FRAME', 'MULTI_VIEW'}.contains(value)) {
       return value;
     }
+
     return captureMode.trim().toUpperCase() == 'RAW'
         ? 'FULL_FRAME'
         : 'PROCESSED';
@@ -67,7 +69,8 @@ class SettingsSheet extends StatelessWidget {
     final foreground = _uiForeground(dark);
     final secondary = _uiSecondary(dark);
     final screenHeight = MediaQuery.sizeOf(context).height;
-    final sheetHeight = (screenHeight * .50).clamp(280.0, 350.0).toDouble();
+    final sheetHeight =
+        (screenHeight * .50).clamp(280.0, 350.0).toDouble();
     final compact = screenHeight < 680;
 
     return SafeArea(
@@ -197,11 +200,13 @@ class SettingsSheet extends StatelessWidget {
                                 child: _PreviewModeButton(
                                   dark: dark,
                                   label: 'PROCESSED',
-                                  selected: _selectedPreviewMode == 'PROCESSED',
+                                  selected:
+                                      _selectedPreviewMode == 'PROCESSED',
                                   enabled: !previewChangeInFlight &&
                                       (onPreviewDisplayMode != null ||
                                           onCaptureMode != null),
-                                  onTap: () => _selectPreviewMode('PROCESSED'),
+                                  onTap: () =>
+                                      _selectPreviewMode('PROCESSED'),
                                 ),
                               ),
                               const SizedBox(width: 7),
@@ -209,11 +214,13 @@ class SettingsSheet extends StatelessWidget {
                                 child: _PreviewModeButton(
                                   dark: dark,
                                   label: 'FULL FRAME',
-                                  selected: _selectedPreviewMode == 'FULL_FRAME',
+                                  selected:
+                                      _selectedPreviewMode == 'FULL_FRAME',
                                   enabled: !previewChangeInFlight &&
                                       (onPreviewDisplayMode != null ||
                                           onCaptureMode != null),
-                                  onTap: () => _selectPreviewMode('FULL_FRAME'),
+                                  onTap: () =>
+                                      _selectPreviewMode('FULL_FRAME'),
                                 ),
                               ),
                               const SizedBox(width: 7),
@@ -221,10 +228,12 @@ class SettingsSheet extends StatelessWidget {
                                 child: _PreviewModeButton(
                                   dark: dark,
                                   label: 'MULTI-VIEW',
-                                  selected: _selectedPreviewMode == 'MULTI_VIEW',
+                                  selected:
+                                      _selectedPreviewMode == 'MULTI_VIEW',
                                   enabled: !previewChangeInFlight &&
                                       onPreviewDisplayMode != null,
-                                  onTap: () => _selectPreviewMode('MULTI_VIEW'),
+                                  onTap: () =>
+                                      _selectPreviewMode('MULTI_VIEW'),
                                 ),
                               ),
                             ],
@@ -405,7 +414,10 @@ class _SettingsTile extends StatelessWidget {
 }
 
 class _AdvancedSettingsButton extends StatelessWidget {
-  const _AdvancedSettingsButton({required this.dark, required this.onTap});
+  const _AdvancedSettingsButton({
+    required this.dark,
+    required this.onTap,
+  });
 
   final bool dark;
   final VoidCallback onTap;
@@ -471,9 +483,8 @@ class _AdvancedSettingsButton extends StatelessWidget {
 
 /// Connection methods and session diagnostics.
 ///
-/// This widget intentionally does not display a QR credential confirmation or
-/// a CONNECT TO CAMERA action. QR scanning and confirmation belong exclusively
-/// to QrPairingScannerPage. The QR option here only opens that page via onScanQr.
+/// QR scanning and confirmation belong exclusively to QrPairingScannerPage.
+/// The QR option here only opens that page via onScanQr.
 class ConnectionSheet extends StatelessWidget {
   const ConnectionSheet({
     super.key,
@@ -547,15 +558,15 @@ class ConnectionSheet extends StatelessWidget {
   final Future<void> Function()? onConnectBluetooth;
 
   /// Starts a manual Wi-Fi connection using values entered inline in this UI.
-  /// Unlike [onConnectWifi], this callback never opens a dialog or another page.
   final Future<bool> Function({
     required String ssid,
     required String password,
     required String securityType,
   })? onConnectWifiCredentials;
 
-  /// Legacy callback kept temporarily for callers being migrated.
-  @Deprecated('Use onConnectWifiCredentials; Wi-Fi credentials are entered inline.')
+  @Deprecated(
+    'Use onConnectWifiCredentials; Wi-Fi credentials are entered inline.',
+  )
   final Future<void> Function()? onConnectWifi;
 
   final Future<void> Function()? onScanQr;
@@ -573,22 +584,26 @@ class ConnectionSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final normalizedStatus = status.trim().toUpperCase();
+
     const knownOperations = <String>{
       'RECONNECTING',
       'REFRESHING LIVE VIEW',
       'DISCONNECTING',
     };
+
     final explicitOperation = connectionOperation?.trim().toUpperCase();
-    final activeOperation = explicitOperation != null &&
-            explicitOperation.isNotEmpty
-        ? explicitOperation
-        : knownOperations.contains(normalizedStatus)
-            ? normalizedStatus
-            : null;
+    final activeOperation =
+        explicitOperation != null && explicitOperation.isNotEmpty
+            ? explicitOperation
+            : knownOperations.contains(normalizedStatus)
+                ? normalizedStatus
+                : null;
+
     final busy = operationInFlight || activeOperation != null;
     final reconnecting = activeOperation == 'RECONNECTING';
     final refreshing = activeOperation == 'REFRESHING LIVE VIEW';
     final disconnecting = activeOperation == 'DISCONNECTING';
+
     final foreground = _uiForeground(dark);
     final secondary = _uiSecondary(dark);
     final accent = _uiAccent(dark);
@@ -612,7 +627,9 @@ class ConnectionSheet extends StatelessWidget {
         heightFactor: .94,
         child: Material(
           color: _uiSurface(dark),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          borderRadius: const BorderRadius.vertical(
+            top: Radius.circular(16),
+          ),
           clipBehavior: Clip.antiAlias,
           child: Column(
             children: [
@@ -723,7 +740,9 @@ class ConnectionSheet extends StatelessWidget {
                           child: _SessionControlButton(
                             dark: dark,
                             icon: Icons.link_off_rounded,
-                            label: disconnecting ? 'Disconnecting' : 'Disconnect',
+                            label: disconnecting
+                                ? 'Disconnecting'
+                                : 'Disconnect',
                             danger: true,
                             busy: disconnecting,
                             disabled: busy,
@@ -737,10 +756,16 @@ class ConnectionSheet extends StatelessWidget {
                     Theme(
                       data: themedExpansion,
                       child: ExpansionTile(
-                        key: const PageStorageKey<String>('connection-details'),
+                        key: const PageStorageKey<String>(
+                          'connection-details',
+                        ),
                         tilePadding: const EdgeInsets.symmetric(horizontal: 2),
                         childrenPadding: const EdgeInsets.fromLTRB(0, 0, 0, 12),
-                        leading: Icon(Icons.tune_rounded, size: 19, color: secondary),
+                        leading: Icon(
+                          Icons.tune_rounded,
+                          size: 19,
+                          color: secondary,
+                        ),
                         title: Text(
                           'Connection details',
                           style: TextStyle(
@@ -751,13 +776,20 @@ class ConnectionSheet extends StatelessWidget {
                         ),
                         subtitle: Text(
                           'Network, camera, image, and capabilities',
-                          style: TextStyle(color: secondary, fontSize: 11, height: 1.25),
+                          style: TextStyle(
+                            color: secondary,
+                            fontSize: 11,
+                            height: 1.25,
+                          ),
                         ),
                         children: [
                           _DetailGroup(
                             dark: dark,
                             title: 'Network',
-                            rows: {'SSID': _displayValue(ssid), 'Status': status},
+                            rows: {
+                              'SSID': _displayValue(ssid),
+                              'Status': status,
+                            },
                           ),
                           _DetailGroup(
                             dark: dark,
@@ -776,21 +808,32 @@ class ConnectionSheet extends StatelessWidget {
                             title: 'Active image',
                             rows: {
                               'Band': currentBand.title,
-                              'Source': sourceLabel ?? currentBand.sourceLabel,
-                              'Frame': frameWidth != null && frameHeight != null
+                              'Source':
+                                  sourceLabel ?? currentBand.sourceLabel,
+                              'Frame': frameWidth != null &&
+                                      frameHeight != null
                                   ? '${frameWidth} × $frameHeight'
                                   : 'Not available',
-                              'Bit depth': bitDepth?.toString() ?? 'Not available',
+                              'Bit depth':
+                                  bitDepth?.toString() ?? 'Not available',
                             },
                           ),
                           _DetailGroup(
                             dark: dark,
                             title: 'Capabilities',
                             rows: {
-                              'Live view': supportsLiveView ? 'Supported' : 'Unavailable',
-                              'Capture': supportsCapture ? 'Supported' : 'Unavailable',
-                              'Autofocus': supportsAutofocus ? 'Continuous' : 'Unavailable',
-                              'Unified crop': dualOpticalRoiAvailable ? 'Supported' : 'Unavailable',
+                              'Live view': supportsLiveView
+                                  ? 'Supported'
+                                  : 'Unavailable',
+                              'Capture': supportsCapture
+                                  ? 'Supported'
+                                  : 'Unavailable',
+                              'Autofocus': supportsAutofocus
+                                  ? 'Continuous'
+                                  : 'Unavailable',
+                              'Unified crop': dualOpticalRoiAvailable
+                                  ? 'Supported'
+                                  : 'Unavailable',
                               'RGB source': 'Left → unified',
                               'NIR source': 'Right → unified',
                               'Registration': 'Centered affine',
@@ -803,15 +846,31 @@ class ConnectionSheet extends StatelessWidget {
                     Theme(
                       data: themedExpansion,
                       child: ExpansionTile(
-                        key: const PageStorageKey<String>('diagnostic-log-expansion'),
+                        key: const PageStorageKey<String>(
+                          'diagnostic-log-expansion',
+                        ),
                         tilePadding: const EdgeInsets.symmetric(horizontal: 2),
                         childrenPadding: const EdgeInsets.fromLTRB(0, 0, 0, 12),
-                        leading: Icon(Icons.terminal_rounded, size: 19, color: secondary),
+                        leading: Icon(
+                          Icons.terminal_rounded,
+                          size: 19,
+                          color: secondary,
+                        ),
                         title: Text(
                           'Diagnostic log',
-                          style: TextStyle(color: foreground, fontSize: 14, fontWeight: FontWeight.w600),
+                          style: TextStyle(
+                            color: foreground,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
-                        subtitle: Text('${logs.length} entries', style: TextStyle(color: secondary, fontSize: 11)),
+                        subtitle: Text(
+                          '${logs.length} entries',
+                          style: TextStyle(
+                            color: secondary,
+                            fontSize: 11,
+                          ),
+                        ),
                         children: [
                           Padding(
                             padding: const EdgeInsets.only(bottom: 10),
@@ -823,16 +882,26 @@ class ConnectionSheet extends StatelessWidget {
                                       await onCopy();
                                     } catch (error) {
                                       if (!context.mounted) return;
-                                      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+
+                                      ScaffoldMessenger.maybeOf(context)
+                                          ?.showSnackBar(
                                         SnackBar(
-                                          content: Text('Could not copy diagnostic log: ${_cleanError(error)}'),
+                                          content: Text(
+                                            'Could not copy diagnostic log: '
+                                            '${_cleanError(error)}',
+                                          ),
                                         ),
                                       );
                                     }
                                   },
-                                  icon: const Icon(Icons.copy_rounded, size: 16),
+                                  icon: const Icon(
+                                    Icons.copy_rounded,
+                                    size: 16,
+                                  ),
                                   label: const Text('Copy log'),
-                                  style: TextButton.styleFrom(foregroundColor: accent),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: accent,
+                                  ),
                                 ),
                                 const SizedBox(width: 4),
                                 TextButton.icon(
@@ -840,47 +909,98 @@ class ConnectionSheet extends StatelessWidget {
                                     try {
                                       onClear();
                                     } catch (error) {
-                                      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                                      ScaffoldMessenger.maybeOf(context)
+                                          ?.showSnackBar(
                                         SnackBar(
-                                          content: Text('Could not clear diagnostic log: ${_cleanError(error)}'),
+                                          content: Text(
+                                            'Could not clear diagnostic log: '
+                                            '${_cleanError(error)}',
+                                          ),
                                         ),
                                       );
                                     }
                                   },
-                                  icon: Icon(Icons.delete_outline_rounded, size: 16, color: _uiDanger(dark)),
-                                  label: Text('Clear log', style: TextStyle(color: _uiDanger(dark))),
-                                  style: TextButton.styleFrom(foregroundColor: _uiDanger(dark)),
+                                  icon: Icon(
+                                    Icons.delete_outline_rounded,
+                                    size: 16,
+                                    color: _uiDanger(dark),
+                                  ),
+                                  label: Text(
+                                    'Clear log',
+                                    style: TextStyle(
+                                      color: _uiDanger(dark),
+                                    ),
+                                  ),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: _uiDanger(dark),
+                                  ),
                                 ),
                               ],
                             ),
                           ),
                           Container(
                             width: double.infinity,
-                            constraints: const BoxConstraints(minHeight: 84, maxHeight: 260),
+                            constraints: const BoxConstraints(
+                              minHeight: 84,
+                              maxHeight: 260,
+                            ),
                             padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(color: _uiConsole(dark), borderRadius: BorderRadius.circular(6)),
+                            decoration: BoxDecoration(
+                              color: _uiConsole(dark),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
                             child: logs.isEmpty
                                 ? Align(
                                     alignment: Alignment.centerLeft,
-                                    child: Text('No diagnostic entries yet.', style: TextStyle(color: secondary, fontSize: 12)),
+                                    child: Text(
+                                      'No diagnostic entries yet.',
+                                      style: TextStyle(
+                                        color: secondary,
+                                        fontSize: 12,
+                                      ),
+                                    ),
                                   )
                                 : ListView.separated(
+                                    // IMPORTANT:
+                                    // This nested scrollable must have its
+                                    // own unique PageStorageKey. Without it,
+                                    // it can inherit the ExpansionTile key.
+                                    // ExpansionTile stores bool state while
+                                    // ListView expects a double scroll offset.
+                                    key: const PageStorageKey<String>(
+                                      'diagnostic-log-entries',
+                                    ),
+                                    primary: false,
                                     shrinkWrap: true,
-                                    physics: const ClampingScrollPhysics(),
+                                    physics:
+                                        const ClampingScrollPhysics(),
                                     padding: EdgeInsets.zero,
                                     itemCount: logs.length,
-                                    separatorBuilder: (_, __) => Divider(height: 10, color: border),
+                                    separatorBuilder: (_, __) => Divider(
+                                      height: 10,
+                                      color: border,
+                                    ),
                                     itemBuilder: (context, index) {
                                       final log = logs[index];
                                       final level = log.level.toUpperCase();
+
                                       final logColor = level == 'ERROR'
                                           ? _uiDanger(dark)
-                                          : level == 'WARN' || level == 'WARNING'
+                                          : level == 'WARN' ||
+                                                  level == 'WARNING'
                                               ? accent
                                               : foreground;
+
                                       return SelectableText(
-                                        '${log.time}  ${log.level.padRight(5)}  ${log.message}',
-                                        style: TextStyle(color: logColor, fontFamily: 'monospace', fontSize: 10, height: 1.35),
+                                        '${log.time}  '
+                                        '${log.level.padRight(5)}  '
+                                        '${log.message}',
+                                        style: TextStyle(
+                                          color: logColor,
+                                          fontFamily: 'monospace',
+                                          fontSize: 10,
+                                          height: 1.35,
+                                        ),
                                       );
                                     },
                                   ),
@@ -935,11 +1055,13 @@ class _ConnectionMethodsPanel extends StatefulWidget {
   final Future<void> Function() onNfc;
   final Future<void> Function()? onBluetooth;
   final String initialSsid;
+
   final Future<bool> Function({
     required String ssid,
     required String password,
     required String securityType,
   })? onWifiCredentials;
+
   final Future<void> Function()? onQr;
   final Future<void> Function()? onUsb;
   final Future<void> Function()? onUvc;
@@ -964,12 +1086,15 @@ class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
   @override
   void initState() {
     super.initState();
-    _ssidController = TextEditingController(text: widget.initialSsid.trim());
+    _ssidController = TextEditingController(
+      text: widget.initialSsid.trim(),
+    );
   }
 
   @override
   void didUpdateWidget(covariant _ConnectionMethodsPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
+
     if (oldWidget.initialSsid != widget.initialSsid && !_wifiFormOpen) {
       _ssidController.text = widget.initialSsid.trim();
     }
@@ -984,10 +1109,12 @@ class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
 
   void _toggleWifiForm() {
     if (widget.operationInFlight || _submittingWifi) return;
+
     setState(() {
       _wifiFormOpen = !_wifiFormOpen;
       _wifiFeedback = null;
       _wifiSucceeded = null;
+
       if (!_wifiFormOpen) {
         _passwordController.clear();
       }
@@ -996,6 +1123,7 @@ class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
 
   void _cancelWifiForm() {
     if (_submittingWifi) return;
+
     setState(() {
       _wifiFormOpen = false;
       _wifiFeedback = null;
@@ -1009,6 +1137,7 @@ class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
     if (_wifiFormKey.currentState?.validate() != true) return;
 
     final callback = widget.onWifiCredentials;
+
     if (callback == null) {
       setState(() {
         _wifiSucceeded = false;
@@ -1033,7 +1162,9 @@ class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
         password: password,
         securityType: _securityType,
       );
+
       if (!mounted) return;
+
       setState(() {
         _submittingWifi = false;
         _wifiSucceeded = accepted;
@@ -1043,6 +1174,7 @@ class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
       });
     } catch (error) {
       if (!mounted) return;
+
       setState(() {
         _submittingWifi = false;
         _wifiSucceeded = false;
@@ -1054,6 +1186,7 @@ class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
   @override
   Widget build(BuildContext context) {
     final dark = widget.dark;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1097,7 +1230,8 @@ class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
                     icon: Icons.wifi_rounded,
                     label: 'Wi-Fi',
                     active: _wifiFormOpen,
-                    disabled: widget.operationInFlight || _submittingWifi,
+                    disabled:
+                        widget.operationInFlight || _submittingWifi,
                     onTap: () async => _toggleWifiForm(),
                   ),
                 ),
@@ -1107,7 +1241,8 @@ class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
                     dark: dark,
                     icon: Icons.qr_code_scanner_rounded,
                     label: 'Scan QR code',
-                    helper: 'Scan and confirm Wi-Fi on the separate QR scanner.',
+                    helper:
+                        'Scan and confirm Wi-Fi on the separate QR scanner.',
                     disabled: widget.operationInFlight,
                     onTap: widget.onQr,
                   ),
@@ -1207,10 +1342,15 @@ class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
               ),
               validator: (value) {
                 final name = value?.trim() ?? '';
-                if (name.isEmpty) return 'Enter the camera Wi-Fi name.';
+
+                if (name.isEmpty) {
+                  return 'Enter the camera Wi-Fi name.';
+                }
+
                 if (name.codeUnits.length > 32) {
                   return 'Wi-Fi name cannot exceed 32 characters.';
                 }
+
                 return null;
               },
             ),
@@ -1225,16 +1365,24 @@ class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
               dropdownColor: _uiSurface(dark),
               style: TextStyle(color: foreground, fontSize: 13),
               items: const [
-                DropdownMenuItem(value: 'WPA2', child: Text('WPA / WPA2')),
-                DropdownMenuItem(value: 'OPEN', child: Text('Open network')),
+                DropdownMenuItem(
+                  value: 'WPA2',
+                  child: Text('WPA / WPA2'),
+                ),
+                DropdownMenuItem(
+                  value: 'OPEN',
+                  child: Text('Open network'),
+                ),
               ],
               onChanged: formEnabled
                   ? (value) {
                       setState(() {
                         _securityType = value ?? 'WPA2';
+
                         if (_securityType == 'OPEN') {
                           _passwordController.clear();
                         }
+
                         _wifiFeedback = null;
                         _wifiSucceeded = null;
                       });
@@ -1262,7 +1410,9 @@ class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
                 suffixIcon: IconButton(
                   tooltip: _hidePassword ? 'Show password' : 'Hide password',
                   onPressed: formEnabled && _securityType != 'OPEN'
-                      ? () => setState(() => _hidePassword = !_hidePassword)
+                      ? () => setState(
+                            () => _hidePassword = !_hidePassword,
+                          )
                       : null,
                   icon: Icon(
                     _hidePassword
@@ -1274,10 +1424,13 @@ class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
               ),
               validator: (value) {
                 if (_securityType == 'OPEN') return null;
+
                 final length = value?.length ?? 0;
+
                 if (length < 8 || length > 63) {
                   return 'Password must contain 8–63 characters.';
                 }
+
                 return null;
               },
             ),
@@ -1340,10 +1493,14 @@ class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
                         ? const SizedBox(
                             width: 15,
                             height: 15,
-                            child: CircularProgressIndicator(strokeWidth: 1.7),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 1.7,
+                            ),
                           )
                         : const Icon(Icons.link_rounded, size: 16),
-                    label: Text(_submittingWifi ? 'CONNECTING…' : 'CONNECT'),
+                    label: Text(
+                      _submittingWifi ? 'CONNECTING…' : 'CONNECT',
+                    ),
                   ),
                 ),
               ],
@@ -1364,19 +1521,26 @@ InputDecoration _wifiInputDecoration({
 }) {
   final secondary = _uiSecondary(dark);
   final border = _uiBorderStrong(dark);
+
   return InputDecoration(
     labelText: label,
     hintText: hint,
     helperText: helper,
     helperMaxLines: 2,
     labelStyle: TextStyle(color: secondary, fontSize: 12),
-    hintStyle: TextStyle(color: secondary.withValues(alpha: .7), fontSize: 12),
+    hintStyle: TextStyle(
+      color: secondary.withValues(alpha: .7),
+      fontSize: 12,
+    ),
     helperStyle: TextStyle(color: secondary, fontSize: 10),
     errorStyle: TextStyle(color: _uiDanger(dark), fontSize: 10),
     filled: true,
     fillColor: _uiSurface(dark),
     isDense: true,
-    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
+    contentPadding: const EdgeInsets.symmetric(
+      horizontal: 12,
+      vertical: 13,
+    ),
     suffixIcon: suffixIcon,
     enabledBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(5),
@@ -1384,7 +1548,10 @@ InputDecoration _wifiInputDecoration({
     ),
     focusedBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(5),
-      borderSide: BorderSide(color: _uiAccent(dark), width: 1.3),
+      borderSide: BorderSide(
+        color: _uiAccent(dark),
+        width: 1.3,
+      ),
     ),
     errorBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(5),
@@ -1392,14 +1559,19 @@ InputDecoration _wifiInputDecoration({
     ),
     focusedErrorBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(5),
-      borderSide: BorderSide(color: _uiDanger(dark), width: 1.3),
+      borderSide: BorderSide(
+        color: _uiDanger(dark),
+        width: 1.3,
+      ),
     ),
   );
 }
 
 String _cleanError(Object error) {
   final value = error.toString().trim();
+
   if (value.isEmpty) return 'Unknown error.';
+
   return value.replaceFirst(RegExp(r'^Exception:\s*'), '');
 }
 
@@ -1433,7 +1605,9 @@ class _TransportMethodButton extends StatelessWidget {
     final foreground = active ? selectedColor : _uiForeground(dark);
 
     return Tooltip(
-      message: configured ? (helper ?? label) : '$label is not available in this build.',
+      message: configured
+          ? (helper ?? label)
+          : '$label is not available in this build.',
       child: SizedBox(
         height: 50,
         width: double.infinity,
@@ -1442,18 +1616,29 @@ class _TransportMethodButton extends StatelessWidget {
           style: TextButton.styleFrom(
             foregroundColor: foreground,
             disabledForegroundColor: _uiMuted(dark),
-            backgroundColor: active ? selectedColor.withValues(alpha: .12) : Colors.transparent,
+            backgroundColor: active
+                ? selectedColor.withValues(alpha: .12)
+                : Colors.transparent,
             overlayColor: accent.withValues(alpha: .08),
             alignment: Alignment.centerLeft,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 10,
+              vertical: 8,
+            ),
             minimumSize: Size.zero,
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             visualDensity: VisualDensity.compact,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(5),
+            ),
           ),
           child: Row(
             children: [
-              Icon(icon, size: 19, color: enabled ? accent : _uiMuted(dark)),
+              Icon(
+                icon,
+                size: 19,
+                color: enabled ? accent : _uiMuted(dark),
+              ),
               const SizedBox(width: 9),
               Expanded(
                 child: Text(
@@ -1464,14 +1649,19 @@ class _TransportMethodButton extends StatelessWidget {
                   style: TextStyle(
                     color: enabled ? foreground : _uiMuted(dark),
                     fontSize: 12,
-                    fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                    fontWeight:
+                        active ? FontWeight.w700 : FontWeight.w500,
                     letterSpacing: -.1,
                   ),
                 ),
               ),
               if (active) ...[
                 const SizedBox(width: 4),
-                Icon(Icons.circle, size: 6, color: selectedColor),
+                Icon(
+                  Icons.circle,
+                  size: 6,
+                  color: selectedColor,
+                ),
               ],
             ],
           ),
@@ -1482,7 +1672,11 @@ class _TransportMethodButton extends StatelessWidget {
 }
 
 class _SectionHeading extends StatelessWidget {
-  const _SectionHeading({required this.title, required this.subtitle, required this.dark});
+  const _SectionHeading({
+    required this.title,
+    required this.subtitle,
+    required this.dark,
+  });
 
   final String title;
   final String subtitle;
@@ -1495,17 +1689,33 @@ class _SectionHeading extends StatelessWidget {
       children: [
         Text(
           title,
-          style: TextStyle(color: _uiForeground(dark), fontSize: 16, height: 1.15, fontWeight: FontWeight.w700, letterSpacing: -.25),
+          style: TextStyle(
+            color: _uiForeground(dark),
+            fontSize: 16,
+            height: 1.15,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -.25,
+          ),
         ),
         const SizedBox(height: 4),
-        Text(subtitle, style: TextStyle(color: _uiSecondary(dark), fontSize: 12, height: 1.35)),
+        Text(
+          subtitle,
+          style: TextStyle(
+            color: _uiSecondary(dark),
+            fontSize: 12,
+            height: 1.35,
+          ),
+        ),
       ],
     );
   }
 }
 
 class _OperationNotice extends StatelessWidget {
-  const _OperationNotice({required this.dark, required this.label});
+  const _OperationNotice({
+    required this.dark,
+    required this.label,
+  });
 
   final bool dark;
   final String label;
@@ -1513,6 +1723,7 @@ class _OperationNotice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accent = _uiAccent(dark);
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
@@ -1520,11 +1731,21 @@ class _OperationNotice extends StatelessWidget {
           SizedBox(
             width: 15,
             height: 15,
-            child: CircularProgressIndicator(strokeWidth: 1.8, valueColor: AlwaysStoppedAnimation<Color>(accent)),
+            child: CircularProgressIndicator(
+              strokeWidth: 1.8,
+              valueColor: AlwaysStoppedAnimation<Color>(accent),
+            ),
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(label, style: TextStyle(color: _uiSecondary(dark), fontSize: 12, fontWeight: FontWeight.w500)),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: _uiSecondary(dark),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ),
         ],
       ),
@@ -1534,6 +1755,7 @@ class _OperationNotice extends StatelessWidget {
 
 class _SheetHandle extends StatelessWidget {
   const _SheetHandle({required this.dark});
+
   final bool dark;
 
   @override
@@ -1541,13 +1763,20 @@ class _SheetHandle extends StatelessWidget {
     return Container(
       width: 40,
       height: 4,
-      decoration: BoxDecoration(color: _uiBorderStrong(dark), borderRadius: BorderRadius.circular(99)),
+      decoration: BoxDecoration(
+        color: _uiBorderStrong(dark),
+        borderRadius: BorderRadius.circular(99),
+      ),
     );
   }
 }
 
 class _IconFrame extends StatelessWidget {
-  const _IconFrame({required this.dark, required this.child});
+  const _IconFrame({
+    required this.dark,
+    required this.child,
+  });
+
   final bool dark;
   final Widget child;
 
@@ -1568,7 +1797,11 @@ class _IconFrame extends StatelessWidget {
 }
 
 class _SheetStatusIndicator extends StatelessWidget {
-  const _SheetStatusIndicator({required this.link, required this.dark});
+  const _SheetStatusIndicator({
+    required this.link,
+    required this.dark,
+  });
+
   final CameraLink link;
   final bool dark;
 
@@ -1583,11 +1816,27 @@ class _SheetStatusIndicator extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(width: 7, height: 7, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+        Container(
+          width: 7,
+          height: 7,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
+        ),
         const SizedBox(width: 7),
         ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 112),
-          child: Text(link.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700)),
+          child: Text(
+            link.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ),
       ],
     );
@@ -1595,7 +1844,11 @@ class _SheetStatusIndicator extends StatelessWidget {
 }
 
 class _DetailGroup extends StatelessWidget {
-  const _DetailGroup({required this.dark, required this.title, required this.rows});
+  const _DetailGroup({
+    required this.dark,
+    required this.title,
+    required this.rows,
+  });
 
   final bool dark;
   final String title;
@@ -1611,7 +1864,15 @@ class _DetailGroup extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: TextStyle(color: _uiAccent(dark), fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: .3)),
+          Text(
+            title,
+            style: TextStyle(
+              color: _uiAccent(dark),
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: .3,
+            ),
+          ),
           const SizedBox(height: 6),
           for (final entry in rows.entries)
             Padding(
@@ -1619,15 +1880,38 @@ class _DetailGroup extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SizedBox(width: 108, child: Text(entry.key, style: TextStyle(color: secondary, fontSize: 11, height: 1.3))),
+                  SizedBox(
+                    width: 108,
+                    child: Text(
+                      entry.key,
+                      style: TextStyle(
+                        color: secondary,
+                        fontSize: 11,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Text(entry.value, textAlign: TextAlign.end, style: TextStyle(color: foreground, fontSize: 12, height: 1.3, fontWeight: FontWeight.w500)),
+                    child: Text(
+                      entry.value,
+                      textAlign: TextAlign.end,
+                      style: TextStyle(
+                        color: foreground,
+                        fontSize: 12,
+                        height: 1.3,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
                   ),
                 ],
               ),
             ),
-          Divider(height: 12, thickness: 1, color: _uiBorder(dark)),
+          Divider(
+            height: 12,
+            thickness: 1,
+            color: _uiBorder(dark),
+          ),
         ],
       ),
     );
@@ -1660,7 +1944,9 @@ class _SessionControlButton extends StatelessWidget {
         : danger
             ? _uiDanger(dark)
             : _uiForeground(dark);
-    final border = danger ? _uiDanger(dark).withValues(alpha: .6) : _uiBorderStrong(dark);
+
+    final border =
+        danger ? _uiDanger(dark).withValues(alpha: .6) : _uiBorderStrong(dark);
     final accent = _uiAccent(dark);
 
     return SizedBox(
@@ -1672,14 +1958,22 @@ class _SessionControlButton extends StatelessWidget {
           foregroundColor: foreground,
           disabledForegroundColor: _uiMuted(dark),
           backgroundColor: Colors.transparent,
-          overlayColor: (danger ? _uiDanger(dark) : accent).withValues(alpha: .07),
-          side: BorderSide(color: disabled ? _uiBorder(dark) : border),
+          overlayColor:
+              (danger ? _uiDanger(dark) : accent).withValues(alpha: .07),
+          side: BorderSide(
+            color: disabled ? _uiBorder(dark) : border,
+          ),
           padding: const EdgeInsets.symmetric(horizontal: 5),
           minimumSize: Size.zero,
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           visualDensity: VisualDensity.compact,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
-          textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(5),
+          ),
+          textStyle: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+          ),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -1688,7 +1982,10 @@ class _SessionControlButton extends StatelessWidget {
               SizedBox(
                 width: 13,
                 height: 13,
-                child: CircularProgressIndicator(strokeWidth: 1.5, valueColor: AlwaysStoppedAnimation<Color>(foreground)),
+                child: CircularProgressIndicator(
+                  strokeWidth: 1.5,
+                  valueColor: AlwaysStoppedAnimation<Color>(foreground),
+                ),
               )
             else
               Icon(icon, size: 15, color: foreground),
@@ -1696,7 +1993,15 @@ class _SessionControlButton extends StatelessWidget {
             Flexible(
               child: FittedBox(
                 fit: BoxFit.scaleDown,
-                child: Text(label, maxLines: 1, softWrap: false, style: TextStyle(color: foreground, fontSize: 11)),
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  softWrap: false,
+                  style: TextStyle(
+                    color: foreground,
+                    fontSize: 11,
+                  ),
+                ),
               ),
             ),
           ],
@@ -1708,21 +2013,49 @@ class _SessionControlButton extends StatelessWidget {
 
 String _displayValue(String? value) {
   final normalized = value?.trim();
-  return normalized == null || normalized.isEmpty ? 'Not available' : normalized;
+
+  return normalized == null || normalized.isEmpty
+      ? 'Not available'
+      : normalized;
 }
 
 // =============================================================================
 // LOCAL UI PALETTE
 // =============================================================================
 
-Color _uiForeground(bool dark) => dark ? const Color(0xFFF2F6F3) : const Color(0xFF111612);
-Color _uiSurface(bool dark) => dark ? const Color(0xFF101512) : const Color(0xFFFFFFFF);
-Color _uiSurfaceAlt(bool dark) => dark ? const Color(0xFF171D19) : const Color(0xFFE7ECE9);
-Color _uiConsole(bool dark) => dark ? const Color(0xFF080B09) : const Color(0xFFE1E8E3);
-Color _uiAccent(bool dark) => dark ? const Color(0xFF55D98B) : const Color(0xFF1D7E4B);
-Color _uiSecondary(bool dark) => (dark ? const Color(0xFFE7EEE9) : const Color(0xFF2D3831)).withValues(alpha: .76);
-Color _uiMuted(bool dark) => (dark ? const Color(0xFFB4BFB8) : const Color(0xFF56635B)).withValues(alpha: .78);
-Color _uiBorder(bool dark) => (dark ? const Color(0xFFB8C4BD) : const Color(0xFF35423A)).withValues(alpha: .16);
-Color _uiBorderStrong(bool dark) => (dark ? const Color(0xFFB8C4BD) : const Color(0xFF35423A)).withValues(alpha: .30);
-Color _uiDanger(bool dark) => dark ? const Color(0xFFE56B6F) : const Color(0xFFB64045);
-Color _activeTextOn(Color background) => background.computeLuminance() > .5 ? Colors.black : Colors.white;
+Color _uiForeground(bool dark) =>
+    dark ? const Color(0xFFF2F6F3) : const Color(0xFF111612);
+
+Color _uiSurface(bool dark) =>
+    dark ? const Color(0xFF101512) : const Color(0xFFFFFFFF);
+
+Color _uiSurfaceAlt(bool dark) =>
+    dark ? const Color(0xFF171D19) : const Color(0xFFE7ECE9);
+
+Color _uiConsole(bool dark) =>
+    dark ? const Color(0xFF080B09) : const Color(0xFFE1E8E3);
+
+Color _uiAccent(bool dark) =>
+    dark ? const Color(0xFF55D98B) : const Color(0xFF1D7E4B);
+
+Color _uiSecondary(bool dark) =>
+    (dark ? const Color(0xFFE7EEE9) : const Color(0xFF2D3831))
+        .withValues(alpha: .76);
+
+Color _uiMuted(bool dark) =>
+    (dark ? const Color(0xFFB4BFB8) : const Color(0xFF56635B))
+        .withValues(alpha: .78);
+
+Color _uiBorder(bool dark) =>
+    (dark ? const Color(0xFFB8C4BD) : const Color(0xFF35423A))
+        .withValues(alpha: .16);
+
+Color _uiBorderStrong(bool dark) =>
+    (dark ? const Color(0xFFB8C4BD) : const Color(0xFF35423A))
+        .withValues(alpha: .30);
+
+Color _uiDanger(bool dark) =>
+    dark ? const Color(0xFFE56B6F) : const Color(0xFFB64045);
+
+Color _activeTextOn(Color background) =>
+    background.computeLuminance() > .5 ? Colors.black : Colors.white;
