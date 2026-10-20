@@ -568,8 +568,18 @@ class LandCamViewModel extends ChangeNotifier {
           _finishConnectionOperation();
         }
         break;
+      case 'nfcListeningChanged':
+        _nfcListening = data == true || data?.toString().toLowerCase() == 'true';
+        if (_nfcListening) {
+          _addLog('INFO', 'NFC READY — bring the camera close to the phone');
+        }
+        break;
       case 'nfcUnavailable':
         _nfcListening = false;
+        final message = data?.toString();
+        if (message != null && message.isNotEmpty) {
+          _addLog('WARN', message);
+        }
         break;
       case 'wifiPermission':
         if (data == false) _addLog('WARN', 'WIFI PERMISSION NOT GRANTED');
@@ -1372,6 +1382,36 @@ class LandCamViewModel extends ChangeNotifier {
       return accepted;
     } catch (error) {
       if (!_disposed) _addLog('ERROR', 'Could not start NFC: $error');
+      return false;
+    }
+  }
+
+  /// Explicit user action for NFC pairing. If NFC is off, Android opens its
+  /// NFC settings; MainActivity starts listening after the user returns with it
+  /// enabled and reports the confirmed state through the native event stream.
+  Future<bool> requestNfcPairing() async {
+    if (_disposed) return false;
+    try {
+      final handled = await NativeBridge.requestNfcPairing();
+      if (_disposed) return false;
+      final enabled = await NativeBridge.isNfcEnabled();
+      final listening = enabled && await NativeBridge.isNfcListening();
+      _nfcListening = listening;
+      if (listening) {
+        _addLog('INFO', 'NFC READY — bring the camera close to the phone');
+      } else if (handled && !enabled) {
+        _addLog('INFO', 'NFC is off. Enable it in Android settings; LANDCAM will resume pairing automatically.');
+      } else if (!handled) {
+        _addLog('ERROR', 'NFC pairing could not start. Check NFC support and system settings.');
+      }
+      _notify();
+      return handled;
+    } catch (error) {
+      if (!_disposed) {
+        _nfcListening = false;
+        _addLog('ERROR', 'NFC pairing request failed: $error');
+        _notify();
+      }
       return false;
     }
   }

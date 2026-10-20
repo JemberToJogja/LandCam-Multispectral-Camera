@@ -14,6 +14,7 @@ import android.nfc.NdefRecord;
 import android.nfc.NfcAdapter;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.util.Log;
 import android.view.View;
 import android.view.WindowManager;
@@ -74,6 +75,7 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
     private BroadcastReceiver usbPermissionReceiver;
     private boolean usbPermissionReceiverRegistered;
     private volatile boolean nfcDispatchEnabled = false;
+    private volatile boolean nfcStartRequested = false;
     private volatile boolean handlingProgrammaticWifiPairing = false;
 
     // CameraEngine is the source of truth; these fields form the bridge payload.
@@ -160,7 +162,18 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
                     result.success(true);
                     return;
                 case "startNfc":
+                    // Quiet startup check: never open Android Settings automatically.
                     result.success(startNfcListening());
+                    return;
+                case "requestNfcPairing":
+                    // Explicit user action: start NFC or open system NFC settings.
+                    result.success(requestNfcPairing());
+                    return;
+                case "isNfcEnabled":
+                    result.success(nfcAdapter != null && nfcAdapter.isEnabled());
+                    return;
+                case "isNfcListening":
+                    result.success(nfcDispatchEnabled);
                     return;
                 case "stopNfc":
                     stopNfcListening();
@@ -931,12 +944,57 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
         nfcPendingIntent = PendingIntent.getActivity(this, 0, intent, flags);
     }
 
+    /**
+     * Handles an explicit tap on the NFC pairing action.
+     * Android does not permit apps to silently enable NFC; when disabled, the
+     * system NFC settings screen is opened and listening starts after return.
+     */
+    private boolean requestNfcPairing() {
+        if (nfcAdapter == null) {
+            nfcStartRequested = false;
+            nfcDispatchEnabled = false;
+            sendEvent("nfcListeningChanged", false);
+            sendEvent("nfcUnavailable", "NFC NOT SUPPORTED ON THIS DEVICE");
+            return false;
+        }
+
+        if (nfcAdapter.isEnabled()) {
+            nfcStartRequested = false;
+            return startNfcListening();
+        }
+
+        nfcStartRequested = true;
+        try {
+            startActivity(new Intent(Settings.ACTION_NFC_SETTINGS));
+            sendEvent("nfcListeningChanged", false);
+            return true; // Settings was opened; user must enable NFC there.
+        } catch (Exception nfcSettingsError) {
+            Log.w(TAG, "Could not open NFC settings; trying wireless settings", nfcSettingsError);
+            try {
+                startActivity(new Intent(Settings.ACTION_WIRELESS_SETTINGS));
+                sendEvent("nfcListeningChanged", false);
+                return true;
+            } catch (Exception wirelessSettingsError) {
+                nfcStartRequested = false;
+                nfcDispatchEnabled = false;
+                Log.e(TAG, "Could not open Android NFC settings", wirelessSettingsError);
+                sendEvent("nfcListeningChanged", false);
+                sendEvent("nfcUnavailable", "CANNOT OPEN NFC SETTINGS");
+                return false;
+            }
+        }
+    }
+
     private boolean startNfcListening() {
         if (nfcAdapter == null) {
+            nfcDispatchEnabled = false;
+            sendEvent("nfcListeningChanged", false);
             sendEvent("nfcUnavailable", "NFC NOT SUPPORTED");
             return false;
         }
         if (!nfcAdapter.isEnabled()) {
+            nfcDispatchEnabled = false;
+            sendEvent("nfcListeningChanged", false);
             sendEvent("nfcUnavailable", "NFC IS DISABLED");
             return false;
         }
@@ -944,21 +1002,26 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
             ensureEngine().onNfcListeningStarted();
             enableNfcForegroundDispatch();
             nfcDispatchEnabled = true;
+            sendEvent("nfcListeningChanged", true);
+            Log.i(TAG, "NFC foreground dispatch active");
             return true;
         } catch (Exception e) {
             nfcDispatchEnabled = false;
             try { nfcAdapter.disableForegroundDispatch(this); } catch (Exception ignored) { }
             Log.e(TAG, "NFC foreground dispatch failed", e);
+            sendEvent("nfcListeningChanged", false);
             sendEvent("error", "NFC FOREGROUND DISPATCH FAILED");
             return false;
         }
     }
 
     private void stopNfcListening() {
+        nfcStartRequested = false;
         nfcDispatchEnabled = false;
         try { ensureEngine().onNfcListeningStopped(); }
         catch (Exception e) { Log.w(TAG, "Stopping NFC engine state failed", e); }
         disableNfcForegroundDispatch();
+        sendEvent("nfcListeningChanged", false);
     }
 
     private void enableNfcForegroundDispatch() {
@@ -976,10 +1039,30 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
     @Override
     protected void onResume() {
         super.onResume();
+
+        if (nfcStartRequested) {
+            nfcStartRequested = false;
+            if (nfcAdapter != null && nfcAdapter.isEnabled()) {
+                // startNfcListening emits nfcListeningChanged with its confirmed state.
+                startNfcListening();
+            } else {
+                nfcDispatchEnabled = false;
+                sendEvent("nfcListeningChanged", false);
+                sendEvent("nfcUnavailable", nfcAdapter == null
+                        ? "NFC NOT SUPPORTED ON THIS DEVICE"
+                        : "NFC STILL DISABLED — ENABLE IT IN ANDROID SETTINGS");
+            }
+            return;
+        }
+
         if (nfcDispatchEnabled) {
-            try { enableNfcForegroundDispatch(); }
-            catch (Exception e) {
+            try {
+                enableNfcForegroundDispatch();
+                sendEvent("nfcListeningChanged", true);
+            } catch (Exception e) {
+                nfcDispatchEnabled = false;
                 Log.e(TAG, "NFC foreground dispatch failed", e);
+                sendEvent("nfcListeningChanged", false);
                 sendEvent("error", "NFC FOREGROUND DISPATCH FAILED");
             }
         }
@@ -1288,6 +1371,7 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
 
     @Override
     protected void onDestroy() {
+        nfcStartRequested = false;
         nfcDispatchEnabled = false;
         disableNfcForegroundDispatch();
         if (usbPermissionReceiverRegistered && usbPermissionReceiver != null) {

@@ -43,7 +43,17 @@ class NativeBridge {
 
   static Future<bool> initialize() => _invokeBool('initialize');
 
+  /// Quiet startup check. Does not open system settings when NFC is off.
   static Future<bool> startNfc() => _invokeBool('startNfc');
+
+  /// Explicit NFC pairing action. Native opens NFC settings when NFC is off.
+  static Future<bool> requestNfcPairing() => _invokeBool('requestNfcPairing');
+
+  /// Reads current hardware/system state from Android.
+  static Future<bool> isNfcEnabled() => _invokeBool('isNfcEnabled');
+
+  /// True only when native reports NFC foreground dispatch is enabled.
+  static Future<bool> isNfcListening() => _invokeBool('isNfcListening');
 
   static Future<void> stopNfc() => _invokeVoid('stopNfc');
 

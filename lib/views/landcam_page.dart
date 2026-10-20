@@ -521,9 +521,12 @@ class _LandCamPageState extends State<LandCamPage> {
                 unawaited(_openConnectionMethods(sheetContext));
               },
               onStartNfc: () async {
-                final started = await _viewModel.startNfc();
-                if (!started && sheetContext.mounted) {
-                  _showSheetToast(sheetContext, 'NFC COULD NOT START');
+                final handled = await _viewModel.requestNfcPairing();
+                if (!handled && sheetContext.mounted) {
+                  _showSheetToast(
+                    sheetContext,
+                    'NFC IS UNAVAILABLE — CHECK DEVICE NFC SETTINGS',
+                  );
                 }
               },
               onConnectBluetooth: () async {
