@@ -504,6 +504,7 @@ class ConnectionSheet extends StatelessWidget {
     this.onOpenMethods,
     this.onConnectBluetooth,
     this.onConnectWifi,
+    this.onConnectWifiCredentials,
     this.onScanQr,
     this.onConnectUsb,
     this.onConnectUvc,
@@ -544,7 +545,19 @@ class ConnectionSheet extends StatelessWidget {
   final VoidCallback? onOpenMethods;
 
   final Future<void> Function()? onConnectBluetooth;
+
+  /// Starts a manual Wi-Fi connection using values entered inline in this UI.
+  /// Unlike [onConnectWifi], this callback never opens a dialog or another page.
+  final Future<bool> Function({
+    required String ssid,
+    required String password,
+    required String securityType,
+  })? onConnectWifiCredentials;
+
+  /// Legacy callback kept temporarily for callers being migrated.
+  @Deprecated('Use onConnectWifiCredentials; Wi-Fi credentials are entered inline.')
   final Future<void> Function()? onConnectWifi;
+
   final Future<void> Function()? onScanQr;
   final Future<void> Function()? onConnectUsb;
   final Future<void> Function()? onConnectUvc;
@@ -669,7 +682,8 @@ class ConnectionSheet extends StatelessWidget {
                       operationInFlight: busy,
                       onNfc: onStartNfc,
                       onBluetooth: onConnectBluetooth,
-                      onWifi: onConnectWifi,
+                      initialSsid: ssid ?? '',
+                      onWifiCredentials: onConnectWifiCredentials,
                       onQr: onScanQr,
                       onUsb: onConnectUsb,
                       onUvc: onConnectUvc,
@@ -804,14 +818,35 @@ class ConnectionSheet extends StatelessWidget {
                             child: Row(
                               children: [
                                 TextButton.icon(
-                                  onPressed: () async => onCopy(),
+                                  onPressed: () async {
+                                    try {
+                                      await onCopy();
+                                    } catch (error) {
+                                      if (!context.mounted) return;
+                                      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                                        SnackBar(
+                                          content: Text('Could not copy diagnostic log: ${_cleanError(error)}'),
+                                        ),
+                                      );
+                                    }
+                                  },
                                   icon: const Icon(Icons.copy_rounded, size: 16),
                                   label: const Text('Copy log'),
                                   style: TextButton.styleFrom(foregroundColor: accent),
                                 ),
                                 const SizedBox(width: 4),
                                 TextButton.icon(
-                                  onPressed: onClear,
+                                  onPressed: () {
+                                    try {
+                                      onClear();
+                                    } catch (error) {
+                                      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                                        SnackBar(
+                                          content: Text('Could not clear diagnostic log: ${_cleanError(error)}'),
+                                        ),
+                                      );
+                                    }
+                                  },
                                   icon: Icon(Icons.delete_outline_rounded, size: 16, color: _uiDanger(dark)),
                                   label: Text('Clear log', style: TextStyle(color: _uiDanger(dark))),
                                   style: TextButton.styleFrom(foregroundColor: _uiDanger(dark)),
@@ -880,14 +915,15 @@ String _operationLabel(String? operation) {
   }
 }
 
-class _ConnectionMethodsPanel extends StatelessWidget {
+class _ConnectionMethodsPanel extends StatefulWidget {
   const _ConnectionMethodsPanel({
     required this.dark,
     required this.nfcListening,
     required this.operationInFlight,
     required this.onNfc,
     required this.onBluetooth,
-    required this.onWifi,
+    required this.initialSsid,
+    required this.onWifiCredentials,
     required this.onQr,
     required this.onUsb,
     required this.onUvc,
@@ -898,90 +934,473 @@ class _ConnectionMethodsPanel extends StatelessWidget {
   final bool operationInFlight;
   final Future<void> Function() onNfc;
   final Future<void> Function()? onBluetooth;
-  final Future<void> Function()? onWifi;
+  final String initialSsid;
+  final Future<bool> Function({
+    required String ssid,
+    required String password,
+    required String securityType,
+  })? onWifiCredentials;
   final Future<void> Function()? onQr;
   final Future<void> Function()? onUsb;
   final Future<void> Function()? onUvc;
 
   @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final columns = constraints.maxWidth >= 560 ? 3 : 2;
-        const spacing = 5.0;
-        final itemWidth = (constraints.maxWidth - spacing * (columns - 1)) / columns;
+  State<_ConnectionMethodsPanel> createState() =>
+      _ConnectionMethodsPanelState();
+}
 
-        return Wrap(
-          spacing: spacing,
-          runSpacing: 3,
-          children: [
-            SizedBox(
-              width: itemWidth,
-              child: _TransportMethodButton(
-                dark: dark,
-                icon: Icons.nfc_rounded,
-                label: nfcListening ? 'NFC listening' : 'NFC pairing',
-                active: nfcListening,
-                disabled: operationInFlight,
-                onTap: onNfc,
-              ),
-            ),
-            SizedBox(
-              width: itemWidth,
-              child: _TransportMethodButton(
-                dark: dark,
-                icon: Icons.bluetooth_rounded,
-                label: 'Bluetooth',
-                disabled: operationInFlight,
-                onTap: onBluetooth,
-              ),
-            ),
-            SizedBox(
-              width: itemWidth,
-              child: _TransportMethodButton(
-                dark: dark,
-                icon: Icons.wifi_rounded,
-                label: 'Wi-Fi',
-                disabled: operationInFlight,
-                onTap: onWifi,
-              ),
-            ),
-            SizedBox(
-              width: itemWidth,
-              child: _TransportMethodButton(
-                dark: dark,
-                icon: Icons.qr_code_scanner_rounded,
-                label: 'Scan QR code',
-                helper: 'Scan and confirm Wi-Fi on the QR scanner page.',
-                disabled: operationInFlight,
-                onTap: onQr,
-              ),
-            ),
-            SizedBox(
-              width: itemWidth,
-              child: _TransportMethodButton(
-                dark: dark,
-                icon: Icons.usb_rounded,
-                label: 'USB / PTP',
-                disabled: operationInFlight,
-                onTap: onUsb,
-              ),
-            ),
-            SizedBox(
-              width: itemWidth,
-              child: _TransportMethodButton(
-                dark: dark,
-                icon: Icons.videocam_outlined,
-                label: 'HDMI / UVC',
-                disabled: operationInFlight,
-                onTap: onUvc,
-              ),
-            ),
-          ],
-        );
-      },
+class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
+  final _wifiFormKey = GlobalKey<FormState>();
+  late final TextEditingController _ssidController;
+  final TextEditingController _passwordController = TextEditingController();
+
+  bool _wifiFormOpen = false;
+  bool _hidePassword = true;
+  bool _submittingWifi = false;
+  String _securityType = 'WPA2';
+  String? _wifiFeedback;
+  bool? _wifiSucceeded;
+
+  @override
+  void initState() {
+    super.initState();
+    _ssidController = TextEditingController(text: widget.initialSsid.trim());
+  }
+
+  @override
+  void didUpdateWidget(covariant _ConnectionMethodsPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.initialSsid != widget.initialSsid && !_wifiFormOpen) {
+      _ssidController.text = widget.initialSsid.trim();
+    }
+  }
+
+  @override
+  void dispose() {
+    _ssidController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  void _toggleWifiForm() {
+    if (widget.operationInFlight || _submittingWifi) return;
+    setState(() {
+      _wifiFormOpen = !_wifiFormOpen;
+      _wifiFeedback = null;
+      _wifiSucceeded = null;
+      if (!_wifiFormOpen) {
+        _passwordController.clear();
+      }
+    });
+  }
+
+  void _cancelWifiForm() {
+    if (_submittingWifi) return;
+    setState(() {
+      _wifiFormOpen = false;
+      _wifiFeedback = null;
+      _wifiSucceeded = null;
+      _passwordController.clear();
+    });
+  }
+
+  Future<void> _submitWifi() async {
+    if (_submittingWifi || widget.operationInFlight) return;
+    if (_wifiFormKey.currentState?.validate() != true) return;
+
+    final callback = widget.onWifiCredentials;
+    if (callback == null) {
+      setState(() {
+        _wifiSucceeded = false;
+        _wifiFeedback =
+            'Manual Wi-Fi connection is not available in this build.';
+      });
+      return;
+    }
+
+    final networkName = _ssidController.text.trim();
+    final password = _securityType == 'OPEN' ? '' : _passwordController.text;
+
+    setState(() {
+      _submittingWifi = true;
+      _wifiFeedback = 'Sending Wi-Fi connection request…';
+      _wifiSucceeded = null;
+    });
+
+    try {
+      final accepted = await callback(
+        ssid: networkName,
+        password: password,
+        securityType: _securityType,
+      );
+      if (!mounted) return;
+      setState(() {
+        _submittingWifi = false;
+        _wifiSucceeded = accepted;
+        _wifiFeedback = accepted
+            ? 'Request sent. Keep the camera powered on while it connects.'
+            : 'Request was rejected. Check the diagnostic log and try again.';
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _submittingWifi = false;
+        _wifiSucceeded = false;
+        _wifiFeedback = 'Wi-Fi request failed: ${_cleanError(error)}';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dark = widget.dark;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final columns = constraints.maxWidth >= 560 ? 3 : 2;
+            const spacing = 5.0;
+            final itemWidth =
+                (constraints.maxWidth - spacing * (columns - 1)) / columns;
+
+            return Wrap(
+              spacing: spacing,
+              runSpacing: 3,
+              children: [
+                SizedBox(
+                  width: itemWidth,
+                  child: _TransportMethodButton(
+                    dark: dark,
+                    icon: Icons.nfc_rounded,
+                    label: widget.nfcListening ? 'NFC READY' : 'NFC pairing',
+                    active: widget.nfcListening,
+                    activeColor: const Color(0xFF22C55E),
+                    disabled: widget.operationInFlight,
+                    onTap: widget.onNfc,
+                  ),
+                ),
+                SizedBox(
+                  width: itemWidth,
+                  child: _TransportMethodButton(
+                    dark: dark,
+                    icon: Icons.bluetooth_rounded,
+                    label: 'Bluetooth',
+                    disabled: widget.operationInFlight,
+                    onTap: widget.onBluetooth,
+                  ),
+                ),
+                SizedBox(
+                  width: itemWidth,
+                  child: _TransportMethodButton(
+                    dark: dark,
+                    icon: Icons.wifi_rounded,
+                    label: 'Wi-Fi',
+                    active: _wifiFormOpen,
+                    disabled: widget.operationInFlight || _submittingWifi,
+                    onTap: () async => _toggleWifiForm(),
+                  ),
+                ),
+                SizedBox(
+                  width: itemWidth,
+                  child: _TransportMethodButton(
+                    dark: dark,
+                    icon: Icons.qr_code_scanner_rounded,
+                    label: 'Scan QR code',
+                    helper: 'Scan and confirm Wi-Fi on the separate QR scanner.',
+                    disabled: widget.operationInFlight,
+                    onTap: widget.onQr,
+                  ),
+                ),
+                SizedBox(
+                  width: itemWidth,
+                  child: _TransportMethodButton(
+                    dark: dark,
+                    icon: Icons.usb_rounded,
+                    label: 'USB / PTP',
+                    disabled: widget.operationInFlight,
+                    onTap: widget.onUsb,
+                  ),
+                ),
+                SizedBox(
+                  width: itemWidth,
+                  child: _TransportMethodButton(
+                    dark: dark,
+                    icon: Icons.videocam_outlined,
+                    label: 'HDMI / UVC',
+                    disabled: widget.operationInFlight,
+                    onTap: widget.onUvc,
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: _wifiFormOpen
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: _buildWifiForm(dark),
+                )
+              : const SizedBox.shrink(),
+        ),
+      ],
     );
   }
+
+  Widget _buildWifiForm(bool dark) {
+    final accent = _uiAccent(dark);
+    final foreground = _uiForeground(dark);
+    final secondary = _uiSecondary(dark);
+    final border = _uiBorderStrong(dark);
+    final danger = _uiDanger(dark);
+
+    final formEnabled = !_submittingWifi && !widget.operationInFlight;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _uiSurfaceAlt(dark),
+        border: Border.all(color: border),
+        borderRadius: BorderRadius.circular(7),
+      ),
+      child: Form(
+        key: _wifiFormKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.wifi_rounded, size: 18, color: accent),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'CONNECT TO CAMERA WI-FI',
+                    style: TextStyle(
+                      color: foreground,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: .55,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            TextFormField(
+              controller: _ssidController,
+              cursorColor: accent,
+              selectionControls: materialTextSelectionControls,
+              enabled: formEnabled,
+              autocorrect: false,
+              enableSuggestions: false,
+              textInputAction: TextInputAction.next,
+              style: TextStyle(color: foreground, fontSize: 13),
+              decoration: _wifiInputDecoration(
+                dark: dark,
+                label: 'Camera Wi-Fi name (SSID)',
+                hint: 'DIRECT-xxxx:ILCE-6400',
+              ),
+              validator: (value) {
+                final name = value?.trim() ?? '';
+                if (name.isEmpty) return 'Enter the camera Wi-Fi name.';
+                if (name.codeUnits.length > 32) {
+                  return 'Wi-Fi name cannot exceed 32 characters.';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 10),
+            DropdownButtonFormField<String>(
+              value: _securityType,
+              isExpanded: true,
+              decoration: _wifiInputDecoration(
+                dark: dark,
+                label: 'Network security',
+              ),
+              dropdownColor: _uiSurface(dark),
+              style: TextStyle(color: foreground, fontSize: 13),
+              items: const [
+                DropdownMenuItem(value: 'WPA2', child: Text('WPA / WPA2')),
+                DropdownMenuItem(value: 'OPEN', child: Text('Open network')),
+              ],
+              onChanged: formEnabled
+                  ? (value) {
+                      setState(() {
+                        _securityType = value ?? 'WPA2';
+                        if (_securityType == 'OPEN') {
+                          _passwordController.clear();
+                        }
+                        _wifiFeedback = null;
+                        _wifiSucceeded = null;
+                      });
+                    }
+                  : null,
+            ),
+            const SizedBox(height: 10),
+            TextFormField(
+              controller: _passwordController,
+              cursorColor: accent,
+              selectionControls: materialTextSelectionControls,
+              enabled: formEnabled && _securityType != 'OPEN',
+              autocorrect: false,
+              enableSuggestions: false,
+              obscureText: _hidePassword,
+              textInputAction: TextInputAction.done,
+              onFieldSubmitted: (_) => _submitWifi(),
+              style: TextStyle(color: foreground, fontSize: 13),
+              decoration: _wifiInputDecoration(
+                dark: dark,
+                label: 'Wi-Fi password',
+                helper: _securityType == 'OPEN'
+                    ? 'No password is needed for an open network.'
+                    : null,
+                suffixIcon: IconButton(
+                  tooltip: _hidePassword ? 'Show password' : 'Hide password',
+                  onPressed: formEnabled && _securityType != 'OPEN'
+                      ? () => setState(() => _hidePassword = !_hidePassword)
+                      : null,
+                  icon: Icon(
+                    _hidePassword
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
+                    size: 18,
+                  ),
+                ),
+              ),
+              validator: (value) {
+                if (_securityType == 'OPEN') return null;
+                final length = value?.length ?? 0;
+                if (length < 8 || length > 63) {
+                  return 'Password must contain 8–63 characters.';
+                }
+                return null;
+              },
+            ),
+            if (_wifiFeedback != null) ...[
+              const SizedBox(height: 10),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    _wifiSucceeded == true
+                        ? Icons.check_circle_outline_rounded
+                        : _wifiSucceeded == false
+                            ? Icons.error_outline_rounded
+                            : Icons.info_outline_rounded,
+                    size: 16,
+                    color: _wifiSucceeded == true
+                        ? accent
+                        : _wifiSucceeded == false
+                            ? danger
+                            : secondary,
+                  ),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
+                      _wifiFeedback!,
+                      style: TextStyle(
+                        color: _wifiSucceeded == false ? danger : secondary,
+                        fontSize: 11,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 13),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: formEnabled ? _cancelWifiForm : null,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: secondary,
+                      side: BorderSide(color: border),
+                      minimumSize: const Size(0, 42),
+                    ),
+                    child: const Text('CANCEL'),
+                  ),
+                ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: formEnabled ? _submitWifi : null,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: accent,
+                      foregroundColor: _activeTextOn(accent),
+                      minimumSize: const Size(0, 42),
+                    ),
+                    icon: _submittingWifi
+                        ? const SizedBox(
+                            width: 15,
+                            height: 15,
+                            child: CircularProgressIndicator(strokeWidth: 1.7),
+                          )
+                        : const Icon(Icons.link_rounded, size: 16),
+                    label: Text(_submittingWifi ? 'CONNECTING…' : 'CONNECT'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+InputDecoration _wifiInputDecoration({
+  required bool dark,
+  required String label,
+  String? hint,
+  String? helper,
+  Widget? suffixIcon,
+}) {
+  final secondary = _uiSecondary(dark);
+  final border = _uiBorderStrong(dark);
+  return InputDecoration(
+    labelText: label,
+    hintText: hint,
+    helperText: helper,
+    helperMaxLines: 2,
+    labelStyle: TextStyle(color: secondary, fontSize: 12),
+    hintStyle: TextStyle(color: secondary.withValues(alpha: .7), fontSize: 12),
+    helperStyle: TextStyle(color: secondary, fontSize: 10),
+    errorStyle: TextStyle(color: _uiDanger(dark), fontSize: 10),
+    filled: true,
+    fillColor: _uiSurface(dark),
+    isDense: true,
+    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
+    suffixIcon: suffixIcon,
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(5),
+      borderSide: BorderSide(color: border),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(5),
+      borderSide: BorderSide(color: _uiAccent(dark), width: 1.3),
+    ),
+    errorBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(5),
+      borderSide: BorderSide(color: _uiDanger(dark)),
+    ),
+    focusedErrorBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(5),
+      borderSide: BorderSide(color: _uiDanger(dark), width: 1.3),
+    ),
+  );
+}
+
+String _cleanError(Object error) {
+  final value = error.toString().trim();
+  if (value.isEmpty) return 'Unknown error.';
+  return value.replaceFirst(RegExp(r'^Exception:\s*'), '');
 }
 
 class _TransportMethodButton extends StatelessWidget {
@@ -992,6 +1411,7 @@ class _TransportMethodButton extends StatelessWidget {
     required this.onTap,
     this.helper,
     this.active = false,
+    this.activeColor,
     this.disabled = false,
   });
 
@@ -1001,6 +1421,7 @@ class _TransportMethodButton extends StatelessWidget {
   final Future<void> Function()? onTap;
   final String? helper;
   final bool active;
+  final Color? activeColor;
   final bool disabled;
 
   @override
@@ -1008,7 +1429,8 @@ class _TransportMethodButton extends StatelessWidget {
     final configured = onTap != null;
     final enabled = configured && !disabled;
     final accent = _uiAccent(dark);
-    final foreground = active ? accent : _uiForeground(dark);
+    final selectedColor = activeColor ?? accent;
+    final foreground = active ? selectedColor : _uiForeground(dark);
 
     return Tooltip(
       message: configured ? (helper ?? label) : '$label is not available in this build.',
@@ -1020,7 +1442,7 @@ class _TransportMethodButton extends StatelessWidget {
           style: TextButton.styleFrom(
             foregroundColor: foreground,
             disabledForegroundColor: _uiMuted(dark),
-            backgroundColor: active ? accent.withValues(alpha: .10) : Colors.transparent,
+            backgroundColor: active ? selectedColor.withValues(alpha: .12) : Colors.transparent,
             overlayColor: accent.withValues(alpha: .08),
             alignment: Alignment.centerLeft,
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -1049,7 +1471,7 @@ class _TransportMethodButton extends StatelessWidget {
               ),
               if (active) ...[
                 const SizedBox(width: 4),
-                Icon(Icons.circle, size: 6, color: accent),
+                Icon(Icons.circle, size: 6, color: selectedColor),
               ],
             ],
           ),

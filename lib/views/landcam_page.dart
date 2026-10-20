@@ -189,140 +189,19 @@ class _LandCamPageState extends State<LandCamPage> {
   // Connection method entry points
   // ---------------------------------------------------------------------------
 
-  Future<void> _connectManualWifiFromSheet(BuildContext sheetContext) async {
-    final ssidController = TextEditingController(text: _viewModel.ssid ?? '');
-    final passwordController = TextEditingController();
-    final formKey = GlobalKey<FormState>();
-    var securityType = 'WPA2';
-    var hidePassword = true;
-
-    try {
-      final credentials = await showDialog<Map<String, String>>(
-        context: sheetContext,
-        builder: (dialogContext) => StatefulBuilder(
-          builder: (dialogContext, setDialogState) => AlertDialog(
-            title: const Text('CONNECT TO CAMERA WI-FI'),
-            content: SizedBox(
-              width: 440,
-              child: SingleChildScrollView(
-                child: Form(
-                  key: formKey,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      TextFormField(
-                        controller: ssidController,
-                        autofocus: true,
-                        autocorrect: false,
-                        decoration: const InputDecoration(
-                          labelText: 'Camera Wi-Fi SSID',
-                          hintText: 'DIRECT-xxxx:ILCE-6400',
-                        ),
-                        validator: (value) =>
-                            value == null || value.trim().isEmpty
-                            ? 'SSID is required.'
-                            : null,
-                      ),
-                      const SizedBox(height: 10),
-                      DropdownButtonFormField<String>(
-                        value: securityType,
-                        decoration: const InputDecoration(
-                          labelText: 'Security',
-                        ),
-                        items: const [
-                          DropdownMenuItem(
-                            value: 'WPA2',
-                            child: Text('WPA / WPA2'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'OPEN',
-                            child: Text('Open network'),
-                          ),
-                        ],
-                        onChanged: (value) => setDialogState(
-                          () => securityType = value ?? 'WPA2',
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      TextFormField(
-                        controller: passwordController,
-                        autocorrect: false,
-                        enableSuggestions: false,
-                        obscureText: hidePassword,
-                        decoration: InputDecoration(
-                          labelText: 'Wi-Fi password',
-                          helperText: securityType == 'OPEN'
-                              ? 'Not required for an open network.'
-                              : 'Enter 8–63 characters.',
-                          suffixIcon: IconButton(
-                            tooltip: hidePassword
-                                ? 'Show password'
-                                : 'Hide password',
-                            onPressed: () => setDialogState(
-                              () => hidePassword = !hidePassword,
-                            ),
-                            icon: Icon(
-                              hidePassword
-                                  ? Icons.visibility
-                                  : Icons.visibility_off,
-                            ),
-                          ),
-                        ),
-                        validator: (value) {
-                          if (securityType == 'OPEN') return null;
-                          final length = value?.length ?? 0;
-                          return length < 8 || length > 63
-                              ? 'Password must contain 8–63 characters.'
-                              : null;
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(),
-                child: const Text('CANCEL'),
-              ),
-              FilledButton(
-                onPressed: () {
-                  if (formKey.currentState?.validate() != true) return;
-                  Navigator.of(dialogContext).pop(<String, String>{
-                    'ssid': ssidController.text.trim(),
-                    'password': passwordController.text,
-                    'securityType': securityType,
-                  });
-                },
-                child: const Text('CONNECT'),
-              ),
-            ],
-          ),
-        ),
-      );
-
-      if (credentials == null || !mounted || !sheetContext.mounted) return;
-      final accepted = await _viewModel.connectWifiManually(
-        ssid: credentials['ssid']!,
-        password: credentials['password']!,
-        securityType: credentials['securityType']!,
-      );
-      if (!mounted || !sheetContext.mounted) return;
-      _showSheetToast(
-        sheetContext,
-        accepted
-            ? 'WI-FI REQUEST SENT — WAIT FOR CAMERA READY'
-            : 'WI-FI REQUEST REJECTED — CHECK DIAGNOSTIC LOG',
-      );
-    } catch (error) {
-      if (mounted && sheetContext.mounted) {
-        _showSheetToast(sheetContext, 'WI-FI PAIRING FAILED: $error');
-      }
-    } finally {
-      ssidController.dispose();
-      passwordController.dispose();
-    }
+  Future<bool> _connectManualWifiFromSheet({
+    required String ssid,
+    required String password,
+    required String securityType,
+  }) async {
+    // Credentials are collected by the inline form in ConnectionSheet.
+    // Do not show a second dialog here. Errors are caught and displayed by
+    // the inline form so cancellation never relies on Navigator.pop(result).
+    return _viewModel.connectWifiManually(
+      ssid: ssid,
+      password: password,
+      securityType: securityType,
+    );
   }
 
   /// Opens the dedicated QR scanner. The scanner owns QR confirmation and
@@ -650,8 +529,16 @@ class _LandCamPageState extends State<LandCamPage> {
               onConnectBluetooth: () async {
                 await _connectBluetoothFromSheet(sheetContext);
               },
-              onConnectWifi: () async {
-                await _connectManualWifiFromSheet(sheetContext);
+              onConnectWifiCredentials: ({
+                required String ssid,
+                required String password,
+                required String securityType,
+              }) {
+                return _connectManualWifiFromSheet(
+                  ssid: ssid,
+                  password: password,
+                  securityType: securityType,
+                );
               },
               onScanQr: () async {
                 await _scanQrAndConnect(sheetContext);
