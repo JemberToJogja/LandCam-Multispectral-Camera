@@ -4,9 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/landcam_models.dart';
+import '../services/qr_pairing_service.dart';
 import '../viewmodels/landcam_view_model.dart';
 import 'advanced_settings_page.dart';
 import 'landcam_sheets.dart';
+import 'qr_pairing_scanner_page.dart';
+import 'connection_methods_page.dart';
 import 'landcam_widgets.dart';
 
 /// Main LANDCAM screen.
@@ -99,8 +102,9 @@ class _LandCamPageState extends State<LandCamPage> {
               dark: _dark,
               // Preview display is separate from the saved capture output.
               previewDisplayMode: _viewModel.previewDisplayMode,
-              previewChangeInFlight:
-                  _viewModel.status.startsWith('SWITCHING PREVIEW:'),
+              previewChangeInFlight: _viewModel.status.startsWith(
+                'SWITCHING PREVIEW:',
+              ),
               onPreviewDisplayMode: (mode) async {
                 final message = await _viewModel.setPreviewDisplayMode(mode);
                 if (!mounted || !sheetContext.mounted) return;
@@ -171,6 +175,449 @@ class _LandCamPageState extends State<LandCamPage> {
   // Connection
   // ---------------------------------------------------------------------------
 
+  Future<void> _openConnectionMethods(BuildContext sheetContext) async {
+    if (!mounted || !sheetContext.mounted) return;
+    await Navigator.of(sheetContext).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            ConnectionMethodsPage(viewModel: _viewModel, dark: _dark),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Connection method entry points
+  // ---------------------------------------------------------------------------
+
+  Future<void> _connectManualWifiFromSheet(BuildContext sheetContext) async {
+    final ssidController = TextEditingController(text: _viewModel.ssid ?? '');
+    final passwordController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    var securityType = 'WPA2';
+    var hidePassword = true;
+
+    try {
+      final credentials = await showDialog<Map<String, String>>(
+        context: sheetContext,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (dialogContext, setDialogState) => AlertDialog(
+            title: const Text('CONNECT TO CAMERA WI-FI'),
+            content: SizedBox(
+              width: 440,
+              child: SingleChildScrollView(
+                child: Form(
+                  key: formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextFormField(
+                        controller: ssidController,
+                        autofocus: true,
+                        autocorrect: false,
+                        decoration: const InputDecoration(
+                          labelText: 'Camera Wi-Fi SSID',
+                          hintText: 'DIRECT-xxxx:ILCE-6400',
+                        ),
+                        validator: (value) =>
+                            value == null || value.trim().isEmpty
+                            ? 'SSID is required.'
+                            : null,
+                      ),
+                      const SizedBox(height: 10),
+                      DropdownButtonFormField<String>(
+                        value: securityType,
+                        decoration: const InputDecoration(
+                          labelText: 'Security',
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'WPA2',
+                            child: Text('WPA / WPA2'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'OPEN',
+                            child: Text('Open network'),
+                          ),
+                        ],
+                        onChanged: (value) => setDialogState(
+                          () => securityType = value ?? 'WPA2',
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      TextFormField(
+                        controller: passwordController,
+                        autocorrect: false,
+                        enableSuggestions: false,
+                        obscureText: hidePassword,
+                        decoration: InputDecoration(
+                          labelText: 'Wi-Fi password',
+                          helperText: securityType == 'OPEN'
+                              ? 'Not required for an open network.'
+                              : 'Enter 8–63 characters.',
+                          suffixIcon: IconButton(
+                            tooltip: hidePassword
+                                ? 'Show password'
+                                : 'Hide password',
+                            onPressed: () => setDialogState(
+                              () => hidePassword = !hidePassword,
+                            ),
+                            icon: Icon(
+                              hidePassword
+                                  ? Icons.visibility
+                                  : Icons.visibility_off,
+                            ),
+                          ),
+                        ),
+                        validator: (value) {
+                          if (securityType == 'OPEN') return null;
+                          final length = value?.length ?? 0;
+                          return length < 8 || length > 63
+                              ? 'Password must contain 8–63 characters.'
+                              : null;
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('CANCEL'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  if (formKey.currentState?.validate() != true) return;
+                  Navigator.of(dialogContext).pop(<String, String>{
+                    'ssid': ssidController.text.trim(),
+                    'password': passwordController.text,
+                    'securityType': securityType,
+                  });
+                },
+                child: const Text('CONNECT'),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      if (credentials == null || !mounted || !sheetContext.mounted) return;
+      final accepted = await _viewModel.connectWifiManually(
+        ssid: credentials['ssid']!,
+        password: credentials['password']!,
+        securityType: credentials['securityType']!,
+      );
+      if (!mounted || !sheetContext.mounted) return;
+      _showSheetToast(
+        sheetContext,
+        accepted
+            ? 'WI-FI REQUEST SENT — WAIT FOR CAMERA READY'
+            : 'WI-FI REQUEST REJECTED — CHECK DIAGNOSTIC LOG',
+      );
+    } catch (error) {
+      if (mounted && sheetContext.mounted) {
+        _showSheetToast(sheetContext, 'WI-FI PAIRING FAILED: $error');
+      }
+    } finally {
+      ssidController.dispose();
+      passwordController.dispose();
+    }
+  }
+
+  Future<void> _scanQrAndConnect(BuildContext sheetContext) async {
+    try {
+      final result = await Navigator.of(sheetContext).push<QrPairingResult>(
+        MaterialPageRoute<QrPairingResult>(
+          builder: (_) => const QrPairingScannerPage(),
+        ),
+      );
+      if (!mounted || !sheetContext.mounted || result == null) return;
+
+      if (!result.isSuccess || result.credentials == null) {
+        _showSheetToast(sheetContext, result.message);
+        return;
+      }
+
+      final credentials = result.credentials!;
+      final confirmed = await showDialog<bool>(
+        context: sheetContext,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('CONNECT TO CAMERA WI-FI?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('SSID: ${credentials.ssid}'),
+              const SizedBox(height: 6),
+              Text('SECURITY: ${credentials.securityType}'),
+              const SizedBox(height: 6),
+              Text(
+                'PASSWORD: ${credentials.isOpenNetwork ? 'OPEN NETWORK' : '[HIDDEN]'}',
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'LANDCAM will ask Android to connect to this Wi-Fi network.',
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('CANCEL'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('CONNECT'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted || !sheetContext.mounted) return;
+
+      final accepted = await _viewModel.connectWifiFromQrResult(result);
+      if (!mounted || !sheetContext.mounted) return;
+      _showSheetToast(
+        sheetContext,
+        accepted
+            ? 'QR WI-FI REQUEST SENT — WAIT FOR CAMERA READY'
+            : 'QR PAIRING REJECTED — CHECK FORMAT AND DIAGNOSTIC LOG',
+      );
+    } catch (error) {
+      if (mounted && sheetContext.mounted) {
+        _showSheetToast(sheetContext, 'QR PAIRING FAILED: $error');
+      }
+    }
+  }
+
+  Future<void> _connectBluetoothFromSheet(BuildContext sheetContext) async {
+    try {
+      final devices = await _viewModel.scanBluetoothDevices();
+      if (!mounted || !sheetContext.mounted) return;
+      if (devices.isEmpty) {
+        _showSheetToast(
+          sheetContext,
+          'NO BLUETOOTH DEVICES FOUND — CHECK PERMISSIONS AND NATIVE TRANSPORT SUPPORT',
+        );
+        return;
+      }
+
+      final selected = await _pickConnectionDevice(
+        sheetContext: sheetContext,
+        title: 'SELECT BLUETOOTH DEVICE',
+        devices: devices,
+        labelFor: (device) =>
+            (device['name'] ?? 'Unknown Bluetooth device').toString(),
+        detailsFor: (device) => [
+          if ((device['address'] ?? device['deviceId']) != null)
+            'Address: ${device['address'] ?? device['deviceId']}',
+          device['paired'] == true ? 'Paired device' : 'Not paired',
+        ].join(' • '),
+      );
+      if (selected == null || !mounted || !sheetContext.mounted) return;
+
+      final deviceId = (selected['deviceId'] ?? selected['address'])
+          ?.toString();
+      if (deviceId == null || deviceId.isEmpty) {
+        _showSheetToast(sheetContext, 'SELECTED BLUETOOTH DEVICE HAS NO ID');
+        return;
+      }
+      final accepted = await _viewModel.connectBluetooth(deviceId: deviceId);
+      if (!mounted || !sheetContext.mounted) return;
+      _showSheetToast(
+        sheetContext,
+        accepted
+            ? 'BLUETOOTH REQUEST SENT — WAIT FOR DEVICE STATUS'
+            : 'BLUETOOTH NOT ACCEPTED BY NATIVE — CHECK DIAGNOSTIC LOG',
+      );
+    } catch (error) {
+      if (mounted && sheetContext.mounted) {
+        _showSheetToast(sheetContext, 'BLUETOOTH PAIRING FAILED: $error');
+      }
+    }
+  }
+
+  Future<void> _connectUsbFromSheet(BuildContext sheetContext) async {
+    try {
+      final devices = await _viewModel.scanUsbDevices();
+      if (!mounted || !sheetContext.mounted) return;
+      if (devices.isEmpty) {
+        _showSheetToast(
+          sheetContext,
+          'NO USB DEVICE FOUND — CONNECT THE CAMERA BY USB OTG',
+        );
+        return;
+      }
+
+      final selected = await _pickConnectionDevice(
+        sheetContext: sheetContext,
+        title: 'SELECT USB / PTP DEVICE',
+        devices: devices,
+        labelFor: (device) => _usbDeviceLabel(device),
+        detailsFor: (device) =>
+            'VID ${device['vendorId'] ?? '?'} · PID ${device['productId'] ?? '?'} · '
+            '${device['hasPermission'] == true ? 'Permission granted' : 'Permission required'}',
+      );
+      if (selected == null || !mounted || !sheetContext.mounted) return;
+
+      final deviceId = _connectionInt(selected['deviceId']);
+      if (deviceId == null) {
+        _showSheetToast(sheetContext, 'SELECTED USB DEVICE HAS NO VALID ID');
+        return;
+      }
+      if (selected['hasPermission'] != true) {
+        final requested = await _viewModel.requestUsbPermission(
+          deviceId: deviceId,
+        );
+        if (!mounted || !sheetContext.mounted) return;
+        _showSheetToast(
+          sheetContext,
+          requested
+              ? 'USB PERMISSION REQUESTED — APPROVE AND SELECT USB / PTP AGAIN'
+              : 'USB PERMISSION REQUEST FAILED — CHECK DIAGNOSTIC LOG',
+        );
+        return;
+      }
+
+      final accepted = await _viewModel.connectUsbPtp(
+        deviceId: deviceId,
+        vendorId: _connectionInt(selected['vendorId']),
+        productId: _connectionInt(selected['productId']),
+      );
+      if (!mounted || !sheetContext.mounted) return;
+      _showSheetToast(
+        sheetContext,
+        accepted
+            ? 'USB / PTP REQUEST SENT — WAIT FOR DEVICE STATUS'
+            : 'USB / PTP NOT ACCEPTED BY NATIVE — CHECK DIAGNOSTIC LOG',
+      );
+    } catch (error) {
+      if (mounted && sheetContext.mounted) {
+        _showSheetToast(sheetContext, 'USB / PTP PAIRING FAILED: $error');
+      }
+    }
+  }
+
+  Future<void> _connectUvcFromSheet(BuildContext sheetContext) async {
+    try {
+      final devices = await _viewModel.scanUsbDevices();
+      if (!mounted || !sheetContext.mounted) return;
+      if (devices.isEmpty) {
+        _showSheetToast(
+          sheetContext,
+          'NO USB VIDEO DEVICE FOUND — CONNECT AN HDMI / UVC CAPTURE ADAPTER',
+        );
+        return;
+      }
+
+      final selected = await _pickConnectionDevice(
+        sheetContext: sheetContext,
+        title: 'SELECT HDMI / UVC CAPTURE DEVICE',
+        devices: devices,
+        labelFor: (device) => _usbDeviceLabel(device),
+        detailsFor: (device) =>
+            'USB device ${device['deviceId'] ?? '?'} · '
+            'VID ${device['vendorId'] ?? '?'} · PID ${device['productId'] ?? '?'}',
+      );
+      if (selected == null || !mounted || !sheetContext.mounted) return;
+
+      final deviceId = _connectionInt(selected['deviceId']);
+      if (deviceId == null) {
+        _showSheetToast(sheetContext, 'SELECTED UVC DEVICE HAS NO VALID ID');
+        return;
+      }
+      if (selected['hasPermission'] != true) {
+        final requested = await _viewModel.requestUsbPermission(
+          deviceId: deviceId,
+        );
+        if (!mounted || !sheetContext.mounted) return;
+        _showSheetToast(
+          sheetContext,
+          requested
+              ? 'UVC USB PERMISSION REQUESTED — APPROVE AND SELECT HDMI / UVC AGAIN'
+              : 'UVC USB PERMISSION REQUEST FAILED — CHECK DIAGNOSTIC LOG',
+        );
+        return;
+      }
+
+      final accepted = await _viewModel.connectHdmiUvc(
+        deviceId: deviceId.toString(),
+      );
+      if (!mounted || !sheetContext.mounted) return;
+      _showSheetToast(
+        sheetContext,
+        accepted
+            ? 'HDMI / UVC REQUEST SENT — WAIT FOR DEVICE STATUS'
+            : 'HDMI / UVC NOT ACCEPTED BY NATIVE — CHECK DIAGNOSTIC LOG',
+      );
+    } catch (error) {
+      if (mounted && sheetContext.mounted) {
+        _showSheetToast(sheetContext, 'HDMI / UVC CONNECTION FAILED: $error');
+      }
+    }
+  }
+
+  Future<Map<String, dynamic>?> _pickConnectionDevice({
+    required BuildContext sheetContext,
+    required String title,
+    required List<Map<String, dynamic>> devices,
+    required String Function(Map<String, dynamic>) labelFor,
+    required String Function(Map<String, dynamic>) detailsFor,
+  }) {
+    return showDialog<Map<String, dynamic>>(
+      context: sheetContext,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: SizedBox(
+          width: 440,
+          child: ListView.separated(
+            shrinkWrap: true,
+            itemCount: devices.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              final device = devices[index];
+              return ListTile(
+                title: Text(
+                  labelFor(device),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  detailsFor(device),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                onTap: () => Navigator.of(dialogContext).pop(device),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('CANCEL'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _usbDeviceLabel(Map<String, dynamic> device) {
+    final product = (device['product'] ?? '').toString().trim();
+    final name = (device['deviceName'] ?? '').toString().trim();
+    final manufacturer = (device['manufacturer'] ?? '').toString().trim();
+    if (product.isNotEmpty) return product;
+    if (name.isNotEmpty) return name;
+    if (manufacturer.isNotEmpty) return manufacturer;
+    return 'USB device ${device['deviceId'] ?? '?'}';
+  }
+
+  int? _connectionInt(Object? value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '');
+  }
+
   Future<void> _openConnectionPanel() async {
     if (!mounted) return;
 
@@ -210,11 +657,29 @@ class _LandCamPageState extends State<LandCamPage> {
               frameWidth: _viewModel.frameWidth,
               frameHeight: _viewModel.frameHeight,
               bitDepth: _viewModel.bitDepth,
+              onOpenMethods: () {
+                unawaited(_openConnectionMethods(sheetContext));
+              },
               onStartNfc: () async {
                 final started = await _viewModel.startNfc();
                 if (!started && sheetContext.mounted) {
                   _showSheetToast(sheetContext, 'NFC COULD NOT START');
                 }
+              },
+              onConnectBluetooth: () async {
+                await _connectBluetoothFromSheet(sheetContext);
+              },
+              onConnectWifi: () async {
+                await _connectManualWifiFromSheet(sheetContext);
+              },
+              onScanQr: () async {
+                await _scanQrAndConnect(sheetContext);
+              },
+              onConnectUsb: () async {
+                await _connectUsbFromSheet(sheetContext);
+              },
+              onConnectUvc: () async {
+                await _connectUvcFromSheet(sheetContext);
               },
               onScan: () async {
                 final accepted = await _viewModel.scanNetwork();
@@ -293,7 +758,8 @@ class _LandCamPageState extends State<LandCamPage> {
               ],
       );
     } on PlatformException catch (error) {
-      if (mounted) _showToast('ORIENTATION CHANGE FAILED: ${error.message ?? error.code}');
+      if (mounted)
+        _showToast('ORIENTATION CHANGE FAILED: ${error.message ?? error.code}');
     } catch (error) {
       if (mounted) _showToast('ORIENTATION CHANGE FAILED: $error');
     }
@@ -456,12 +922,8 @@ class _LandCamPageState extends State<LandCamPage> {
   // ---------------------------------------------------------------------------
 
   ThemeData _buildTheme(bool dark) {
-    final background = dark
-        ? const Color(0xFF0A0D0B)
-        : const Color(0xFFF2F5F3);
-    final foreground = dark
-        ? const Color(0xFFF2F6F3)
-        : const Color(0xFF111612);
+    final background = dark ? const Color(0xFF0A0D0B) : const Color(0xFFF2F5F3);
+    final foreground = dark ? const Color(0xFFF2F6F3) : const Color(0xFF111612);
     const accent = Color(0xFF55D98B);
 
     final scheme = dark
@@ -502,23 +964,17 @@ class _LandCamPageState extends State<LandCamPage> {
             ? const Color(0xFFE8EEE9)
             : const Color(0xFF111612),
         contentTextStyle: TextStyle(
-          color: dark
-              ? const Color(0xFF111612)
-              : const Color(0xFFF2F5F3),
+          color: dark ? const Color(0xFF111612) : const Color(0xFFF2F5F3),
           fontWeight: FontWeight.w800,
           fontSize: 10,
         ),
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(7),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
       ),
       bottomSheetTheme: const BottomSheetThemeData(
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(
-            top: Radius.circular(14),
-          ),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
         ),
       ),
       appBarTheme: AppBarTheme(

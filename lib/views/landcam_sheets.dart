@@ -4,9 +4,8 @@ import '../models/landcam_models.dart';
 
 /// LANDCAM settings bottom sheet.
 ///
-/// Preview Display is independent of capture-output settings.
-/// Presentation-only widget.
-/// All state changes are delegated through callbacks.
+/// Preview Display is independent of capture-output settings. This is a
+/// presentation-only widget: state changes are delegated through callbacks.
 class SettingsSheet extends StatelessWidget {
   const SettingsSheet({
     super.key,
@@ -14,9 +13,7 @@ class SettingsSheet extends StatelessWidget {
     this.previewDisplayMode,
     this.onPreviewDisplayMode,
     this.previewChangeInFlight = false,
-    // Legacy parameters retained so older call sites still compile while the
-    // remaining files are upgraded in sequence. New code should use the
-    // preview-only properties above.
+    // Legacy parameters are retained so existing callers continue to compile.
     this.captureMode = 'PROCESSED',
     this.onCaptureMode,
     required this.onTheme,
@@ -31,6 +28,7 @@ class SettingsSheet extends StatelessWidget {
 
   @Deprecated('Use previewDisplayMode instead of captureMode.')
   final String captureMode;
+
   @Deprecated('Use onPreviewDisplayMode instead of onCaptureMode.')
   final Future<void> Function()? onCaptureMode;
 
@@ -50,9 +48,7 @@ class SettingsSheet extends StatelessWidget {
   }
 
   Future<void> _selectPreviewMode(String mode) async {
-    if (previewChangeInFlight || mode == _selectedPreviewMode) {
-      return;
-    }
+    if (previewChangeInFlight || mode == _selectedPreviewMode) return;
 
     final callback = onPreviewDisplayMode;
     if (callback != null) {
@@ -60,8 +56,7 @@ class SettingsSheet extends StatelessWidget {
       return;
     }
 
-    // Compatibility fallback for old two-state callers only. MULTI_VIEW needs
-    // the new explicit callback and is not falsely presented as applied.
+    // Compatibility fallback for old two-state callers only.
     final legacyCallback = onCaptureMode;
     if (legacyCallback != null && mode != 'MULTI_VIEW') {
       await legacyCallback();
@@ -72,19 +67,9 @@ class SettingsSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final foreground = _uiForeground(dark);
     final secondary = _uiSecondary(dark);
-
-    final screenHeight =
-        MediaQuery.sizeOf(context).height;
-
-    // The parent bottom sheet is scroll-controlled.
-    // Keep this panel compact enough for small devices.
-    final sheetHeight =
-        (screenHeight * .50)
-            .clamp(280.0, 330.0)
-            .toDouble();
-
-    final compact =
-        screenHeight < 680;
+    final screenHeight = MediaQuery.sizeOf(context).height;
+    final sheetHeight = (screenHeight * .50).clamp(280.0, 350.0).toDouble();
+    final compact = screenHeight < 680;
 
     return SafeArea(
       top: false,
@@ -94,164 +79,77 @@ class SettingsSheet extends StatelessWidget {
         child: Align(
           alignment: Alignment.bottomCenter,
           child: ConstrainedBox(
-            constraints:
-                const BoxConstraints(
-              maxWidth: 760,
-            ),
+            constraints: const BoxConstraints(maxWidth: 760),
             child: Material(
               color: _uiSurface(dark),
-              borderRadius:
-                  const BorderRadius.vertical(
-                top: Radius.circular(16),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(18),
               ),
-              clipBehavior:
-                  Clip.antiAlias,
+              clipBehavior: Clip.antiAlias,
               child: Column(
                 children: [
-                  SizedBox(
-                    height: compact ? 7 : 9,
-                  ),
-
-                  // ---------------------------------------------------------
-                  // HANDLE
-                  // ---------------------------------------------------------
-                  Container(
-                    width: 38,
-                    height: 3,
-                    decoration:
-                        BoxDecoration(
-                      color:
-                          _uiBorderStrong(dark),
-                      borderRadius:
-                          BorderRadius.circular(
-                        2,
-                      ),
-                    ),
-                  ),
-
-                  // ---------------------------------------------------------
-                  // HEADER
-                  // ---------------------------------------------------------
+                  SizedBox(height: compact ? 7 : 9),
+                  _SheetHandle(dark: dark),
                   Padding(
-                    padding:
-                        EdgeInsets.fromLTRB(
-                      16,
-                      compact ? 10 : 13,
-                      16,
-                      compact ? 9 : 12,
+                    padding: EdgeInsets.fromLTRB(
+                      18,
+                      compact ? 10 : 14,
+                      18,
+                      compact ? 9 : 13,
                     ),
                     child: Row(
                       children: [
                         Expanded(
                           child: Column(
-                            mainAxisSize:
-                                MainAxisSize.min,
-                            crossAxisAlignment:
-                                CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
                                 'SETTINGS',
                                 maxLines: 1,
-                                overflow:
-                                    TextOverflow.ellipsis,
-                                style:
-                                    TextStyle(
-                                  color:
-                                      foreground,
-                                  fontSize:
-                                      compact
-                                          ? 12
-                                          : 13,
-                                  fontWeight:
-                                      FontWeight.w900,
-                                  letterSpacing:
-                                      1.25,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: foreground,
+                                  fontSize: compact ? 12 : 14,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 1.2,
                                 ),
                               ),
-                              const SizedBox(
-                                height: 3,
-                              ),
+                              const SizedBox(height: 4),
                               Text(
-                                'PREVIEW DISPLAY & DEVICE',
+                                'PREVIEW DISPLAY AND DEVICE',
                                 maxLines: 1,
-                                overflow:
-                                    TextOverflow.ellipsis,
-                                style:
-                                    TextStyle(
-                                  color:
-                                      secondary,
-                                  fontSize:
-                                      8,
-                                  fontWeight:
-                                      FontWeight.w800,
-                                  letterSpacing:
-                                      .75,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: secondary,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: .7,
                                 ),
                               ),
                             ],
                           ),
                         ),
-                        Container(
-                          width:
-                              compact
-                                  ? 31
-                                  : 34,
-                          height:
-                              compact
-                                  ? 31
-                                  : 34,
-                          decoration:
-                              BoxDecoration(
-                            color:
-                                _uiSurfaceAlt(
-                              dark,
-                            ),
-                            border:
-                                Border.all(
-                              color:
-                                  _uiBorderStrong(
-                                dark,
-                              ),
-                            ),
-                            borderRadius:
-                                BorderRadius.circular(
-                              5,
-                            ),
-                          ),
-                          child:
-                              Icon(
+                        const SizedBox(width: 12),
+                        _IconFrame(
+                          dark: dark,
+                          child: Icon(
                             Icons.tune_rounded,
-                            color:
-                                _uiMuted(
-                              dark,
-                            ),
-                            size:
-                                compact
-                                    ? 16
-                                    : 17,
+                            color: _uiMuted(dark),
+                            size: 18,
                           ),
                         ),
                       ],
                     ),
                   ),
-
-                  Divider(
-                    height: 1,
-                    color:
-                        _uiBorder(dark),
-                  ),
-
-                  // ---------------------------------------------------------
-                  // BODY
-                  // ---------------------------------------------------------
+                  Divider(height: 1, color: _uiBorder(dark)),
                   Expanded(
                     child: Padding(
-                      padding:
-                          EdgeInsets.fromLTRB(
-                        12,
-                        compact ? 7 : 10,
-                        12,
-                        compact ? 9 : 12,
+                      padding: EdgeInsets.fromLTRB(
+                        14,
+                        compact ? 8 : 11,
+                        14,
+                        compact ? 10 : 13,
                       ),
                       child: Column(
                         children: [
@@ -270,7 +168,7 @@ class SettingsSheet extends StatelessWidget {
                                     onTap: onTheme,
                                   ),
                                 ),
-                                const SizedBox(width: 8),
+                                const SizedBox(width: 9),
                                 Expanded(
                                   child: _SettingsTile(
                                     dark: dark,
@@ -284,20 +182,20 @@ class SettingsSheet extends StatelessWidget {
                               ],
                             ),
                           ),
-                          SizedBox(height: compact ? 7 : 9),
+                          SizedBox(height: compact ? 8 : 11),
                           Align(
                             alignment: Alignment.centerLeft,
                             child: Text(
                               'PREVIEW DISPLAY',
                               style: TextStyle(
                                 color: secondary,
-                                fontSize: 8,
+                                fontSize: 9,
                                 fontWeight: FontWeight.w900,
-                                letterSpacing: .75,
+                                letterSpacing: .8,
                               ),
                             ),
                           ),
-                          const SizedBox(height: 5),
+                          const SizedBox(height: 6),
                           Row(
                             children: [
                               Expanded(
@@ -305,35 +203,43 @@ class SettingsSheet extends StatelessWidget {
                                   dark: dark,
                                   label: 'PROCESSED',
                                   selected: _selectedPreviewMode == 'PROCESSED',
-                                  enabled: !previewChangeInFlight &&
-                                      (onPreviewDisplayMode != null || onCaptureMode != null),
+                                  enabled:
+                                      !previewChangeInFlight &&
+                                      (onPreviewDisplayMode != null ||
+                                          onCaptureMode != null),
                                   onTap: () => _selectPreviewMode('PROCESSED'),
                                 ),
                               ),
-                              const SizedBox(width: 6),
+                              const SizedBox(width: 7),
                               Expanded(
                                 child: _PreviewModeButton(
                                   dark: dark,
                                   label: 'FULL FRAME',
-                                  selected: _selectedPreviewMode == 'FULL_FRAME',
-                                  enabled: !previewChangeInFlight &&
-                                      (onPreviewDisplayMode != null || onCaptureMode != null),
+                                  selected:
+                                      _selectedPreviewMode == 'FULL_FRAME',
+                                  enabled:
+                                      !previewChangeInFlight &&
+                                      (onPreviewDisplayMode != null ||
+                                          onCaptureMode != null),
                                   onTap: () => _selectPreviewMode('FULL_FRAME'),
                                 ),
                               ),
-                              const SizedBox(width: 6),
+                              const SizedBox(width: 7),
                               Expanded(
                                 child: _PreviewModeButton(
                                   dark: dark,
                                   label: 'MULTI-VIEW',
-                                  selected: _selectedPreviewMode == 'MULTI_VIEW',
-                                  enabled: !previewChangeInFlight && onPreviewDisplayMode != null,
+                                  selected:
+                                      _selectedPreviewMode == 'MULTI_VIEW',
+                                  enabled:
+                                      !previewChangeInFlight &&
+                                      onPreviewDisplayMode != null,
                                   onTap: () => _selectPreviewMode('MULTI_VIEW'),
                                 ),
                               ),
                             ],
                           ),
-                          SizedBox(height: compact ? 7 : 9),
+                          SizedBox(height: compact ? 8 : 11),
                           SizedBox(
                             width: double.infinity,
                             height: compact ? 43 : 46,
@@ -374,26 +280,24 @@ class _PreviewModeButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accent = _uiAccent(dark);
-    final foreground = selected
-        ? _activeTextOn(accent)
-        : _uiForeground(dark);
+    final foreground = selected ? _activeTextOn(accent) : _uiForeground(dark);
 
     return Material(
       color: selected ? accent : _uiSurfaceAlt(dark),
-      borderRadius: BorderRadius.circular(5),
+      borderRadius: BorderRadius.circular(6),
       child: InkWell(
         onTap: enabled ? onTap : null,
-        borderRadius: BorderRadius.circular(5),
+        borderRadius: BorderRadius.circular(6),
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          height: 38,
-          padding: const EdgeInsets.symmetric(horizontal: 4),
+          duration: const Duration(milliseconds: 140),
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 5),
           decoration: BoxDecoration(
             border: Border.all(
               color: selected ? accent : _uiBorderStrong(dark),
-              width: selected ? 1.2 : 1,
+              width: selected ? 1.3 : 1,
             ),
-            borderRadius: BorderRadius.circular(5),
+            borderRadius: BorderRadius.circular(6),
           ),
           child: Center(
             child: FittedBox(
@@ -404,9 +308,9 @@ class _PreviewModeButton extends StatelessWidget {
                 style: TextStyle(
                   color: enabled ? foreground : _uiMuted(dark),
                   fontFamily: 'monospace',
-                  fontSize: 8,
+                  fontSize: 9,
                   fontWeight: FontWeight.w900,
-                  letterSpacing: .35,
+                  letterSpacing: .3,
                 ),
               ),
             ),
@@ -417,8 +321,7 @@ class _PreviewModeButton extends StatelessWidget {
   }
 }
 
-class _SettingsTile
-    extends StatelessWidget {
+class _SettingsTile extends StatelessWidget {
   const _SettingsTile({
     required this.dark,
     required this.icon,
@@ -439,141 +342,67 @@ class _SettingsTile
 
   @override
   Widget build(BuildContext context) {
-    final accent =
-        _uiAccent(dark);
-
-    final background =
-        active
-            ? accent
-            : _uiSurfaceAlt(dark);
-
-    final primary =
-        active
-            ? _activeTextOn(accent)
-            : _uiForeground(dark);
-
-    final secondary =
-        active
-            ? _activeTextOn(accent)
-                .withValues(alpha: .72)
-            : _uiMuted(dark);
+    final accent = _uiAccent(dark);
+    final background = active ? accent : _uiSurfaceAlt(dark);
+    final primary = active ? _activeTextOn(accent) : _uiForeground(dark);
+    final secondary = active
+        ? _activeTextOn(accent).withValues(alpha: .78)
+        : _uiMuted(dark);
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius:
-            BorderRadius.circular(5),
+        borderRadius: BorderRadius.circular(6),
         onTap: onTap,
         child: AnimatedContainer(
-          duration:
-              const Duration(
-            milliseconds: 120,
-          ),
-          width:
-              double.infinity,
-          height:
-              double.infinity,
-          padding:
-              EdgeInsets.fromLTRB(
+          duration: const Duration(milliseconds: 140),
+          width: double.infinity,
+          height: double.infinity,
+          padding: EdgeInsets.fromLTRB(
             compact ? 7 : 10,
             compact ? 7 : 11,
             compact ? 7 : 10,
             compact ? 7 : 10,
           ),
-          decoration:
-              BoxDecoration(
-            color:
-                background,
-            border:
-                Border.all(
-              color:
-                  active
-                      ? accent
-                      : _uiBorderStrong(
-                          dark,
-                        ),
-              width:
-                  active
-                      ? 1.2
-                      : 1,
+          decoration: BoxDecoration(
+            color: background,
+            border: Border.all(
+              color: active ? accent : _uiBorderStrong(dark),
+              width: active ? 1.3 : 1,
             ),
-            borderRadius:
-                BorderRadius.circular(5),
+            borderRadius: BorderRadius.circular(6),
           ),
-          child:
-              Column(
-            mainAxisAlignment:
-                MainAxisAlignment.center,
-            mainAxisSize:
-                MainAxisSize.min,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                icon,
-                color:
-                    primary,
-                size:
-                    compact
-                        ? 18
-                        : 20,
-              ),
-
-              SizedBox(
-                height:
-                    compact
-                        ? 6
-                        : 9,
-              ),
-
+              Icon(icon, color: primary, size: compact ? 19 : 22),
+              SizedBox(height: compact ? 6 : 9),
               FittedBox(
-                fit:
-                    BoxFit.scaleDown,
-                child:
-                    Text(
+                fit: BoxFit.scaleDown,
+                child: Text(
                   title,
-                  maxLines:
-                      1,
-                  style:
-                      TextStyle(
-                    color:
-                        primary,
-                    fontSize:
-                        compact
-                            ? 8
-                            : 9,
-                    fontWeight:
-                        FontWeight.w800,
-                    letterSpacing:
-                        .72,
+                  maxLines: 1,
+                  style: TextStyle(
+                    color: primary,
+                    fontSize: compact ? 9 : 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: .6,
                   ),
                 ),
               ),
-
-              const SizedBox(
-                height: 3,
-              ),
-
+              const SizedBox(height: 4),
               FittedBox(
-                fit:
-                    BoxFit.scaleDown,
-                child:
-                    Text(
+                fit: BoxFit.scaleDown,
+                child: Text(
                   value,
-                  maxLines:
-                      1,
-                  style:
-                      TextStyle(
-                    color:
-                        secondary,
-                    fontFamily:
-                        'monospace',
-                    fontSize:
-                        compact
-                            ? 6.5
-                            : 7,
-                    fontWeight:
-                        FontWeight.w700,
-                    letterSpacing:
-                        .42,
+                  maxLines: 1,
+                  style: TextStyle(
+                    color: secondary,
+                    fontFamily: 'monospace',
+                    fontSize: compact ? 7 : 8,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: .35,
                   ),
                 ),
               ),
@@ -585,109 +414,59 @@ class _SettingsTile
   }
 }
 
-class _AdvancedSettingsButton
-    extends StatelessWidget {
-  const _AdvancedSettingsButton({
-    required this.dark,
-    required this.onTap,
-  });
+class _AdvancedSettingsButton extends StatelessWidget {
+  const _AdvancedSettingsButton({required this.dark, required this.onTap});
 
   final bool dark;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final foreground =
-        _uiForeground(dark);
-
-    final accent =
-        _uiAccent(dark);
+    final foreground = _uiForeground(dark);
+    final accent = _uiAccent(dark);
 
     return Material(
-      color:
-          _uiSurfaceAlt(dark),
-      borderRadius:
-          BorderRadius.circular(5),
+      color: _uiSurfaceAlt(dark),
+      borderRadius: BorderRadius.circular(6),
       child: InkWell(
-        borderRadius:
-            BorderRadius.circular(5),
-        onTap:
-            onTap,
-        child:
-            Container(
-          padding:
-              const EdgeInsets.symmetric(
-            horizontal: 12,
+        borderRadius: BorderRadius.circular(6),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            border: Border.all(color: _uiBorderStrong(dark)),
+            borderRadius: BorderRadius.circular(6),
           ),
-          decoration:
-              BoxDecoration(
-            border:
-                Border.all(
-              color:
-                  accent,
-              width:
-                  1,
-            ),
-            borderRadius:
-                BorderRadius.circular(5),
-          ),
-          child:
-              Row(
+          child: Row(
             children: [
               Container(
-                width: 28,
-                height: 28,
-                decoration:
-                    BoxDecoration(
-                  color:
-                      accent,
-                  borderRadius:
-                      BorderRadius.circular(
-                    4,
-                  ),
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: accent,
+                  borderRadius: BorderRadius.circular(5),
                 ),
-                child:
-                    Icon(
+                child: Icon(
                   Icons.tune_rounded,
-                  size: 15,
-                  color:
-                      _activeTextOn(
-                    accent,
-                  ),
+                  size: 16,
+                  color: _activeTextOn(accent),
                 ),
               ),
-
-              const SizedBox(
-                width: 10,
-              ),
-
+              const SizedBox(width: 11),
               Expanded(
-                child:
-                    Text(
+                child: Text(
                   'ADVANCED SETTINGS',
                   maxLines: 1,
-                  overflow:
-                      TextOverflow.ellipsis,
-                  style:
-                      TextStyle(
-                    color:
-                        foreground,
-                    fontSize:
-                        9,
-                    fontWeight:
-                        FontWeight.w900,
-                    letterSpacing:
-                        .9,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: foreground,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: .8,
                   ),
                 ),
               ),
-
-              Icon(
-                Icons.chevron_right_rounded,
-                size: 19,
-                color:
-                    accent,
-              ),
+              Icon(Icons.chevron_right_rounded, size: 20, color: accent),
             ],
           ),
         ),
@@ -700,12 +479,11 @@ class _AdvancedSettingsButton
 // CONNECTION SHEET
 // =============================================================================
 
-/// LANDCAM camera/network diagnostic sheet.
+/// LANDCAM camera connection sheet.
 ///
-/// All state comes from the ViewModel through immutable constructor values.
-/// Actions are delegated through callbacks.
-class ConnectionSheet
-    extends StatelessWidget {
+/// Connection choices stay inside this sheet. Connection work is delegated to
+/// callbacks so the UI does not fake a successful pairing state.
+class ConnectionSheet extends StatelessWidget {
   const ConnectionSheet({
     super.key,
     required this.dark,
@@ -732,6 +510,15 @@ class ConnectionSheet
     required this.frameHeight,
     required this.bitDepth,
     required this.onStartNfc,
+    @Deprecated(
+      'Use the transport callbacks instead. This callback is not used.',
+    )
+    this.onOpenMethods,
+    this.onConnectBluetooth,
+    this.onConnectWifi,
+    this.onScanQr,
+    this.onConnectUsb,
+    this.onConnectUvc,
     required this.onScan,
     required this.onReconnect,
     required this.onRefresh,
@@ -741,7 +528,6 @@ class ConnectionSheet
   });
 
   final bool dark;
-
   final CameraLink link;
   final String status;
   final String? connectionOperation;
@@ -754,7 +540,6 @@ class ConnectionSheet
   final String? protocol;
   final String? host;
   final int? port;
-
   final List<LogEntry> logs;
 
   final bool nfcListening;
@@ -762,644 +547,410 @@ class ConnectionSheet
   final bool supportsCapture;
   final bool supportsAutofocus;
   final bool dualOpticalRoiAvailable;
-
   final SpectralBand currentBand;
   final String? sourceLabel;
-
   final int? frameWidth;
   final int? frameHeight;
   final int? bitDepth;
 
-  final Future<void> Function()
-      onStartNfc;
-  final Future<void> Function()
-      onScan;
-  final Future<void> Function()
-      onReconnect;
-  final Future<void> Function()
-      onRefresh;
+  final Future<void> Function() onStartNfc;
 
+  /// Retained temporarily for source compatibility; the sheet no longer opens
+  /// a separate connection-method page.
+  @Deprecated('Connection methods are displayed directly in this sheet.')
+  final VoidCallback? onOpenMethods;
+
+  /// Optional callbacks keep older callers source-compatible during migration.
+  final Future<void> Function()? onConnectBluetooth;
+  final Future<void> Function()? onConnectWifi;
+  final Future<void> Function()? onScanQr;
+  final Future<void> Function()? onConnectUsb;
+  final Future<void> Function()? onConnectUvc;
+
+  /// Legacy discovery callback retained for compatibility; it is not a primary
+  /// connection option.
+  @Deprecated('Network discovery is not shown as a primary connection method.')
+  final Future<void> Function() onScan;
+  final Future<void> Function() onReconnect;
+  final Future<void> Function() onRefresh;
   final VoidCallback onClear;
-
-  final Future<void> Function()
-      onCopy;
-  final Future<void> Function()
-      onDisconnect;
+  final Future<void> Function() onCopy;
+  final Future<void> Function() onDisconnect;
 
   @override
   Widget build(BuildContext context) {
     final normalizedStatus = status.trim().toUpperCase();
     const knownOperations = <String>{
-      'SCANNING NETWORK',
       'RECONNECTING',
       'REFRESHING LIVE VIEW',
       'DISCONNECTING',
     };
     final explicitOperation = connectionOperation?.trim().toUpperCase();
-    final inferredOperation = knownOperations.contains(normalizedStatus)
+    final activeOperation =
+        explicitOperation != null && explicitOperation.isNotEmpty
+        ? explicitOperation
+        : knownOperations.contains(normalizedStatus)
         ? normalizedStatus
         : null;
-    final activeOperation = explicitOperation != null &&
-            explicitOperation.isNotEmpty
-        ? explicitOperation
-        : inferredOperation;
-    final anyOperationInFlight = operationInFlight || activeOperation != null;
-    final scanning = activeOperation == 'SCANNING NETWORK';
+    final busy = operationInFlight || activeOperation != null;
     final reconnecting = activeOperation == 'RECONNECTING';
     final refreshing = activeOperation == 'REFRESHING LIVE VIEW';
     final disconnecting = activeOperation == 'DISCONNECTING';
+    final foreground = _uiForeground(dark);
+    final secondary = _uiSecondary(dark);
+    final accent = _uiAccent(dark);
+    final border = _uiBorder(dark);
 
-    final surface =
-        _uiSurface(dark);
-
-    final foreground =
-        _uiForeground(dark);
-
-    final secondary =
-        _uiSecondary(dark);
+    final themedExpansion = Theme.of(context).copyWith(
+      dividerColor: border,
+      splashColor: accent.withValues(alpha: .07),
+      highlightColor: Colors.transparent,
+      colorScheme: Theme.of(context).colorScheme.copyWith(
+        primary: accent,
+        secondary: accent,
+        surface: _uiSurface(dark),
+        onSurface: foreground,
+      ),
+    );
 
     return SafeArea(
       top: false,
-      child:
-          FractionallySizedBox(
-        heightFactor: .90,
-        child:
-            Material(
-          color:
-              surface,
-          borderRadius:
-              const BorderRadius
-                  .vertical(
-            top:
-                Radius.circular(
-              16,
-            ),
-          ),
-          clipBehavior:
-              Clip.antiAlias,
-          child:
-              Column(
+      child: FractionallySizedBox(
+        heightFactor: .94,
+        child: Material(
+          color: _uiSurface(dark),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+          clipBehavior: Clip.antiAlias,
+          child: Column(
             children: [
-              const SizedBox(
-                height: 9,
-              ),
-
-              Container(
-                width: 38,
-                height: 3,
-                decoration:
-                    BoxDecoration(
-                  color:
-                      _uiBorderStrong(
-                    dark,
-                  ),
-                  borderRadius:
-                      BorderRadius.circular(
-                    2,
-                  ),
-                ),
-              ),
-
+              const SizedBox(height: 9),
+              _SheetHandle(dark: dark),
               Padding(
-                padding:
-                    const EdgeInsets.fromLTRB(
-                  16,
-                  14,
-                  16,
-                  12,
-                ),
-                child:
-                    Row(
+                padding: const EdgeInsets.fromLTRB(22, 17, 22, 16),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Expanded(
-                      child:
-                          Column(
-                        mainAxisSize:
-                            MainAxisSize.min,
-                        crossAxisAlignment:
-                            CrossAxisAlignment.start,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Row(
-                            children: [
-                              _SheetStatusDot(
-                                link:
-                                    link,
-                                dark:
-                                    dark,
-                              ),
-                              const SizedBox(
-                                width: 8,
-                              ),
-                              Expanded(
-                                child:
-                                    Text(
-                                  'CAMERA CONNECTION',
-                                  maxLines:
-                                      1,
-                                  overflow:
-                                      TextOverflow.ellipsis,
-                                  style:
-                                      TextStyle(
-                                    color:
-                                        foreground,
-                                    fontSize:
-                                        12,
-                                    fontWeight:
-                                        FontWeight.w900,
-                                    letterSpacing:
-                                        1.05,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(
-                            height: 4,
-                          ),
                           Text(
-                            status,
-                            maxLines:
-                                1,
-                            overflow:
-                                TextOverflow.ellipsis,
-                            style:
-                                TextStyle(
-                              color:
-                                  secondary,
-                              fontSize:
-                                  8,
-                              fontWeight:
-                                  FontWeight.w700,
-                              letterSpacing:
-                                  .72,
+                            'Camera connection',
+                            style: TextStyle(
+                              color: foreground,
+                              fontSize: 21,
+                              height: 1.1,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -.45,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            status.trim().isEmpty ? 'Not connected' : status,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: secondary,
+                              fontSize: 12,
+                              height: 1.3,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
                         ],
                       ),
                     ),
-
-                    const SizedBox(
-                      width: 10,
-                    ),
-
-                    _SheetStatusIndicator(
-                      link:
-                          link,
-                      dark:
-                          dark,
-                    ),
+                    const SizedBox(width: 16),
+                    _SheetStatusIndicator(link: link, dark: dark),
                   ],
                 ),
               ),
-
-              Divider(
-                height: 1,
-                color:
-                    _uiBorder(dark),
-              ),
-
+              Divider(height: 1, thickness: 1, color: border),
               Expanded(
-                child:
-                    ListView(
-                  physics:
-                      const ClampingScrollPhysics(),
-                  padding:
-                      const EdgeInsets.fromLTRB(
-                    16,
-                    14,
-                    16,
-                    26,
-                  ),
+                child: ListView(
+                  physics: const ClampingScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(20, 22, 20, 30),
                   children: [
-                    _ConnectionInfoCard(
-                      dark:
-                          dark,
-                      title:
-                          'ACTIVE IMAGE',
-                      rows: {
-                        'BAND':
-                            currentBand
-                                .title,
-                        'SOURCE':
-                            sourceLabel ??
-                                currentBand
-                                    .sourceLabel,
-                        'FRAME':
-                            frameWidth !=
-                                        null &&
-                                    frameHeight !=
-                                        null
-                                ? '${frameWidth}x$frameHeight'
-                                : '---',
-                        'BIT DEPTH':
-                            bitDepth
-                                    ?.toString() ??
-                                '---',
-                      },
+                    _SectionHeading(
+                      title: 'Connect',
+                      subtitle: 'Choose a connection method.',
+                      dark: dark,
                     ),
-
-                    const SizedBox(
-                      height: 8,
-                    ),
-
-                    _ConnectionInfoCard(
-                      dark:
-                          dark,
-                      title:
-                          'NETWORK',
-                      rows: {
-                        'SSID':
-                            ssid ?? '---',
-                        'STATUS':
-                            status,
-                      },
-                    ),
-
-                    const SizedBox(
-                      height: 8,
-                    ),
-
-                    _ConnectionInfoCard(
-                      dark:
-                          dark,
-                      title:
-                          'CAMERA',
-                      rows: {
-                        'NAME':
-                            identityName ??
-                                '---',
-                        'BRAND':
-                            brand ??
-                                '---',
-                        'MODEL':
-                            model ??
-                                '---',
-                        'PROTOCOL':
-                            protocol ??
-                                '---',
-                        'HOST':
-                            host ??
-                                '---',
-                        'PORT':
-                            port?.toString() ??
-                                '---',
-                      },
-                    ),
-
-                    const SizedBox(
-                      height: 8,
-                    ),
-
-                    _ConnectionInfoCard(
-                      dark:
-                          dark,
-                      title:
-                          'CAPABILITIES',
-                      rows: {
-                        'LIVE VIEW':
-                            supportsLiveView
-                                ? 'YES'
-                                : 'NO',
-                        'CAPTURE':
-                            supportsCapture
-                                ? 'YES'
-                                : 'NO',
-                        'AUTOFOCUS':
-                            supportsAutofocus
-                                ? 'CONTINUOUS'
-                                : 'NO',
-                        'UNIFIED CROP':
-                            dualOpticalRoiAvailable
-                                ? 'YES'
-                                : 'NO',
-                        'RGB SOURCE':
-                            'LEFT -> UNIFIED',
-                        'NIR SOURCE':
-                            'RIGHT -> UNIFIED',
-                        'REGISTRATION':
-                            'CENTERED AFFINE',
-                      },
-                    ),
-
-                    const SizedBox(
-                      height: 14,
-                    ),
-
-                    Text(
-                      'ACTIONS',
-                      style:
-                          TextStyle(
-                        color:
-                            secondary,
-                        fontSize:
-                            8,
-                        fontWeight:
-                            FontWeight.w800,
-                        letterSpacing:
-                            1.05,
+                    const SizedBox(height: 12),
+                    if (busy) ...[
+                      _OperationNotice(
+                        dark: dark,
+                        label: _operationLabel(activeOperation),
                       ),
-                    ),
-
-                    const SizedBox(
-                      height: 7,
-                    ),
-
-                    if (anyOperationInFlight) ...[
-                      Container(
-                        width: double.infinity,
-                        margin: const EdgeInsets.only(bottom: 9),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _uiSurfaceAlt(dark),
-                          border: Border.all(color: _uiBorderStrong(dark)),
-                          borderRadius: BorderRadius.circular(5),
-                        ),
-                        child: Row(
-                          children: [
-                            SizedBox(
-                              width: 13,
-                              height: 13,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 1.5,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  _uiAccent(dark),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 9),
-                            Expanded(
-                              child: Text(
-                                '${activeOperation ?? 'CAMERA OPERATION'} IN PROGRESS',
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: foreground,
-                                  fontFamily: 'monospace',
-                                  fontSize: 8,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: .3,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      const SizedBox(height: 10),
                     ],
-
-                    Wrap(
-                      spacing: 7,
-                      runSpacing: 7,
-                      children: [
-                        _SheetButton(
-                          dark:
-                              dark,
-                          icon:
-                              Icons.nfc_rounded,
-                          label:
-                              nfcListening
-                                  ? 'NFC READY'
-                                  : 'START NFC',
-                          accent:
-                              nfcListening,
-                          onTap:
-                              onStartNfc,
-                        ),
-                        _SheetButton(
-                          dark:
-                              dark,
-                          icon:
-                              Icons
-                                  .wifi_find_rounded,
-                          label:
-                              scanning ? 'SCANNING...' : 'SCAN NETWORK',
-                          busy: scanning,
-                          disabled: anyOperationInFlight,
-                          onTap:
-                              onScan,
-                        ),
-                        _SheetButton(
-                          dark:
-                              dark,
-                          icon:
-                              Icons
-                                  .sync_rounded,
-                          label:
-                              reconnecting ? 'RECONNECTING...' : 'RECONNECT',
-                          busy: reconnecting,
-                          disabled: anyOperationInFlight,
-                          onTap:
-                              onReconnect,
-                        ),
-                        _SheetButton(
-                          dark:
-                              dark,
-                          icon:
-                              Icons
-                                  .refresh_rounded,
-                          label:
-                              refreshing ? 'REFRESHING...' : 'REFRESH VIEW',
-                          busy: refreshing,
-                          disabled: anyOperationInFlight,
-                          onTap:
-                              onRefresh,
-                        ),
-                        _SheetButton(
-                          dark:
-                              dark,
-                          icon:
-                              Icons
-                                  .copy_rounded,
-                          label:
-                              'COPY LOG',
-                          onTap:
-                              onCopy,
-                        ),
-                        _SheetButton(
-                          dark:
-                              dark,
-                          icon:
-                              Icons
-                                  .delete_outline_rounded,
-                          label:
-                              'CLEAR LOG',
-                          onTap:
-                              () async {
-                            onClear();
-                          },
-                        ),
-                        _SheetButton(
-                          dark:
-                              dark,
-                          icon:
-                              Icons
-                                  .link_off_rounded,
-                          label:
-                              disconnecting ? 'DISCONNECTING...' : 'DISCONNECT',
-                          danger:
-                              true,
-                          busy: disconnecting,
-                          disabled: anyOperationInFlight,
-                          onTap:
-                              onDisconnect,
-                        ),
-                      ],
+                    _ConnectionMethodsPanel(
+                      dark: dark,
+                      nfcListening: nfcListening,
+                      operationInFlight: busy,
+                      onNfc: onStartNfc,
+                      onBluetooth: onConnectBluetooth,
+                      onWifi: onConnectWifi,
+                      onQr: onScanQr,
+                      onUsb: onConnectUsb,
+                      onUvc: onConnectUvc,
                     ),
-
-                    const SizedBox(
-                      height: 16,
+                    const SizedBox(height: 25),
+                    _SectionHeading(
+                      title: 'Session',
+                      subtitle: 'Controls for the current camera session.',
+                      dark: dark,
                     ),
-
+                    const SizedBox(height: 11),
                     Row(
                       children: [
                         Expanded(
-                          child:
-                              Text(
-                            'DIAGNOSTIC LOG',
-                            style:
-                                TextStyle(
-                              color:
-                                  secondary,
-                              fontSize:
-                                  8,
-                              fontWeight:
-                                  FontWeight.w800,
-                              letterSpacing:
-                                  1.05,
-                            ),
+                          child: _SessionControlButton(
+                            dark: dark,
+                            icon: Icons.sync_rounded,
+                            label: reconnecting ? 'Reconnecting' : 'Reconnect',
+                            busy: reconnecting,
+                            disabled: busy,
+                            onTap: onReconnect,
                           ),
                         ),
-                        Text(
-                          '${logs.length} ENTRIES',
-                          style:
-                              TextStyle(
-                            color:
-                                _uiMuted(
-                              dark,
-                            ),
-                            fontFamily:
-                                'monospace',
-                            fontSize:
-                                7,
-                            fontWeight:
-                                FontWeight.w700,
-                            letterSpacing:
-                                .5,
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _SessionControlButton(
+                            dark: dark,
+                            icon: Icons.refresh_rounded,
+                            label: refreshing ? 'Refreshing' : 'Refresh',
+                            busy: refreshing,
+                            disabled: busy,
+                            onTap: onRefresh,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _SessionControlButton(
+                            dark: dark,
+                            icon: Icons.link_off_rounded,
+                            label: disconnecting
+                                ? 'Disconnecting'
+                                : 'Disconnect',
+                            danger: true,
+                            busy: disconnecting,
+                            disabled: busy,
+                            onTap: onDisconnect,
                           ),
                         ),
                       ],
                     ),
-
-                    const SizedBox(
-                      height: 7,
-                    ),
-
-                    Container(
-                      constraints:
-                          const BoxConstraints(
-                        minHeight:
-                            180,
-                        maxHeight:
-                            360,
-                      ),
-                      decoration:
-                          BoxDecoration(
-                        color:
-                            _uiConsole(
-                          dark,
+                    const SizedBox(height: 24),
+                    Divider(height: 1, thickness: 1, color: border),
+                    Theme(
+                      data: themedExpansion,
+                      child: ExpansionTile(
+                        key: const PageStorageKey<String>('connection-details'),
+                        tilePadding: const EdgeInsets.symmetric(horizontal: 2),
+                        childrenPadding: const EdgeInsets.fromLTRB(0, 0, 0, 14),
+                        leading: Icon(
+                          Icons.tune_rounded,
+                          size: 19,
+                          color: secondary,
                         ),
-                        border:
-                            Border.all(
-                          color:
-                              _uiBorderStrong(
-                            dark,
+                        title: Text(
+                          'Connection details',
+                          style: TextStyle(
+                            color: foreground,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
-                        borderRadius:
-                            BorderRadius.circular(
-                          5,
+                        subtitle: Text(
+                          'Network, camera, image, and capabilities',
+                          style: TextStyle(
+                            color: secondary,
+                            fontSize: 11,
+                            height: 1.25,
+                          ),
                         ),
+                        children: [
+                          _DetailGroup(
+                            dark: dark,
+                            title: 'Network',
+                            rows: {
+                              'SSID': _displayValue(ssid),
+                              'Status': status,
+                            },
+                          ),
+                          _DetailGroup(
+                            dark: dark,
+                            title: 'Camera',
+                            rows: {
+                              'Name': _displayValue(identityName),
+                              'Brand': _displayValue(brand),
+                              'Model': _displayValue(model),
+                              'Protocol': _displayValue(protocol),
+                              'Host': _displayValue(host),
+                              'Port': port?.toString() ?? 'Not available',
+                            },
+                          ),
+                          _DetailGroup(
+                            dark: dark,
+                            title: 'Active image',
+                            rows: {
+                              'Band': currentBand.title,
+                              'Source': sourceLabel ?? currentBand.sourceLabel,
+                              'Frame': frameWidth != null && frameHeight != null
+                                  ? '${frameWidth} × $frameHeight'
+                                  : 'Not available',
+                              'Bit depth':
+                                  bitDepth?.toString() ?? 'Not available',
+                            },
+                          ),
+                          _DetailGroup(
+                            dark: dark,
+                            title: 'Capabilities',
+                            rows: {
+                              'Live view': supportsLiveView
+                                  ? 'Supported'
+                                  : 'Unavailable',
+                              'Capture': supportsCapture
+                                  ? 'Supported'
+                                  : 'Unavailable',
+                              'Autofocus': supportsAutofocus
+                                  ? 'Continuous'
+                                  : 'Unavailable',
+                              'Unified crop': dualOpticalRoiAvailable
+                                  ? 'Supported'
+                                  : 'Unavailable',
+                              'RGB source': 'Left → unified',
+                              'NIR source': 'Right → unified',
+                              'Registration': 'Centered affine',
+                            },
+                          ),
+                        ],
                       ),
-                      child:
-                          logs.isEmpty
-                              ? Center(
-                                  child:
-                                      Text(
-                                    'NO LOG',
-                                    style:
-                                        TextStyle(
-                                      color:
-                                          secondary,
-                                      fontFamily:
-                                          'monospace',
-                                      fontSize:
-                                          9,
-                                      fontWeight:
-                                          FontWeight.w700,
-                                      letterSpacing:
-                                          .4,
+                    ),
+                    Divider(height: 1, thickness: 1, color: border),
+                    Theme(
+                      data: themedExpansion,
+                      child: ExpansionTile(
+                        key: const PageStorageKey<String>(
+                          'diagnostic-log-expansion',
+                        ),
+                        tilePadding: const EdgeInsets.symmetric(horizontal: 2),
+                        childrenPadding: const EdgeInsets.fromLTRB(0, 0, 0, 14),
+                        leading: Icon(
+                          Icons.terminal_rounded,
+                          size: 19,
+                          color: secondary,
+                        ),
+                        title: Text(
+                          'Diagnostic log',
+                          style: TextStyle(
+                            color: foreground,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        subtitle: Text(
+                          '${logs.length} entries',
+                          style: TextStyle(color: secondary, fontSize: 11),
+                        ),
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 11),
+                            child: Row(
+                              children: [
+                                TextButton.icon(
+                                  onPressed: () async => onCopy(),
+                                  icon: const Icon(
+                                    Icons.copy_rounded,
+                                    size: 16,
+                                  ),
+                                  label: const Text('Copy log'),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: accent,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
                                     ),
                                   ),
-                                )
-                              : ListView.builder(
-                                  physics:
-                                      const ClampingScrollPhysics(),
-                                  padding:
-                                      const EdgeInsets.all(
-                                    10,
-                                  ),
-                                  itemCount:
-                                      logs.length,
-                                  itemBuilder:
-                                      (
-                                    context,
-                                    index,
-                                  ) {
-                                    final log =
-                                        logs[index];
-
-                                    final logColor =
-                                        log.level ==
-                                                'ERROR'
-                                            ? _uiDanger(
-                                                dark,
-                                              )
-                                            : log.level ==
-                                                    'WARN'
-                                                ? _uiAccent(
-                                                    dark,
-                                                  )
-                                                : foreground;
-
-                                    return Padding(
-                                      padding:
-                                          const EdgeInsets.only(
-                                        bottom:
-                                            5,
-                                      ),
-                                      child:
-                                          SelectableText(
-                                        '${log.time}  '
-                                        '${log.level.padRight(5)}  '
-                                        '${log.message}',
-                                        style:
-                                            TextStyle(
-                                          color:
-                                              logColor,
-                                          fontFamily:
-                                              'monospace',
-                                          fontSize:
-                                              8,
-                                          height:
-                                              1.28,
-                                        ),
-                                      ),
-                                    );
-                                  },
                                 ),
+                                const SizedBox(width: 6),
+                                TextButton.icon(
+                                  onPressed: onClear,
+                                  icon: Icon(
+                                    Icons.delete_outline_rounded,
+                                    size: 16,
+                                    color: _uiDanger(dark),
+                                  ),
+                                  label: Text(
+                                    'Clear log',
+                                    style: TextStyle(color: _uiDanger(dark)),
+                                  ),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: _uiDanger(dark),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            width: double.infinity,
+                            constraints: const BoxConstraints(
+                              minHeight: 84,
+                              maxHeight: 260,
+                            ),
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: _uiConsole(dark),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: logs.isEmpty
+                                ? Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Text(
+                                      'No diagnostic entries yet.',
+                                      style: TextStyle(
+                                        color: secondary,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  )
+                                : ListView.separated(
+                                    key: const PageStorageKey<String>(
+                                      'diagnostic-log-entries-scroll',
+                                    ),
+                                    physics: const ClampingScrollPhysics(),
+                                    padding: EdgeInsets.zero,
+                                    itemCount: logs.length,
+                                    separatorBuilder: (_, __) =>
+                                        Divider(height: 10, color: border),
+                                    itemBuilder: (context, index) {
+                                      final log = logs[index];
+                                      final level = log.level.toUpperCase();
+                                      final logColor = level == 'ERROR'
+                                          ? _uiDanger(dark)
+                                          : level == 'WARN' ||
+                                                level == 'WARNING'
+                                          ? accent
+                                          : foreground;
+                                      return SelectableText(
+                                        '${log.time}  ${log.level.padRight(5)}  ${log.message}',
+                                        style: TextStyle(
+                                          color: logColor,
+                                          fontFamily: 'monospace',
+                                          fontSize: 10,
+                                          height: 1.35,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                          ),
+                        ],
+                      ),
                     ),
+                    Divider(height: 1, thickness: 1, color: border),
                   ],
                 ),
               ),
@@ -1411,141 +962,273 @@ class ConnectionSheet
   }
 }
 
-class _SheetStatusDot
-    extends StatelessWidget {
-  const _SheetStatusDot({
-    required this.link,
+String _operationLabel(String? operation) {
+  switch (operation) {
+    case 'RECONNECTING':
+      return 'Reconnecting to camera…';
+    case 'REFRESHING LIVE VIEW':
+      return 'Refreshing live view…';
+    case 'DISCONNECTING':
+      return 'Disconnecting…';
+    case null:
+      return 'Camera operation in progress…';
+    default:
+      return '${operation[0]}${operation.substring(1).toLowerCase()}…';
+  }
+}
+
+class _ConnectionMethodsPanel extends StatelessWidget {
+  const _ConnectionMethodsPanel({
     required this.dark,
+    required this.nfcListening,
+    required this.operationInFlight,
+    required this.onNfc,
+    required this.onBluetooth,
+    required this.onWifi,
+    required this.onQr,
+    required this.onUsb,
+    required this.onUvc,
   });
 
-  final CameraLink link;
   final bool dark;
+  final bool nfcListening;
+  final bool operationInFlight;
+  final Future<void> Function() onNfc;
+  final Future<void> Function()? onBluetooth;
+  final Future<void> Function()? onWifi;
+  final Future<void> Function()? onQr;
+  final Future<void> Function()? onUsb;
+  final Future<void> Function()? onUvc;
 
   @override
   Widget build(BuildContext context) {
-    final color =
-        switch (link) {
-          CameraLink.ready =>
-            _uiAccent(dark),
-          CameraLink.error =>
-            _uiDanger(dark),
-          _ =>
-            _uiMuted(dark),
-        };
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth >= 560 ? 3 : 2;
+        const spacing = 5.0;
+        final itemWidth =
+            (constraints.maxWidth - spacing * (columns - 1)) / columns;
 
-    return Container(
-      width: 7,
-      height: 7,
-      decoration:
-          BoxDecoration(
-        color:
-            color,
-        shape:
-            BoxShape.circle,
+        return Wrap(
+          spacing: spacing,
+          runSpacing: 3,
+          children: [
+            SizedBox(
+              width: itemWidth,
+              child: _TransportMethodButton(
+                dark: dark,
+                icon: Icons.nfc_rounded,
+                label: nfcListening ? 'NFC listening' : 'NFC pairing',
+                active: nfcListening,
+                disabled: operationInFlight,
+                onTap: onNfc,
+              ),
+            ),
+            SizedBox(
+              width: itemWidth,
+              child: _TransportMethodButton(
+                dark: dark,
+                icon: Icons.bluetooth_rounded,
+                label: 'Bluetooth',
+                disabled: operationInFlight,
+                onTap: onBluetooth,
+              ),
+            ),
+            SizedBox(
+              width: itemWidth,
+              child: _TransportMethodButton(
+                dark: dark,
+                icon: Icons.wifi_rounded,
+                label: 'Wi-Fi',
+                disabled: operationInFlight,
+                onTap: onWifi,
+              ),
+            ),
+            SizedBox(
+              width: itemWidth,
+              child: _TransportMethodButton(
+                dark: dark,
+                icon: Icons.qr_code_scanner_rounded,
+                label: 'Scan QR code',
+                disabled: operationInFlight,
+                onTap: onQr,
+              ),
+            ),
+            SizedBox(
+              width: itemWidth,
+              child: _TransportMethodButton(
+                dark: dark,
+                icon: Icons.usb_rounded,
+                label: 'USB / PTP',
+                disabled: operationInFlight,
+                onTap: onUsb,
+              ),
+            ),
+            SizedBox(
+              width: itemWidth,
+              child: _TransportMethodButton(
+                dark: dark,
+                icon: Icons.videocam_outlined,
+                label: 'HDMI / UVC',
+                disabled: operationInFlight,
+                onTap: onUvc,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// Flat text-style action. There is no card or framed tile around the option.
+class _TransportMethodButton extends StatelessWidget {
+  const _TransportMethodButton({
+    required this.dark,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.active = false,
+    this.disabled = false,
+  });
+
+  final bool dark;
+  final IconData icon;
+  final String label;
+  final Future<void> Function()? onTap;
+  final bool active;
+  final bool disabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final configured = onTap != null;
+    final enabled = configured && !disabled;
+    final accent = _uiAccent(dark);
+    final foreground = active ? accent : _uiForeground(dark);
+
+    return Tooltip(
+      message: configured ? label : '$label is not available in this build.',
+      child: SizedBox(
+        height: 50,
+        width: double.infinity,
+        child: TextButton(
+          onPressed: enabled ? () async => onTap!() : null,
+          style: TextButton.styleFrom(
+            foregroundColor: foreground,
+            disabledForegroundColor: _uiMuted(dark),
+            backgroundColor: active
+                ? accent.withValues(alpha: .10)
+                : Colors.transparent,
+            overlayColor: accent.withValues(alpha: .08),
+            alignment: Alignment.centerLeft,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            visualDensity: VisualDensity.compact,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(5),
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, size: 19, color: enabled ? accent : _uiMuted(dark)),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: enabled ? foreground : _uiMuted(dark),
+                    fontSize: 12,
+                    fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                    letterSpacing: -.1,
+                  ),
+                ),
+              ),
+              if (active) ...[
+                const SizedBox(width: 4),
+                Icon(Icons.circle, size: 6, color: accent),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
 }
 
-class _SheetStatusIndicator
-    extends StatelessWidget {
-  const _SheetStatusIndicator({
-    required this.link,
+class _SectionHeading extends StatelessWidget {
+  const _SectionHeading({
+    required this.title,
+    required this.subtitle,
     required this.dark,
   });
 
-  final CameraLink link;
+  final String title;
+  final String subtitle;
   final bool dark;
 
   @override
   Widget build(BuildContext context) {
-    final active =
-        link == CameraLink.ready;
-
-    final error =
-        link == CameraLink.error;
-
-    final color =
-        error
-            ? _uiDanger(dark)
-            : active
-                ? _uiAccent(dark)
-                : _uiMuted(dark);
-
-    final background =
-        active
-            ? color
-            : _uiSurfaceAlt(dark);
-
-    final foreground =
-        active
-            ? _activeTextOn(color)
-            : color;
-
-    return Container(
-      padding:
-          const EdgeInsets.symmetric(
-        horizontal: 9,
-        vertical: 6,
-      ),
-      decoration:
-          BoxDecoration(
-        color:
-            background,
-        border:
-            Border.all(
-          color:
-              active
-                  ? color
-                  : _uiBorderStrong(
-                      dark,
-                    ),
-          width:
-              active
-                  ? 1.1
-                  : 1,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            color: _uiForeground(dark),
+            fontSize: 16,
+            height: 1.15,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -.25,
+          ),
         ),
-        borderRadius:
-            BorderRadius.circular(
-          5,
+        const SizedBox(height: 4),
+        Text(
+          subtitle,
+          style: TextStyle(
+            color: _uiSecondary(dark),
+            fontSize: 12,
+            height: 1.35,
+          ),
         ),
-      ),
-      child:
-          Row(
-        mainAxisSize:
-            MainAxisSize.min,
+      ],
+    );
+  }
+}
+
+class _OperationNotice extends StatelessWidget {
+  const _OperationNotice({required this.dark, required this.label});
+
+  final bool dark;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = _uiAccent(dark);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
         children: [
-          Container(
-            width: 6,
-            height: 6,
-            decoration:
-                BoxDecoration(
-              color:
-                  active
-                      ? foreground
-                      : color,
-              shape:
-                  BoxShape.circle,
+          SizedBox(
+            width: 15,
+            height: 15,
+            child: CircularProgressIndicator(
+              strokeWidth: 1.8,
+              valueColor: AlwaysStoppedAnimation<Color>(accent),
             ),
           ),
-          const SizedBox(
-            width: 5,
-          ),
-          Text(
-            link.label,
-            maxLines: 1,
-            overflow:
-                TextOverflow.ellipsis,
-            style:
-                TextStyle(
-              color:
-                  foreground,
-              fontSize:
-                  7,
-              fontWeight:
-                  FontWeight.w900,
-              letterSpacing:
-                  .65,
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: _uiSecondary(dark),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
         ],
@@ -1554,9 +1237,90 @@ class _SheetStatusIndicator
   }
 }
 
-class _ConnectionInfoCard
-    extends StatelessWidget {
-  const _ConnectionInfoCard({
+class _SheetHandle extends StatelessWidget {
+  const _SheetHandle({required this.dark});
+
+  final bool dark;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 40,
+      height: 4,
+      decoration: BoxDecoration(
+        color: _uiBorderStrong(dark),
+        borderRadius: BorderRadius.circular(99),
+      ),
+    );
+  }
+}
+
+class _IconFrame extends StatelessWidget {
+  const _IconFrame({required this.dark, required this.child});
+
+  final bool dark;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 36,
+      height: 36,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: _uiSurfaceAlt(dark),
+        border: Border.all(color: _uiBorderStrong(dark)),
+        borderRadius: BorderRadius.circular(7),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _SheetStatusIndicator extends StatelessWidget {
+  const _SheetStatusIndicator({required this.link, required this.dark});
+
+  final CameraLink link;
+  final bool dark;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = switch (link) {
+      CameraLink.ready => _uiAccent(dark),
+      CameraLink.error => _uiDanger(dark),
+      _ => _uiMuted(dark),
+    };
+    final label = link.label;
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 7,
+          height: 7,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 7),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 112),
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DetailGroup extends StatelessWidget {
+  const _DetailGroup({
     required this.dark,
     required this.title,
     required this.rows,
@@ -1568,159 +1332,72 @@ class _ConnectionInfoCard
 
   @override
   Widget build(BuildContext context) {
-    final foreground =
-        _uiForeground(dark);
+    final foreground = _uiForeground(dark);
+    final secondary = _uiSecondary(dark);
+    final border = _uiBorder(dark);
 
-    final secondary =
-        _uiSecondary(dark);
-
-    return Container(
-      width:
-          double.infinity,
-      padding:
-          const EdgeInsets.fromLTRB(
-        12,
-        11,
-        12,
-        11,
-      ),
-      decoration:
-          BoxDecoration(
-        color:
-            _uiSurfaceAlt(dark),
-        border:
-            Border.all(
-          color:
-              _uiBorderStrong(dark),
-        ),
-        borderRadius:
-            BorderRadius.circular(
-          5,
-        ),
-      ),
-      child:
-          Column(
-        mainAxisSize:
-            MainAxisSize.min,
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
+    return Padding(
+      padding: const EdgeInsets.only(top: 13, bottom: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child:
-                    Text(
-                  title,
-                  maxLines:
-                      1,
-                  overflow:
-                      TextOverflow.ellipsis,
-                  style:
-                      TextStyle(
-                    color:
-                        secondary,
-                    fontSize:
-                        8,
-                    fontWeight:
-                        FontWeight.w800,
-                    letterSpacing:
-                        1.05,
-                  ),
-                ),
-              ),
-              Container(
-                width: 4,
-                height: 4,
-                decoration:
-                    BoxDecoration(
-                  color:
-                      _uiAccent(dark),
-                  shape:
-                      BoxShape.circle,
-                ),
-              ),
-            ],
+          Text(
+            title,
+            style: TextStyle(
+              color: _uiAccent(dark),
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: .3,
+            ),
           ),
-
-          const SizedBox(
-            height: 7,
-          ),
-
-          for (final entry
-              in rows.entries)
+          const SizedBox(height: 6),
+          for (final entry in rows.entries)
             Padding(
-              padding:
-                  const EdgeInsets.symmetric(
-                vertical: 2,
-              ),
-              child:
-                  Row(
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   SizedBox(
-                    width: 112,
-                    child:
-                        Text(
+                    width: 108,
+                    child: Text(
                       entry.key,
-                      maxLines:
-                          1,
-                      overflow:
-                          TextOverflow.ellipsis,
-                      style:
-                          TextStyle(
-                        color:
-                            secondary,
-                        fontFamily:
-                            'monospace',
-                        fontSize:
-                            7,
-                        fontWeight:
-                            FontWeight.w700,
-                        letterSpacing:
-                            .15,
+                      style: TextStyle(
+                        color: secondary,
+                        fontSize: 11,
+                        height: 1.3,
                       ),
                     ),
                   ),
+                  const SizedBox(width: 12),
                   Expanded(
-                    child:
-                        Text(
+                    child: Text(
                       entry.value,
-                      maxLines:
-                          1,
-                      overflow:
-                          TextOverflow.ellipsis,
-                      style:
-                          TextStyle(
-                        color:
-                            foreground,
-                        fontFamily:
-                            'monospace',
-                        fontSize:
-                            8,
-                        fontWeight:
-                            FontWeight.w800,
+                      textAlign: TextAlign.end,
+                      style: TextStyle(
+                        color: foreground,
+                        fontSize: 12,
+                        height: 1.3,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ),
                 ],
               ),
             ),
+          Divider(height: 12, thickness: 1, color: border),
         ],
       ),
     );
   }
 }
 
-class _SheetButton
-    extends StatelessWidget {
-  const _SheetButton({
+class _SessionControlButton extends StatelessWidget {
+  const _SessionControlButton({
     required this.dark,
     required this.icon,
     required this.label,
     required this.onTap,
     this.danger = false,
-    this.accent = false,
     this.busy = false,
     this.disabled = false,
   });
@@ -1730,235 +1407,122 @@ class _SheetButton
   final String label;
   final Future<void> Function() onTap;
   final bool danger;
-  final bool accent;
   final bool busy;
   final bool disabled;
 
   @override
   Widget build(BuildContext context) {
-    final foreground =
-        _uiForeground(dark);
-
-    final green =
-        _uiAccent(dark);
-
-    final red =
-        _uiDanger(dark);
-
-    final primaryColor =
-        danger
-            ? red
-            : accent
-                ? green
-                : foreground;
-
-    final background =
-        accent
-            ? green
-            : _uiSurfaceAlt(dark);
-
-    final contentColor = disabled
+    final foreground = disabled
         ? _uiMuted(dark)
-        : accent
-            ? _activeTextOn(green)
-            : primaryColor;
+        : danger
+        ? _uiDanger(dark)
+        : _uiForeground(dark);
+    final border = danger
+        ? _uiDanger(dark).withValues(alpha: .6)
+        : _uiBorderStrong(dark);
+    final accent = _uiAccent(dark);
 
-    return Material(
-      color: disabled ? _uiSurfaceAlt(dark) : background,
-      borderRadius:
-          BorderRadius.circular(
-        5,
-      ),
-      child:
-          InkWell(
-        borderRadius:
-            BorderRadius.circular(
-          5,
+    return SizedBox(
+      height: 44,
+      width: double.infinity,
+      child: OutlinedButton(
+        onPressed: disabled ? null : () async => onTap(),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: foreground,
+          disabledForegroundColor: _uiMuted(dark),
+          backgroundColor: Colors.transparent,
+          overlayColor: (danger ? _uiDanger(dark) : accent).withValues(
+            alpha: .07,
+          ),
+          side: BorderSide(color: disabled ? _uiBorder(dark) : border),
+          padding: const EdgeInsets.symmetric(horizontal: 5),
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          visualDensity: VisualDensity.compact,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+          textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
         ),
-        onTap: disabled
-            ? null
-            : () async {
-                await onTap();
-              },
-        child:
-            Container(
-          constraints:
-              const BoxConstraints(
-            minHeight:
-                38,
-          ),
-          padding:
-              const EdgeInsets.symmetric(
-            horizontal: 10,
-            vertical: 8,
-          ),
-          decoration:
-              BoxDecoration(
-            border:
-                Border.all(
-              color:
-                  danger
-                      ? red
-                      : accent
-                          ? green
-                          : _uiBorderStrong(
-                              dark,
-                            ),
-              width:
-                  accent
-                      ? 1.1
-                      : 1,
-            ),
-            borderRadius:
-                BorderRadius.circular(
-              5,
-            ),
-          ),
-          child:
-              Row(
-            mainAxisSize:
-                MainAxisSize.min,
-            children: [
-              if (busy)
-                SizedBox(
-                  width: 13,
-                  height: 13,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 1.5,
-                    valueColor: AlwaysStoppedAnimation<Color>(contentColor),
-                  ),
-                )
-              else
-                Icon(
-                  icon,
-                  size: 14,
-                  color: contentColor,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (busy)
+              SizedBox(
+                width: 13,
+                height: 13,
+                child: CircularProgressIndicator(
+                  strokeWidth: 1.5,
+                  valueColor: AlwaysStoppedAnimation<Color>(foreground),
                 ),
-              const SizedBox(
-                width: 7,
-              ),
-              FittedBox(
-                fit:
-                    BoxFit.scaleDown,
-                child:
-                    Text(
+              )
+            else
+              Icon(icon, size: 15, color: foreground),
+            const SizedBox(width: 5),
+            Flexible(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
                   label,
-                  maxLines:
-                      1,
-                  style:
-                      TextStyle(
-                    color:
-                        contentColor,
-                    fontSize:
-                        8,
-                    fontWeight:
-                        FontWeight.w800,
-                    letterSpacing:
-                        .55,
-                  ),
+                  maxLines: 1,
+                  softWrap: false,
+                  style: TextStyle(color: foreground, fontSize: 11),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
+String _displayValue(String? value) {
+  final normalized = value?.trim();
+  return normalized == null || normalized.isEmpty
+      ? 'Not available'
+      : normalized;
+}
+
 // =============================================================================
 // LOCAL UI PALETTE
 // =============================================================================
 
-Color _uiForeground(
-  bool dark,
-) =>
-    dark
-        ? const Color(0xFFF2F6F3)
-        : const Color(0xFF111612);
+Color _uiForeground(bool dark) =>
+    dark ? const Color(0xFFF2F6F3) : const Color(0xFF111612);
 
-Color _uiSurface(
-  bool dark,
-) =>
-    dark
-        ? const Color(0xFF101512)
-        : const Color(0xFFFFFFFF);
+Color _uiSurface(bool dark) =>
+    dark ? const Color(0xFF101512) : const Color(0xFFFFFFFF);
 
-Color _uiSurfaceAlt(
-  bool dark,
-) =>
-    dark
-        ? const Color(0xFF171D19)
-        : const Color(0xFFE7ECE9);
+Color _uiSurfaceAlt(bool dark) =>
+    dark ? const Color(0xFF171D19) : const Color(0xFFE7ECE9);
 
-Color _uiConsole(
-  bool dark,
-) =>
-    dark
-        ? const Color(0xFF080B09)
-        : const Color(0xFFE1E8E3);
+Color _uiConsole(bool dark) =>
+    dark ? const Color(0xFF080B09) : const Color(0xFFE1E8E3);
 
-Color _uiAccent(
-  bool dark,
-) =>
-    dark
-        ? const Color(0xFF55D98B)
-        : const Color(0xFF1D7E4B);
+Color _uiAccent(bool dark) =>
+    dark ? const Color(0xFF55D98B) : const Color(0xFF1D7E4B);
 
-Color _uiSecondary(
-  bool dark,
-) =>
-    (
-      dark
-          ? const Color(0xFFE7EEE9)
-          : const Color(0xFF2D3831)
-    ).withValues(
-      alpha: .68,
+Color _uiSecondary(bool dark) =>
+    (dark ? const Color(0xFFE7EEE9) : const Color(0xFF2D3831)).withValues(
+      alpha: .76,
     );
 
-Color _uiMuted(
-  bool dark,
-) =>
-    (
-      dark
-          ? const Color(0xFFB4BFB8)
-          : const Color(0xFF56635B)
-    ).withValues(
-      alpha: .70,
+Color _uiMuted(bool dark) =>
+    (dark ? const Color(0xFFB4BFB8) : const Color(0xFF56635B)).withValues(
+      alpha: .78,
     );
 
-Color _uiBorder(
-  bool dark,
-) =>
-    (
-      dark
-          ? const Color(0xFFB8C4BD)
-          : const Color(0xFF35423A)
-    ).withValues(
+Color _uiBorder(bool dark) =>
+    (dark ? const Color(0xFFB8C4BD) : const Color(0xFF35423A)).withValues(
       alpha: .16,
     );
 
-Color _uiBorderStrong(
-  bool dark,
-) =>
-    (
-      dark
-          ? const Color(0xFFB8C4BD)
-          : const Color(0xFF35423A)
-    ).withValues(
+Color _uiBorderStrong(bool dark) =>
+    (dark ? const Color(0xFFB8C4BD) : const Color(0xFF35423A)).withValues(
       alpha: .30,
     );
 
-Color _uiDanger(
-  bool dark,
-) =>
-    dark
-        ? const Color(0xFFE56B6F)
-        : const Color(0xFFB64045);
+Color _uiDanger(bool dark) =>
+    dark ? const Color(0xFFE56B6F) : const Color(0xFFB64045);
 
-Color _activeTextOn(
-  Color background,
-) =>
-    background.computeLuminance() > .5
-        ? Colors.black
-        : Colors.white;
+Color _activeTextOn(Color background) =>
+    background.computeLuminance() > .5 ? Colors.black : Colors.white;

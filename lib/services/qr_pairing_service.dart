@@ -209,11 +209,17 @@ class QrPairingService {
   /// 2. JSON:
   ///    {"ssid":"DIRECT-XXXX:ILCE-6400","password":"12345678"}
   ///
-  /// 3. Readable Sony credential text:
+  /// 3. Sony W01 camera QR:
+  ///    W01:S:iuE1;P:xxxxxxxx;C:ILCE-6400;M:7CB8DAE3AE1F;
+  ///    S is the DIRECT- SSID suffix, P is the Wi-Fi passphrase, C is the
+  ///    camera model, and M is a device identifier. The SSID is reconstructed
+  ///    as DIRECT-<S>:<C> unless S already contains a complete DIRECT SSID.
+  ///
+  /// 4. Readable Sony credential text:
   ///    A text payload containing a DIRECT-... SSID and a recognizable
   ///    password field, or a compatible eight-character password suffix.
   ///
-  /// Opaque, encrypted, binary, or proprietary payloads are not guessed.
+  /// Unrecognized proprietary payloads are not guessed.
   QrPairingResult parsePayload(String? rawValue) {
     if (rawValue == null || rawValue.trim().isEmpty) {
       return QrPairingResult.failure(
@@ -226,6 +232,15 @@ class QrPairingService {
 
     if (payload.toUpperCase().startsWith('WIFI:')) {
       return _parseWifiQr(payload);
+    }
+
+    // Sony α-series cameras (including the ILCE-6400) can emit a compact
+    // proprietary payload such as:
+    // W01:S:iuE1;P:xxxxxxxx;C:ILCE-6400;M:7CB8DAE3AE1F;
+    // Do not send a recognized W01 payload through the generic text parser:
+    // that parser intentionally supports legacy human-readable credentials.
+    if (payload.toUpperCase().startsWith('W01:')) {
+      return _parseSonyW01(payload);
     }
 
     final jsonResult = _tryParseJson(payload);
@@ -243,10 +258,143 @@ class QrPairingService {
     return QrPairingResult.failure(
       failure: QrPairingFailure.unsupportedFormat,
       message:
-          'Format QR tidak dikenali sebagai kredensial Wi-Fi yang didukung. '
-          'QR khusus Sony mungkin memerlukan Imaging Edge Mobile. '
-          'Gunakan SSID dan password kamera secara manual jika diperlukan.',
+          'Format QR belum dikenali. LANDCAM mendukung QR Wi-Fi standar, '
+          'JSON, teks kredensial Sony, dan format Sony W01. '
+          'Jika QR kamera menggunakan format lain, hubungkan melalui SSID '
+          'dan password kamera yang ditampilkan di layar kamera.',
     );
+  }
+
+  // --------------------------------------------------------------------------
+  // Sony W01 QR payload
+  // --------------------------------------------------------------------------
+
+  QrPairingResult _parseSonyW01(String payload) {
+    // Parse values by splitting each segment at its first colon. This is
+    // important because a complete SSID can itself contain a colon.
+    final fields = <String, String>{};
+    final body = payload.substring(4); // Remove "W01:".
+
+    for (final segment in body.split(';')) {
+      if (segment.trim().isEmpty) {
+        continue;
+      }
+
+      final separator = segment.indexOf(':');
+      if (separator <= 0) {
+        continue;
+      }
+
+      final key = segment.substring(0, separator).trim().toUpperCase();
+      final value = segment.substring(separator + 1).trim();
+      if (key.isEmpty) {
+        continue;
+      }
+
+      // Keep the first occurrence. Duplicate fields are malformed and should
+      // not silently override an earlier value (especially the password).
+      fields.putIfAbsent(key, () => value);
+    }
+
+    final ssidPart = fields['S'];
+    final password = fields['P'];
+    final model = fields['C'];
+
+    if (ssidPart == null || ssidPart.isEmpty) {
+      return QrPairingResult.failure(
+        failure: QrPairingFailure.missingSsid,
+        format: QrPairingFormat.sonyText,
+        message: 'QR Sony W01 tidak memiliki field S (identitas SSID).',
+      );
+    }
+
+    if (password == null || password.isEmpty) {
+      return QrPairingResult.failure(
+        failure: QrPairingFailure.missingPassword,
+        format: QrPairingFormat.sonyText,
+        message:
+            'QR Sony W01 terbaca, tetapi field P (password Wi-Fi) tidak ada.',
+      );
+    }
+
+    final ssid = _buildSonyW01Ssid(
+      ssidPart: ssidPart,
+      model: model,
+    );
+
+    if (ssid == null) {
+      return QrPairingResult.failure(
+        failure: QrPairingFailure.missingSsid,
+        format: QrPairingFormat.sonyText,
+        message:
+            'QR Sony W01 terbaca, tetapi SSID tidak dapat disusun. '
+            'Pastikan field S dan C (model kamera) tersedia atau S berisi '
+            'SSID DIRECT lengkap.',
+      );
+    }
+
+    return _buildCredentials(
+      ssid: ssid,
+      password: password,
+      // A non-empty Sony W01 P field represents the camera's Wi-Fi
+      // passphrase. The existing Android connection flow supports WPA2.
+      security: 'WPA2',
+      format: QrPairingFormat.sonyText,
+    );
+  }
+
+  String? _buildSonyW01Ssid({
+    required String ssidPart,
+    required String? model,
+  }) {
+    final value = ssidPart.trim();
+    if (value.isEmpty) {
+      return null;
+    }
+
+    // Some scanners/integrations may return a complete SSID in S. Preserve it
+    // rather than adding a second DIRECT- prefix or model suffix.
+    if (value.toUpperCase().startsWith('DIRECT-')) {
+      if (value.contains(':')) {
+        return _isValidSonyDirectSsid(value) ? value : null;
+      }
+
+      final normalizedModel = model?.trim();
+      if (normalizedModel == null || !_isValidSonyModel(normalizedModel)) {
+        return null;
+      }
+
+      final completeSsid = '$value:$normalizedModel';
+      return _isValidSonyDirectSsid(completeSsid) ? completeSsid : null;
+    }
+
+    // Sony W01's S field is commonly the four-character suffix, while C holds
+    // the model name. For the user's α6400 QR this becomes
+    // DIRECT-<S>:ILCE-6400.
+    final normalizedModel = model?.trim();
+    if (!_isValidSonySsidToken(value) ||
+        normalizedModel == null ||
+        !_isValidSonyModel(normalizedModel)) {
+      return null;
+    }
+
+    final completeSsid = 'DIRECT-$value:$normalizedModel';
+    return _isValidSonyDirectSsid(completeSsid) ? completeSsid : null;
+  }
+
+  bool _isValidSonySsidToken(String value) {
+    return RegExp(r'^[A-Za-z0-9_-]{1,24}$').hasMatch(value);
+  }
+
+  bool _isValidSonyModel(String value) {
+    return RegExp(r'^[A-Za-z0-9_.-]{1,48}$').hasMatch(value);
+  }
+
+  bool _isValidSonyDirectSsid(String value) {
+    return RegExp(
+      r'^DIRECT-[A-Za-z0-9_-]+:[A-Za-z0-9_.-]{1,48}$',
+      caseSensitive: false,
+    ).hasMatch(value);
   }
 
   // --------------------------------------------------------------------------
@@ -391,7 +539,10 @@ class QrPairingService {
     return _buildCredentials(
       ssid: ssid,
       password: password,
-      security: security,
+      // JSON examples commonly contain only ssid/password. When security is
+      // omitted, assume WPA2 for a password-protected camera network. Open
+      // networks must explicitly declare NONE/open/nopass.
+      security: security ?? 'WPA2',
       format: QrPairingFormat.json,
     );
   }
