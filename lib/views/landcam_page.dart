@@ -325,58 +325,39 @@ class _LandCamPageState extends State<LandCamPage> {
     }
   }
 
+  /// Opens the dedicated QR scanner. The scanner owns QR confirmation and
+  /// returns a validated result only after the user taps CONNECT TO CAMERA.
+  ///
+  /// Do not show a second dialog here: that duplicated the confirmation UI
+  /// already displayed inline by QrPairingScannerPage. Forward the result
+  /// directly into the existing ViewModel/native Wi-Fi connection flow.
   Future<void> _scanQrAndConnect(BuildContext sheetContext) async {
+    if (!mounted || !sheetContext.mounted) return;
+
     try {
       final result = await Navigator.of(sheetContext).push<QrPairingResult>(
         MaterialPageRoute<QrPairingResult>(
           builder: (_) => const QrPairingScannerPage(),
         ),
       );
+
       if (!mounted || !sheetContext.mounted || result == null) return;
 
       if (!result.isSuccess || result.credentials == null) {
-        _showSheetToast(sheetContext, result.message);
+        _showSheetToast(
+          sheetContext,
+          result.message.isNotEmpty
+              ? result.message
+              : 'QR PAIRING FAILED — SCAN A VALID CAMERA WI-FI QR CODE',
+        );
         return;
       }
 
-      final credentials = result.credentials!;
-      final confirmed = await showDialog<bool>(
-        context: sheetContext,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('CONNECT TO CAMERA WI-FI?'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('SSID: ${credentials.ssid}'),
-              const SizedBox(height: 6),
-              Text('SECURITY: ${credentials.securityType}'),
-              const SizedBox(height: 6),
-              Text(
-                'PASSWORD: ${credentials.isOpenNetwork ? 'OPEN NETWORK' : '[HIDDEN]'}',
-              ),
-              const SizedBox(height: 10),
-              const Text(
-                'LANDCAM will ask Android to connect to this Wi-Fi network.',
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('CANCEL'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('CONNECT'),
-            ),
-          ],
-        ),
-      );
-      if (confirmed != true || !mounted || !sheetContext.mounted) return;
-
+      // This is the actual connection request; there is intentionally no
+      // second confirmation dialog after the scanner's CONNECT button.
       final accepted = await _viewModel.connectWifiFromQrResult(result);
       if (!mounted || !sheetContext.mounted) return;
+
       _showSheetToast(
         sheetContext,
         accepted
@@ -758,8 +739,9 @@ class _LandCamPageState extends State<LandCamPage> {
               ],
       );
     } on PlatformException catch (error) {
-      if (mounted)
+      if (mounted) {
         _showToast('ORIENTATION CHANGE FAILED: ${error.message ?? error.code}');
+      }
     } catch (error) {
       if (mounted) _showToast('ORIENTATION CHANGE FAILED: $error');
     }
