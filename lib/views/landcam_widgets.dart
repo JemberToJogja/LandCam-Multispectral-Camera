@@ -57,7 +57,11 @@ class LandCamHome extends StatelessWidget {
   final double? fps;
   final String? codec;
   final String? cameraName;
+
+  /// Retained for API compatibility; camera addresses are intentionally hidden
+  /// from the presentation UI.
   final String? cameraEndpoint;
+
   final String captureMode;
   final bool ndviEnabled;
   final String? previewMode;
@@ -159,7 +163,6 @@ class LandCamHome extends StatelessWidget {
                   link: link,
                   status: status,
                   cameraName: cameraName,
-                  cameraEndpoint: cameraEndpoint,
                   onConnection: onConnection,
                   onSettings: onSettings,
                 ),
@@ -224,7 +227,6 @@ class _PortraitHeader extends StatelessWidget {
     required this.link,
     required this.status,
     required this.cameraName,
-    required this.cameraEndpoint,
     required this.onConnection,
     required this.onSettings,
   });
@@ -233,7 +235,6 @@ class _PortraitHeader extends StatelessWidget {
   final CameraLink link;
   final String status;
   final String? cameraName;
-  final String? cameraEndpoint;
   final VoidCallback onConnection;
   final VoidCallback onSettings;
 
@@ -241,25 +242,28 @@ class _PortraitHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final foreground = _foreground(dark);
     final secondary = _secondary(dark);
-    final title = cameraName == null || cameraName!.trim().isEmpty
-        ? status
-        : '${cameraName!.trim()}  •  $status';
+    final cleanCameraName = cameraName?.trim() ?? '';
+    final cleanStatus = status.trim().isEmpty
+        ? 'NO ACTIVE CAMERA CONNECTION'
+        : status.trim();
+    final title = link == CameraLink.ready && cleanCameraName.isNotEmpty
+        ? '$cleanCameraName  •  $cleanStatus'
+        : cleanStatus;
 
     return Container(
-      constraints: const BoxConstraints(minHeight: 76, maxHeight: 94),
-      padding: const EdgeInsets.fromLTRB(16, 10, 14, 10),
+      constraints: const BoxConstraints(minHeight: 72, maxHeight: 94),
+      padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
       decoration: BoxDecoration(
         color: _surface(dark),
         border: Border(bottom: BorderSide(color: _border(dark))),
       ),
       child: Row(
         children: [
-          _BrandMark(dark: dark),
-          const SizedBox(width: 12),
           Expanded(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   'LANDCAM',
@@ -267,44 +271,26 @@ class _PortraitHeader extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: foreground,
-                    fontSize: 16,
+                    fontSize: 15,
                     fontWeight: FontWeight.w900,
-                    letterSpacing: 1.6,
+                    letterSpacing: 1.45,
+                    height: 1.05,
                   ),
                 ),
                 const SizedBox(height: 5),
-                Row(
-                  children: [
-                    _StatusIndicator(link: link, dark: dark),
-                    const SizedBox(width: 7),
-                    Flexible(
-                      child: Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: secondary,
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: .45,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                if (cameraEndpoint?.trim().isNotEmpty == true) ...[
-                  const SizedBox(height: 3),
-                  Text(
-                    cameraEndpoint!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: secondary.withValues(alpha: .76),
-                      fontFamily: 'monospace',
-                      fontSize: 8.5,
-                    ),
+                Text(
+                  title,
+                  maxLines: 3,
+                  softWrap: true,
+                  overflow: TextOverflow.clip,
+                  style: TextStyle(
+                    color: secondary,
+                    fontSize: 8.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: .18,
+                    height: 1.15,
                   ),
-                ],
+                ),
               ],
             ),
           ),
@@ -353,7 +339,7 @@ class _PortraitControlBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 60,
+      height: 58,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
       decoration: BoxDecoration(
         color: _surface(dark),
@@ -462,8 +448,6 @@ class _LandscapeControlRail extends StatelessWidget {
       ),
       child: Column(
         children: [
-          _BrandMark(dark: dark, compact: true),
-          const SizedBox(height: 8),
           _RailAction(
             dark: dark,
             icon: Icons.link_rounded,
@@ -519,7 +503,8 @@ class _LandscapeControlRail extends StatelessWidget {
               color: _secondary(dark),
               fontSize: 7,
               fontWeight: FontWeight.w800,
-              letterSpacing: .4,
+              letterSpacing: .25,
+              height: 1.15,
             ),
           ),
         ],
@@ -583,6 +568,8 @@ class _HeaderAction extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = _accent(dark);
     final text = active ? _activeTextOn(color) : _foreground(dark);
+    final buttonWidth = label == 'SETTINGS' ? 82.0 : 68.0;
+
     return Tooltip(
       message: label,
       child: Material(
@@ -590,28 +577,37 @@ class _HeaderAction extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(6),
           onTap: onTap,
-          child: Container(
-            constraints: const BoxConstraints(minWidth: 56, minHeight: 42),
-            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 110),
+            width: buttonWidth,
+            height: 38,
+            padding: const EdgeInsets.symmetric(horizontal: 6),
             decoration: BoxDecoration(
               color: active ? color : _surfaceAlt(dark),
-              border: Border.all(color: active ? color : _borderStrong(dark)),
+              border: Border.all(
+                color: active ? color : _borderStrong(dark),
+              ),
               borderRadius: BorderRadius.circular(6),
             ),
-            child: Column(
+            child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon, size: 15, color: text),
-                const SizedBox(height: 3),
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: text,
-                    fontSize: 7.2,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: .4,
+                Icon(icon, size: 14, color: text),
+                const SizedBox(width: 5),
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      softWrap: false,
+                      style: TextStyle(
+                        color: text,
+                        fontSize: 8,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: .45,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -661,7 +657,9 @@ class _BandButton extends StatelessWidget {
             padding: EdgeInsets.symmetric(horizontal: rail ? 5 : 2),
             decoration: BoxDecoration(
               color: active ? color : _surfaceAlt(dark),
-              border: Border.all(color: active ? color : _borderStrong(dark)),
+              border: Border.all(
+                color: active ? color : _borderStrong(dark),
+              ),
               borderRadius: BorderRadius.circular(6),
             ),
             child: busy
@@ -726,7 +724,9 @@ class _SimpleAction extends StatelessWidget {
             height: double.infinity,
             decoration: BoxDecoration(
               color: active ? color : _surfaceAlt(dark),
-              border: Border.all(color: active ? color : _borderStrong(dark)),
+              border: Border.all(
+                color: active ? color : _borderStrong(dark),
+              ),
               borderRadius: BorderRadius.circular(6),
             ),
             child: Row(
@@ -787,18 +787,20 @@ class _RailAction extends StatelessWidget {
           borderRadius: BorderRadius.circular(6),
           onTap: enabled ? onTap : null,
           child: Container(
-            height: 48,
+            height: 46,
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 5),
             decoration: BoxDecoration(
               color: active ? color : _surfaceAlt(dark),
-              border: Border.all(color: active ? color : _borderStrong(dark)),
+              border: Border.all(
+                color: active ? color : _borderStrong(dark),
+              ),
               borderRadius: BorderRadius.circular(6),
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon, size: 15, color: textColor),
+                Icon(icon, size: 14, color: textColor),
                 const SizedBox(height: 3),
                 FittedBox(
                   fit: BoxFit.scaleDown,
@@ -809,7 +811,7 @@ class _RailAction extends StatelessWidget {
                       color: textColor,
                       fontSize: 7,
                       fontWeight: FontWeight.w800,
-                      letterSpacing: .35,
+                      letterSpacing: .3,
                     ),
                   ),
                 ),
@@ -917,7 +919,8 @@ class _CameraPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final outline = _hasPreview ? _borderStrong(dark) : _border(dark);
-    if (_isMultiView && MediaQuery.orientationOf(context) == Orientation.portrait) {
+    if (_isMultiView &&
+        MediaQuery.orientationOf(context) == Orientation.portrait) {
       return _buildPortraitMultiView(outline);
     }
 
@@ -946,12 +949,22 @@ class _CameraPreview extends StatelessWidget {
                   right: 10,
                   child: Row(
                     children: [
-                      _PreviewTag(text: _modeLabel, active: true, accent: _modeAccent),
+                      _PreviewTag(
+                        text: _modeLabel,
+                        active: true,
+                        accent: _modeAccent,
+                      ),
                       const SizedBox(width: 5),
                       if (sourceLabel?.trim().isNotEmpty == true && _isNdvi)
-                        Flexible(child: _PreviewTag(text: sourceLabel!.trim())),
+                        Flexible(
+                          child: _PreviewTag(text: sourceLabel!.trim()),
+                        ),
                       const Spacer(),
-                      _PreviewTag(text: fps == null ? '-- FPS' : '${fps!.toStringAsFixed(1)} FPS'),
+                      _PreviewTag(
+                        text: fps == null
+                            ? '-- FPS'
+                            : '${fps!.toStringAsFixed(1)} FPS',
+                      ),
                     ],
                   ),
                 ),
@@ -979,9 +992,11 @@ class _CameraPreview extends StatelessWidget {
                         ),
                         const Spacer(),
                         if (_isNdvi)
-                          _PreviewMeta(label: 'VALID ${ndviValidPixels} PX'),
+                          _PreviewMeta(label: 'VALID $ndviValidPixels PX'),
                         if (_isNdvi) const SizedBox(width: 5),
-                        _PreviewMeta(label: 'CAPTURE ${captureMode.toUpperCase()}'),
+                        _PreviewMeta(
+                          label: 'CAPTURE ${captureMode.toUpperCase()}',
+                        ),
                         const SizedBox(width: 5),
                         _PreviewMeta(label: _frameLabel()),
                       ],
@@ -1037,17 +1052,28 @@ class _CameraPreview extends StatelessWidget {
                   color: _surfaceAlt(dark),
                   child: Row(
                     children: [
-                      _PreviewTag(text: 'MULTI-VIEW', active: true, accent: _accent(dark)),
+                      _PreviewTag(
+                        text: 'MULTI-VIEW',
+                        active: true,
+                        accent: _accent(dark),
+                      ),
                       const Spacer(),
-                      _PreviewTag(text: fps == null ? '-- FPS' : '${fps!.toStringAsFixed(1)} FPS'),
+                      _PreviewTag(
+                        text: fps == null
+                            ? '-- FPS'
+                            : '${fps!.toStringAsFixed(1)} FPS',
+                      ),
                     ],
                   ),
                 ),
                 Expanded(
                   child: _hasByteFrame
                       ? LayoutBuilder(
-                          builder: (context, constraints) => SingleChildScrollView(
-                            key: const PageStorageKey<String>('landcam-multiview-portrait-scroll'),
+                          builder: (context, constraints) =>
+                              SingleChildScrollView(
+                            key: const PageStorageKey<String>(
+                              'landcam-multiview-portrait-scroll',
+                            ),
                             scrollDirection: Axis.vertical,
                             physics: const ClampingScrollPhysics(),
                             child: Image.memory(
@@ -1094,11 +1120,15 @@ class _CameraPreview extends StatelessWidget {
     final dimensions = frameWidth != null && frameHeight != null
         ? '${frameWidth}x$frameHeight'
         : 'SIZE --';
-    final sourceCodec = codec?.trim().isNotEmpty == true ? codec!.toUpperCase() : '--';
+    final sourceCodec = codec?.trim().isNotEmpty == true
+        ? codec!.toUpperCase()
+        : '--';
     return '$dimensions / $sourceCodec';
   }
 
-  String _frameLabel() => frameCount <= 0 ? 'FRAME --' : 'FRAME ${frameCount.toString().padLeft(6, '0')}';
+  String _frameLabel() => frameCount <= 0
+      ? 'FRAME --'
+      : 'FRAME ${frameCount.toString().padLeft(6, '0')}';
 }
 
 class _PreviewMeta extends StatelessWidget {
@@ -1111,7 +1141,10 @@ class _PreviewMeta extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
         decoration: BoxDecoration(
           color: Colors.black.withValues(alpha: .82),
-          border: Border.all(color: Colors.white.withValues(alpha: .18), width: .8),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: .18),
+            width: .8,
+          ),
           borderRadius: BorderRadius.circular(5),
         ),
         child: Text(
@@ -1137,7 +1170,10 @@ class _NdviLegend extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
         decoration: BoxDecoration(
           color: Colors.black.withValues(alpha: .84),
-          border: Border.all(color: Colors.white.withValues(alpha: .18), width: .8),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: .18),
+            width: .8,
+          ),
           borderRadius: BorderRadius.circular(5),
         ),
         child: Column(
@@ -1146,7 +1182,12 @@ class _NdviLegend extends StatelessWidget {
           children: [
             const Text(
               'NDVI',
-              style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w900, letterSpacing: 1),
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 8,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1,
+              ),
             ),
             const SizedBox(height: 5),
             Container(
@@ -1169,7 +1210,11 @@ class _NdviLegend extends StatelessWidget {
               width: 132,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [_NdviLabel('-1.0'), _NdviLabel('0.0'), _NdviLabel('+1.0')],
+                children: [
+                  _NdviLabel('-1.0'),
+                  _NdviLabel('0.0'),
+                  _NdviLabel('+1.0'),
+                ],
               ),
             ),
           ],
@@ -1184,7 +1229,11 @@ class _NdviLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Text(
         text,
-        style: const TextStyle(color: Colors.white, fontSize: 7, fontWeight: FontWeight.w700),
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 7,
+          fontWeight: FontWeight.w700,
+        ),
       );
 }
 
@@ -1209,46 +1258,48 @@ class _PreviewEmpty extends StatelessWidget {
         : activating
             ? 'ACQUIRING ${band.title}'
             : link == CameraLink.idle || link == CameraLink.error
-                ? 'CONNECT CAMERA'
+                ? 'NO ACTIVE CAMERA CONNECTION'
                 : 'WAITING FOR ${band.title}';
     final color = activating || ndviEnabled ? _accent(dark) : _muted(dark);
+    final icon = activating || ndviEnabled
+        ? Icons.radar_rounded
+        : link == CameraLink.idle || link == CameraLink.error
+            ? Icons.link_off_rounded
+            : Icons.sensors_outlined;
 
     return ColoredBox(
       color: _background(dark),
       child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 58,
-              height: 58,
-              decoration: BoxDecoration(
-                color: _surfaceAlt(dark),
-                border: Border.all(color: _borderStrong(dark)),
-                borderRadius: BorderRadius.circular(6),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: _surfaceAlt(dark),
+                  border: Border.all(color: _borderStrong(dark)),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(icon, color: color, size: 23),
               ),
-              child: Icon(
-                ndviEnabled || activating
-                    ? Icons.radar_rounded
-                    : link == CameraLink.idle || link == CameraLink.error
-                        ? Icons.camera_outlined
-                        : Icons.crop_free_rounded,
-                color: color,
-                size: 25,
+              const SizedBox(height: 13),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                softWrap: true,
+                style: TextStyle(
+                  color: activating ? _accent(dark) : _foreground(dark),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: .65,
+                  height: 1.25,
+                ),
               ),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: activating ? _accent(dark) : _foreground(dark),
-                fontSize: 11,
-                fontWeight: FontWeight.w900,
-                letterSpacing: .8,
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1259,7 +1310,8 @@ class _ViewfinderOverlay extends StatelessWidget {
   const _ViewfinderOverlay();
 
   @override
-  Widget build(BuildContext context) => CustomPaint(painter: _ViewfinderPainter());
+  Widget build(BuildContext context) =>
+      CustomPaint(painter: _ViewfinderPainter());
 }
 
 class _ViewfinderPainter extends CustomPainter {
@@ -1291,44 +1343,6 @@ class _ViewfinderPainter extends CustomPainter {
   bool shouldRepaint(covariant _ViewfinderPainter oldDelegate) => false;
 }
 
-class _BrandMark extends StatelessWidget {
-  const _BrandMark({required this.dark, this.compact = false});
-  final bool dark;
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        width: compact ? 38 : 40,
-        height: compact ? 38 : 40,
-        decoration: BoxDecoration(
-          color: _surfaceAlt(dark),
-          border: Border.all(color: _borderStrong(dark)),
-          borderRadius: BorderRadius.circular(6),
-        ),
-        child: Icon(Icons.camera_alt_outlined, color: _foreground(dark), size: compact ? 18 : 20),
-      );
-}
-
-class _StatusIndicator extends StatelessWidget {
-  const _StatusIndicator({required this.link, required this.dark});
-  final CameraLink link;
-  final bool dark;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = switch (link) {
-      CameraLink.ready => _accent(dark),
-      CameraLink.error => _danger(dark),
-      _ => _muted(dark),
-    };
-    return Container(
-      width: 8,
-      height: 8,
-      decoration: BoxDecoration(shape: BoxShape.circle, color: color),
-    );
-  }
-}
-
 class _ShutterButton extends StatelessWidget {
   const _ShutterButton({
     required this.dark,
@@ -1347,6 +1361,9 @@ class _ShutterButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accent = _accent(dark);
+    final outerSize = compact ? 78.0 : 84.0;
+    final innerSize = compact ? 54.0 : 58.0;
+
     return Opacity(
       opacity: ready ? 1 : .34,
       child: Material(
@@ -1356,8 +1373,8 @@ class _ShutterButton extends StatelessWidget {
           onTap: ready && !capturing ? onTap : null,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 120),
-            width: compact ? 78 : 84,
-            height: compact ? 78 : 84,
+            width: outerSize,
+            height: outerSize,
             decoration: BoxDecoration(
               color: _surfaceAlt(dark),
               shape: BoxShape.circle,
@@ -1366,18 +1383,22 @@ class _ShutterButton extends StatelessWidget {
             child: Center(
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 120),
-                width: compact ? 54 : 58,
-                height: compact ? 54 : 58,
+                width: innerSize,
+                height: innerSize,
                 decoration: BoxDecoration(
                   color: capturing ? _surface(dark) : accent,
                   shape: BoxShape.circle,
                   border: Border.all(color: accent, width: 1.5),
                 ),
-                child: Icon(
-                  capturing ? Icons.hourglass_top_rounded : Icons.camera_alt_rounded,
-                  color: capturing ? accent : _activeTextOn(accent),
-                  size: 23,
-                ),
+                child: capturing
+                    ? Padding(
+                        padding: const EdgeInsets.all(15),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: accent,
+                        ),
+                      )
+                    : null,
               ),
             ),
           ),
@@ -1424,26 +1445,45 @@ class _PreviewTag extends StatelessWidget {
   }
 }
 
-Color _background(bool dark) => dark ? const Color(0xFF0A0D0B) : const Color(0xFFF2F5F3);
-Color _foreground(bool dark) => dark ? const Color(0xFFF2F6F3) : const Color(0xFF111612);
+Color _background(bool dark) =>
+    dark ? const Color(0xFF0A0D0B) : const Color(0xFFF2F5F3);
+Color _foreground(bool dark) =>
+    dark ? const Color(0xFFF2F6F3) : const Color(0xFF111612);
 Color _surface(bool dark) => dark ? const Color(0xFF101512) : Colors.white;
-Color _surfaceAlt(bool dark) => dark ? const Color(0xFF151B17) : const Color(0xFFE8EEEA);
-Color _accent(bool dark) => dark ? const Color(0xFF55D98B) : const Color(0xFF1D7E4B);
-Color _secondary(bool dark) => (dark ? const Color(0xFFE7EEE9) : const Color(0xFF2D3831)).withValues(alpha: .68);
-Color _muted(bool dark) => (dark ? const Color(0xFFB4BFB8) : const Color(0xFF56635B)).withValues(alpha: .70);
-Color _border(bool dark) => (dark ? const Color(0xFFB8C4BD) : const Color(0xFF35423A)).withValues(alpha: .14);
-Color _borderStrong(bool dark) => (dark ? const Color(0xFFB8C4BD) : const Color(0xFF35423A)).withValues(alpha: .24);
-Color _danger(bool dark) => dark ? const Color(0xFFE56B6F) : const Color(0xFFB64045);
+Color _surfaceAlt(bool dark) =>
+    dark ? const Color(0xFF151B17) : const Color(0xFFE8EEEA);
+Color _accent(bool dark) =>
+    dark ? const Color(0xFF55D98B) : const Color(0xFF1D7E4B);
+Color _secondary(bool dark) =>
+    (dark ? const Color(0xFFE7EEE9) : const Color(0xFF2D3831))
+        .withValues(alpha: .74);
+Color _muted(bool dark) =>
+    (dark ? const Color(0xFFB4BFB8) : const Color(0xFF56635B))
+        .withValues(alpha: .70);
+Color _border(bool dark) =>
+    (dark ? const Color(0xFFB8C4BD) : const Color(0xFF35423A))
+        .withValues(alpha: .14);
+Color _borderStrong(bool dark) =>
+    (dark ? const Color(0xFFB8C4BD) : const Color(0xFF35423A))
+        .withValues(alpha: .24);
+Color _danger(bool dark) =>
+    dark ? const Color(0xFFE56B6F) : const Color(0xFFB64045);
 
 Color _spectralAccent(bool dark, SpectralBand band) => switch (band) {
-      SpectralBand.rgb => dark ? const Color(0xFFE9EFEB) : const Color(0xFF1A211D),
-      SpectralBand.red => dark ? const Color(0xFFE16B70) : const Color(0xFFB23D43),
-      SpectralBand.green => dark ? const Color(0xFF55D98B) : const Color(0xFF1D7E4B),
-      SpectralBand.blue => dark ? const Color(0xFF72A8F4) : const Color(0xFF3A68AE),
-      SpectralBand.nir => dark ? const Color(0xFFD4A56B) : const Color(0xFF946428),
+      SpectralBand.rgb =>
+        dark ? const Color(0xFFE9EFEB) : const Color(0xFF1A211D),
+      SpectralBand.red =>
+        dark ? const Color(0xFFE16B70) : const Color(0xFFB23D43),
+      SpectralBand.green =>
+        dark ? const Color(0xFF55D98B) : const Color(0xFF1D7E4B),
+      SpectralBand.blue =>
+        dark ? const Color(0xFF72A8F4) : const Color(0xFF3A68AE),
+      SpectralBand.nir =>
+        dark ? const Color(0xFFD4A56B) : const Color(0xFF946428),
     };
 
-Color _activeTextOn(Color background) => background.computeLuminance() > .5 ? Colors.black : Colors.white;
+Color _activeTextOn(Color background) =>
+    background.computeLuminance() > .5 ? Colors.black : Colors.white;
 
 Color _ndviValueColor(double value) {
   if (value < 0) return const Color(0xFFD7191C);
