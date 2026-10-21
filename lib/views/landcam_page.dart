@@ -250,51 +250,37 @@ class _LandCamPageState extends State<LandCamPage> {
     }
   }
 
-  Future<void> _connectBluetoothFromSheet(BuildContext sheetContext) async {
+  /// Scans for camera-like Bluetooth devices for the picker in
+  /// [ConnectionSheet]. The sheet handles presentation and device selection;
+  /// this page bridges the scan to the ViewModel.
+  Future<List<Map<String, dynamic>>> _scanBluetoothDevicesForSheet() async {
     try {
       final devices = await _viewModel.scanBluetoothDevices();
-      if (!mounted || !sheetContext.mounted) return;
+      if (!mounted) return const <Map<String, dynamic>>[];
       if (devices.isEmpty) {
-        _showSheetToast(
-          sheetContext,
-          'NO BLUETOOTH DEVICES FOUND — CHECK PERMISSIONS AND NATIVE TRANSPORT SUPPORT',
+        _showToast(
+          'NO CAMERA-LIKE BLUETOOTH DEVICES FOUND — CHECK PERMISSIONS, THEN USE CAMERA WI-FI QR/SSID FOR REMOTE CONTROL',
         );
-        return;
       }
-
-      final selected = await _pickConnectionDevice(
-        sheetContext: sheetContext,
-        title: 'SELECT BLUETOOTH DEVICE',
-        devices: devices,
-        labelFor: (device) =>
-            (device['name'] ?? 'Unknown Bluetooth device').toString(),
-        detailsFor: (device) => [
-          if ((device['address'] ?? device['deviceId']) != null)
-            'Address: ${device['address'] ?? device['deviceId']}',
-          device['paired'] == true ? 'Paired device' : 'Not paired',
-        ].join(' • '),
-      );
-      if (selected == null || !mounted || !sheetContext.mounted) return;
-
-      final deviceId = (selected['deviceId'] ?? selected['address'])
-          ?.toString();
-      if (deviceId == null || deviceId.isEmpty) {
-        _showSheetToast(sheetContext, 'SELECTED BLUETOOTH DEVICE HAS NO ID');
-        return;
-      }
-      final accepted = await _viewModel.connectBluetooth(deviceId: deviceId);
-      if (!mounted || !sheetContext.mounted) return;
-      _showSheetToast(
-        sheetContext,
-        accepted
-            ? 'BLUETOOTH REQUEST SENT — WAIT FOR DEVICE STATUS'
-            : 'BLUETOOTH NOT ACCEPTED BY NATIVE — CHECK DIAGNOSTIC LOG',
-      );
+      return devices;
     } catch (error) {
-      if (mounted && sheetContext.mounted) {
-        _showSheetToast(sheetContext, 'BLUETOOTH PAIRING FAILED: $error');
-      }
+      if (mounted) _showToast('BLUETOOTH SCAN FAILED: $error');
+      return const <Map<String, dynamic>>[];
     }
+  }
+
+  /// Connects to the BLE device selected inside [ConnectionSheet].
+  ///
+  /// Bluetooth is discovery-only for this camera workflow. Keep this callback as
+  /// a defensive fallback for older sheet builds, but never ask native to create
+  /// an unverified Bluetooth camera-control connection.
+  Future<bool> _connectBluetoothDeviceFromSheet(String deviceAddress) async {
+    if (mounted) {
+      _showToast(
+        'BLUETOOTH DISCOVERY ONLY — USE CAMERA WI-FI QR OR SSID/PASSWORD FOR REMOTE SHOOTING',
+      );
+    }
+    return false;
   }
 
   Future<void> _connectUsbFromSheet(BuildContext sheetContext) async {
@@ -529,9 +515,10 @@ class _LandCamPageState extends State<LandCamPage> {
                   );
                 }
               },
-              onConnectBluetooth: () async {
-                await _connectBluetoothFromSheet(sheetContext);
-              },
+              // The sheet owns the device picker. The page supplies only the
+              // Bluetooth discovery and the Wi-Fi guidance fallback.
+              onScanBluetoothDevices: _scanBluetoothDevicesForSheet,
+              onConnectBluetoothDevice: _connectBluetoothDeviceFromSheet,
               onConnectWifiCredentials: ({
                 required String ssid,
                 required String password,

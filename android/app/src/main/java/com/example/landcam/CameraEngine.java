@@ -229,15 +229,38 @@ public class CameraEngine {
      */
     private static final float NDVI_FIXED_NIR_GAIN = 1.0f; // neutral digital gain; not radiometric calibration
 
-    // Visible-channel vegetation *candidate* mask for false-colour display.
-    // These thresholds are a visible-colour heuristic for this warm-tinted
-    // crop; they are not a biological classifier.
+    // Foliage colour mask used inside the central target ROI. Green and yellow
+    // foliage are accepted because visible leaf colour varies with the specimen.
+    // This remains a low-cost heuristic, not a trained semantic leaf classifier.
     private static final float NDVI_VEG_GREEN_RED_RATIO = 0.62f;
     private static final float NDVI_VEG_GREEN_BLUE_RATIO = 1.10f;
     private static final float NDVI_VEG_GREEN_EXCESS_MIN = 0.015f;
+    // Conservative legacy threshold retained for later calibration comparisons.
     private static final float NDVI_HIGH_INDEX_THRESHOLD = 0.25f;
+    // Candidate-search ROI aligned approximately with the on-screen focus brackets.
+    // A single connected foliage component nearest the center seed becomes the target leaf.
+    private static final float NDVI_TARGET_ROI_MIN_X = 0.18f;
+    private static final float NDVI_TARGET_ROI_MAX_X = 0.82f;
+    private static final float NDVI_TARGET_ROI_MIN_Y = 0.18f;
+    private static final float NDVI_TARGET_ROI_MAX_Y = 0.82f;
+    // Connected-component analysis is bounded so high-resolution capture processing
+    // does not allocate a full-resolution flood-fill queue.
+    private static final int NDVI_FOCUS_MASK_MAX_PIXELS = 250000;
+    private static final int NDVI_FOCUS_MIN_COMPONENT_PIXELS = 5;
+    // RGB/NIR JPEG is uncalibrated; require a modest positive index for target candidates.
+    private static final float NDVI_TARGET_MIN_INDEX_THRESHOLD = 0.05f;
+    private static final float NDVI_TARGET_COLOR_FALLBACK_THRESHOLD = 0.05f;
+    // Yellow foliage may be valid target foliage even when green is not the strongest RGB channel.
+    private static final float NDVI_YELLOW_MAX_RED_GREEN_DIFF = 0.24f;
+    private static final float NDVI_YELLOW_MIN_GREEN_SHARE = 0.22f;
     private static final float NDVI_MIN_LINEAR_DENOMINATOR = 0.0035f;
-    private static final int NDVI_NON_VEGETATION_COLOR = 0xFF34383B;
+    private static final float NDVI_MIN_RGB_TOTAL = 0.06f;
+    // Palette endpoints match the NDVI legend shown in the upper-left UI.
+    private static final int NDVI_PALETTE_RED = 0xFFC91424;
+    private static final int NDVI_PALETTE_YELLOW = 0xFFFFD52A;
+    private static final int NDVI_PALETTE_GREEN = 0xFF0DA83B;
+    private static final int NDVI_VEGETATION_COLOR = 0xFF0DA83B;
+    private static final int NDVI_CLIPPED_UNDEFINED_COLOR = 0xFFFF8C00;
     private static final int NDVI_PREVIEW_JPEG_QUALITY = 86;
     private static final int NDVI_CAPTURE_JPEG_QUALITY = 92;
 
@@ -556,6 +579,15 @@ public class CameraEngine {
     private static final String KEY_PERFORMANCE_MODE = "performance_mode";
     private static final String KEY_PREVIEW_DISPLAY_MODE = "preview_display_mode";
     private static final String KEY_SETTINGS_SCHEMA_VERSION = "settings_schema_version";
+    private static final String KEY_NDVI_REF_CAL_ENABLED = "ndvi_ref_cal_enabled";
+    private static final String KEY_NDVI_RED_DARK_SAMPLE = "ndvi_red_dark_sample";
+    private static final String KEY_NDVI_RED_WHITE_SAMPLE = "ndvi_red_white_sample";
+    private static final String KEY_NDVI_RED_DARK_REFLECTANCE = "ndvi_red_dark_reflectance";
+    private static final String KEY_NDVI_RED_WHITE_REFLECTANCE = "ndvi_red_white_reflectance";
+    private static final String KEY_NDVI_NIR_DARK_SAMPLE = "ndvi_nir_dark_sample";
+    private static final String KEY_NDVI_NIR_WHITE_SAMPLE = "ndvi_nir_white_sample";
+    private static final String KEY_NDVI_NIR_DARK_REFLECTANCE = "ndvi_nir_dark_reflectance";
+    private static final String KEY_NDVI_NIR_WHITE_REFLECTANCE = "ndvi_nir_white_reflectance";
 
     // Version 2 migrates the previous accidental defaults (RAW + PROCESSED / BALANCED)
     // to the intended defaults without overwriting other user-selected combinations.
@@ -613,6 +645,23 @@ public class CameraEngine {
     private volatile int lastNdviValidPixels = 0;
     private volatile float lastNdviNirGain = NDVI_FIXED_NIR_GAIN;
     private volatile long lastNdviStatisticsAt = 0L;
+
+    /*
+     * Two-point per-band reference normalization. Values are encoded 8-bit
+     * JPEG sample means acquired with the same camera settings as the scene.
+     * Reference reflectances must come from the calibration target certificate.
+     * Disabled by default: no calibration is fabricated for a camera without
+     * measured reference data.
+     */
+    private volatile boolean ndviReferenceCalibrationEnabled = false;
+    private volatile int ndviRedDarkSample8Bit = 8;
+    private volatile int ndviRedWhiteSample8Bit = 220;
+    private volatile float ndviRedDarkReferenceReflectance = 0.03f;
+    private volatile float ndviRedWhiteReferenceReflectance = 0.99f;
+    private volatile int ndviNirDarkSample8Bit = 8;
+    private volatile int ndviNirWhiteSample8Bit = 220;
+    private volatile float ndviNirDarkReferenceReflectance = 0.03f;
+    private volatile float ndviNirWhiteReferenceReflectance = 0.99f;
 
     private final Object gpuNdviLock = new Object();
     private volatile SurfaceTexture gpuNdviSurfaceTexture;
@@ -948,7 +997,7 @@ public class CameraEngine {
             HashMap<String, Object> ndviOff =
                     new HashMap<>();
             ndviOff.put("enabled", false);
-            ndviOff.put("metric", "RELATIVE_DIGITAL_NDVI");
+            ndviOff.put("metric", currentNdviMetric());
             ndviOff.put(
                     "source",
                     "RED_LEFT_OPTICAL_ROI_VS_NIR_RIGHT_OPTICAL_ROI"
@@ -1241,6 +1290,29 @@ public class CameraEngine {
                 ? PREVIEW_DISPLAY_PROCESSED
                 : savedPreview;
 
+        ndviReferenceCalibrationEnabled = preferences.getBoolean(
+                KEY_NDVI_REF_CAL_ENABLED, false);
+        ndviRedDarkSample8Bit = preferences.getInt(KEY_NDVI_RED_DARK_SAMPLE, 8);
+        ndviRedWhiteSample8Bit = preferences.getInt(KEY_NDVI_RED_WHITE_SAMPLE, 220);
+        ndviRedDarkReferenceReflectance = preferences.getFloat(
+                KEY_NDVI_RED_DARK_REFLECTANCE, 0.03f);
+        ndviRedWhiteReferenceReflectance = preferences.getFloat(
+                KEY_NDVI_RED_WHITE_REFLECTANCE, 0.99f);
+        ndviNirDarkSample8Bit = preferences.getInt(KEY_NDVI_NIR_DARK_SAMPLE, 8);
+        ndviNirWhiteSample8Bit = preferences.getInt(KEY_NDVI_NIR_WHITE_SAMPLE, 220);
+        ndviNirDarkReferenceReflectance = preferences.getFloat(
+                KEY_NDVI_NIR_DARK_REFLECTANCE, 0.03f);
+        ndviNirWhiteReferenceReflectance = preferences.getFloat(
+                KEY_NDVI_NIR_WHITE_REFLECTANCE, 0.99f);
+        if (ndviReferenceCalibrationEnabled && !isValidNdviReferenceCalibration(
+                ndviRedDarkSample8Bit, ndviRedWhiteSample8Bit,
+                ndviRedDarkReferenceReflectance, ndviRedWhiteReferenceReflectance,
+                ndviNirDarkSample8Bit, ndviNirWhiteSample8Bit,
+                ndviNirDarkReferenceReflectance, ndviNirWhiteReferenceReflectance)) {
+            ndviReferenceCalibrationEnabled = false;
+            Log.w(TAG, "Stored NDVI reference calibration was invalid; calibration disabled");
+        }
+
         applyPerformancePreset();
         persistSettings();
     }
@@ -1255,6 +1327,15 @@ public class CameraEngine {
                 .putString(KEY_PERFORMANCE_MODE, performanceMode)
                 .putString(KEY_PREVIEW_DISPLAY_MODE, previewDisplayMode)
                 .putInt(KEY_SETTINGS_SCHEMA_VERSION, SETTINGS_SCHEMA_VERSION)
+                .putBoolean(KEY_NDVI_REF_CAL_ENABLED, ndviReferenceCalibrationEnabled)
+                .putInt(KEY_NDVI_RED_DARK_SAMPLE, ndviRedDarkSample8Bit)
+                .putInt(KEY_NDVI_RED_WHITE_SAMPLE, ndviRedWhiteSample8Bit)
+                .putFloat(KEY_NDVI_RED_DARK_REFLECTANCE, ndviRedDarkReferenceReflectance)
+                .putFloat(KEY_NDVI_RED_WHITE_REFLECTANCE, ndviRedWhiteReferenceReflectance)
+                .putInt(KEY_NDVI_NIR_DARK_SAMPLE, ndviNirDarkSample8Bit)
+                .putInt(KEY_NDVI_NIR_WHITE_SAMPLE, ndviNirWhiteSample8Bit)
+                .putFloat(KEY_NDVI_NIR_DARK_REFLECTANCE, ndviNirDarkReferenceReflectance)
+                .putFloat(KEY_NDVI_NIR_WHITE_REFLECTANCE, ndviNirWhiteReferenceReflectance)
                 .apply();
     }
 
@@ -1367,26 +1448,35 @@ public class CameraEngine {
         lastNdviStatisticsAt = 0L;
 
         /*
-         * A new NDVI session starts with renderer selection unknown. If the
-         * GPU surface is temporarily unavailable, CPU may be used for that
-         * frame without permanently locking the session. A real GPU failure
-         * is handled inside renderGpuNdvi() and then the session becomes CPU.
+         * The single-leaf mode needs a connected-component mask, which cannot
+         * be determined reliably in a single GLES fragment pass. Use the existing
+         * CPU preview route for this mode so exactly one selected component is
+         * highlighted and all other valid samples use the continuous NDVI palette.
+         * The GPU renderer class remains intact for compatibility and future use.
          */
-        ndviRendererMode = NDVI_RENDERER_UNKNOWN;
+        ndviRendererMode = NDVI_RENDERER_CPU;
 
         lastNdviFrameEventAt = 0L;
         lastNormalFrameEventAt = 0L;
 
         HashMap<String, Object> data = new HashMap<>();
         data.put("enabled", ndviEnabled);
-        data.put("metric", "RELATIVE_DIGITAL_NDVI");
+        data.put("metric", currentNdviMetric());
         data.put(
                 "source",
                 "RED_LEFT_OPTICAL_ROI_VS_NIR_RIGHT_OPTICAL_ROI"
         );
-        data.put("registration", "NORMALIZED_AFFINE_UNCALIBRATED_DEFAULTS");
         data.put("registrationCalibrated", false);
         data.put("normalized", true);
+        data.put("referenceCalibrationEnabled", ndviReferenceCalibrationEnabled);
+        data.put("registration", getNdviRegistrationState());
+        data.put("referenceCalibrationModel", "TWO_POINT_PER_BAND_REFERENCE_NORMALIZATION");
+        data.put("greenVegetationMaskAvailable", true);
+        data.put("singleTargetLeafComponent", true);
+        data.put("ndviDisplayPalette", "RED(-1)-YELLOW(0)-GREEN(+1)");
+        data.put("vegetationMaskMethod", "CENTER_NEAREST_CONNECTED_FOLIAGE_COMPONENT_WITH_CONTINUOUS_NDVI_PALETTE");
+        data.put("targetRoi", "CENTER_64_PERCENT_NEAREST_SINGLE_COMPONENT");
+        data.put("vegetationMaskIndexThreshold", NDVI_TARGET_MIN_INDEX_THRESHOLD);
 
         sendEvent("ndviModeChanged", data);
 
@@ -1402,6 +1492,145 @@ public class CameraEngine {
 
     public boolean isNdviEnabled() {
         return ndviEnabled;
+    }
+
+    /**
+     * Configure two-point reference normalization for the red and NIR bands.
+     *
+     * The four sample values are 8-bit encoded means measured over a reference
+     * target in the same composite-frame channels used by NDVI: RED from the
+     * left RGB ROI and NIR from pixelNirIntensity() in the right NIR ROI.
+     * The reflectance arguments are fractions in [0,1] taken from the target's
+     * spectral reflectance certificate, not guessed from the displayed image.
+     *
+     * Keep exposure, ISO, shutter speed, focus/lens geometry and image pipeline
+     * fixed between reference sampling and normal captures. Because the input
+     * is JPEG rather than calibrated linear RAW, the result is a reference-
+     * normalized digital NDVI estimate, not laboratory-grade reflectance NDVI.
+     */
+    public synchronized boolean setNdviReferenceCalibration(
+            int redDarkSample8Bit,
+            int redWhiteSample8Bit,
+            float redDarkReferenceReflectance,
+            float redWhiteReferenceReflectance,
+            int nirDarkSample8Bit,
+            int nirWhiteSample8Bit,
+            float nirDarkReferenceReflectance,
+            float nirWhiteReferenceReflectance
+    ) {
+        if (!isValidNdviReferenceCalibration(
+                redDarkSample8Bit, redWhiteSample8Bit,
+                redDarkReferenceReflectance, redWhiteReferenceReflectance,
+                nirDarkSample8Bit, nirWhiteSample8Bit,
+                nirDarkReferenceReflectance, nirWhiteReferenceReflectance)) {
+            sendEvent("engineWarning", "INVALID NDVI CALIBRATION: use unclipped dark/bright samples and ordered reflectance references");
+            return false;
+        }
+
+        this.ndviRedDarkSample8Bit = redDarkSample8Bit;
+        this.ndviRedWhiteSample8Bit = redWhiteSample8Bit;
+        this.ndviRedDarkReferenceReflectance = redDarkReferenceReflectance;
+        this.ndviRedWhiteReferenceReflectance = redWhiteReferenceReflectance;
+        this.ndviNirDarkSample8Bit = nirDarkSample8Bit;
+        this.ndviNirWhiteSample8Bit = nirWhiteSample8Bit;
+        this.ndviNirDarkReferenceReflectance = nirDarkReferenceReflectance;
+        this.ndviNirWhiteReferenceReflectance = nirWhiteReferenceReflectance;
+        this.ndviReferenceCalibrationEnabled = true;
+        this.lastNdviNirGain = NDVI_FIXED_NIR_GAIN;
+        this.lastNdviValue = Double.NaN;
+        this.lastNdviValidPixels = 0;
+        this.lastNdviComputedAt = 0L;
+        this.lastNdviStatisticsAt = 0L;
+        this.lastNdviPreviewAt = 0L;
+        this.previewGeneration.incrementAndGet();
+        this.previewProcessingSequence.set(0L);
+        persistSettings();
+
+        Map<String, Object> state = getNdviReferenceCalibrationState();
+        sendEvent("ndviCalibrationChanged", state);
+        log("INFO", "NDVI REFERENCE NORMALIZATION ENABLED");
+        return true;
+    }
+
+    /** Disable reference normalization and return to the previous relative digital index. */
+    public synchronized boolean clearNdviReferenceCalibration() {
+        ndviReferenceCalibrationEnabled = false;
+        lastNdviValue = Double.NaN;
+        lastNdviValidPixels = 0;
+        lastNdviComputedAt = 0L;
+        lastNdviStatisticsAt = 0L;
+        lastNdviPreviewAt = 0L;
+        previewGeneration.incrementAndGet();
+        previewProcessingSequence.set(0L);
+        persistSettings();
+        sendEvent("ndviCalibrationChanged", getNdviReferenceCalibrationState());
+        log("INFO", "NDVI REFERENCE NORMALIZATION DISABLED");
+        return true;
+    }
+
+    /** Read-only calibration status for a native method-channel bridge or diagnostics UI. */
+    public synchronized Map<String, Object> getNdviReferenceCalibrationState() {
+        HashMap<String, Object> state = new HashMap<>();
+        state.put("enabled", ndviReferenceCalibrationEnabled);
+        state.put("model", "TWO_POINT_PER_BAND_REFERENCE_NORMALIZATION");
+        state.put("metric", currentNdviMetric());
+        state.put("radiometricCalibration", false);
+        state.put("inputEncoding", "8_BIT_JPEG_SRGB_APPROXIMATION");
+        state.put("redDarkSample8Bit", ndviRedDarkSample8Bit);
+        state.put("redWhiteSample8Bit", ndviRedWhiteSample8Bit);
+        state.put("redDarkReferenceReflectance", ndviRedDarkReferenceReflectance);
+        state.put("redWhiteReferenceReflectance", ndviRedWhiteReferenceReflectance);
+        state.put("nirDarkSample8Bit", ndviNirDarkSample8Bit);
+        state.put("nirWhiteSample8Bit", ndviNirWhiteSample8Bit);
+        state.put("nirDarkReferenceReflectance", ndviNirDarkReferenceReflectance);
+        state.put("nirWhiteReferenceReflectance", ndviNirWhiteReferenceReflectance);
+        return state;
+    }
+
+    private static boolean isValidNdviReferenceCalibration(
+            int redDarkSample8Bit,
+            int redWhiteSample8Bit,
+            float redDarkReferenceReflectance,
+            float redWhiteReferenceReflectance,
+            int nirDarkSample8Bit,
+            int nirWhiteSample8Bit,
+            float nirDarkReferenceReflectance,
+            float nirWhiteReferenceReflectance
+    ) {
+        return isValidCalibrationBand(
+                redDarkSample8Bit, redWhiteSample8Bit,
+                redDarkReferenceReflectance, redWhiteReferenceReflectance)
+                && isValidCalibrationBand(
+                nirDarkSample8Bit, nirWhiteSample8Bit,
+                nirDarkReferenceReflectance, nirWhiteReferenceReflectance);
+    }
+
+    private static boolean isValidCalibrationBand(
+            int darkSample8Bit,
+            int whiteSample8Bit,
+            float darkReferenceReflectance,
+            float whiteReferenceReflectance
+    ) {
+        if (darkSample8Bit < 0 || darkSample8Bit >= 250
+                || whiteSample8Bit < 0 || whiteSample8Bit >= 250
+                || whiteSample8Bit <= darkSample8Bit
+                || !Float.isFinite(darkReferenceReflectance)
+                || !Float.isFinite(whiteReferenceReflectance)
+                || darkReferenceReflectance < 0.0f
+                || whiteReferenceReflectance > 1.0f
+                || whiteReferenceReflectance <= darkReferenceReflectance) {
+            return false;
+        }
+        final float darkLinear = decodeSrgb(darkSample8Bit);
+        final float whiteLinear = decodeSrgb(whiteSample8Bit);
+        return Float.isFinite(darkLinear) && Float.isFinite(whiteLinear)
+                && (whiteLinear - darkLinear) >= 0.02f;
+    }
+
+    private String currentNdviMetric() {
+        return ndviReferenceCalibrationEnabled
+                ? "REFERENCE_NORMALIZED_DIGITAL_NDVI_FROM_JPEG"
+                : "RELATIVE_DIGITAL_NDVI";
     }
 
     /**
@@ -4789,7 +5018,9 @@ public class CameraEngine {
                     return;
                 }
 
-                updateGpuNdviStatisticsIfDue(source);
+                if (ndviRendererMode != NDVI_RENDERER_CPU) {
+                    updateGpuNdviStatisticsIfDue(source);
+                }
 
                 if (framePreviewGeneration != previewGeneration.get()
                         || !ndviEnabled) {
@@ -5035,15 +5266,11 @@ public class CameraEngine {
      */
 
     /**
-     * Builds a practical false-colour NDVI preview from the two optical ROIs.
-     *
-     * The RGB field is the spatial coordinate system only. Each output pixel
-     * uses the RED channel from the RGB ROI and the registered NIR intensity
-     * from the right optical ROI. The resulting relative/digital NDVI is
-     * mapped RED -> YELLOW -> GREEN.
-     *
-     * The output is PURE NDVI false colour. The RGB pixels are never blended
-     * into the visualization.
+     * Builds a single-target-leaf NDVI preview from paired optical ROIs.
+     * A bounded connected-component mask selects the foliage component nearest
+     * the center focus point. That one component is overlaid green; all other
+     * valid paired pixels use the continuous NDVI legend palette.
+     * This is a color heuristic, not a trained semantic classifier or calibrated NDVI.
      */
     /**
      * Live NDVI preview for the unified crop.
@@ -5054,8 +5281,8 @@ public class CameraEngine {
      *
      * The numeric result remains relative/digital NDVI because this source
      * does not provide radiometrically calibrated reflectance. A fixed neutral
-     * gain avoids scene-dependent index changes. Green false colour is shown
-     * only for visible-foliage candidates above a high relative-index threshold.
+     * gain avoids scene-dependent index changes. The central focus ROI is used
+     * to align the green target region with the viewfinder brackets.
      */
     private byte[] buildNdviPreviewJpeg(Bitmap source) {
         return buildNdviJpeg(source, true);
@@ -5092,16 +5319,26 @@ public class CameraEngine {
         final int sampledHeight = (height + step - 1) / step;
         final int nirWidth = nirRect.width();
         final int nirHeight = nirRect.height();
+        final int focusStep = Math.max(step, (int) Math.ceil(Math.sqrt(
+                (double) pixelCountLong / (double) NDVI_FOCUS_MASK_MAX_PIXELS)));
+        final int focusWidth = (width + focusStep - 1) / focusStep;
+        final int focusHeight = (height + focusStep - 1) / focusStep;
 
-        // Keep only one RGB scanline and one output scanline in memory. A full
-        // RGB crop + NIR crop + output int[] can exceed Android's heap on a
-        // 24 MP still even though the original capture bytes themselves are safe.
+        // The NIR ROI is already kept by the existing optical pipeline. Retain its
+        // paired pixel buffer and perform bounded connected-component selection on
+        // a coarse mask, then paint that one target component at output resolution.
         final int[] rgbRow = new int[width];
         final int[] nirPixels = new int[nirWidth * nirHeight];
         final int[] outputRow = new int[sampledWidth];
         source.getPixels(
                 nirPixels, 0, nirWidth,
                 nirRect.left, nirRect.top, nirWidth, nirHeight
+        );
+
+        final byte[] targetLeafMask = buildSingleTargetLeafMask(
+                source, rgbRect, width, height,
+                nirWidth, nirHeight, nirPixels,
+                focusStep, focusWidth, focusHeight
         );
 
         Bitmap output = Bitmap.createBitmap(
@@ -5111,11 +5348,9 @@ public class CameraEngine {
         );
         double ndviSum = 0.0d;
         int valid = 0;
+        int targetLeafValid = 0;
 
         try {
-            // The exact same normalized mapping, fixed gain, signal gates and
-            // sRGB approximation are mirrored by the GPU shader. This is not a
-            // radiometrically calibrated reflectance measurement.
             for (int sy = 0; sy < sampledHeight; sy++) {
                 final int y = Math.min(height - 1, sy * step);
                 source.getPixels(
@@ -5140,15 +5375,38 @@ public class CameraEngine {
                     final int redEncoded = Color.red(rgbColor);
                     final int nirEncoded = pixelNirIntensity(nirColor);
                     final float ndvi = calculateRelativeNdvi(redEncoded, nirEncoded);
+                    final boolean signalClipped =
+                            (redEncoded >= 250 && nirEncoded >= NDVI_MIN_VALID_SIGNAL)
+                                    || (nirEncoded >= 250 && redEncoded >= NDVI_MIN_VALID_SIGNAL);
 
-                    if (!Float.isFinite(ndvi)) {
+                    final int maskX = clampInt(x / focusStep, 0, focusWidth - 1);
+                    final int maskY = clampInt(y / focusStep, 0, focusHeight - 1);
+                    final boolean isSelectedTargetLeaf =
+                            targetLeafMask[maskY * focusWidth + maskX] != 0;
+
+                    if (isSelectedTargetLeaf) {
+                        // Exactly one connected foliage component gets the target-green overlay.
+                        outputRow[sx] = NDVI_VEGETATION_COLOR;
+                    } else if (Float.isFinite(ndvi)) {
+                        // All other measured pixels use the same continuous red-yellow-green
+                        // index scale represented by the legend in the upper-left of the UI.
+                        outputRow[sx] = ndviPaletteColor(ndvi);
+                    } else if (signalClipped) {
+                        // The numeric index is undefined for clipped channels: show amber,
+                        // rather than falsely claiming either vegetation or a low NDVI value.
+                        outputRow[sx] = NDVI_CLIPPED_UNDEFINED_COLOR;
+                    } else {
+                        // Mapped location but unusable signal; keep no-data distinct from NDVI red.
                         outputRow[sx] = Color.BLACK;
-                        continue;
                     }
 
-                    outputRow[sx] = ndviDisplayColor(ndvi, rgbColor);
-                    ndviSum += ndvi;
-                    valid++;
+                    if (Float.isFinite(ndvi)) {
+                        valid++;
+                        if (isSelectedTargetLeaf) {
+                            ndviSum += ndvi;
+                            targetLeafValid++;
+                        }
+                    }
                 }
                 output.setPixels(outputRow, 0, sampledWidth, 0, sy, sampledWidth, 1);
             }
@@ -5158,8 +5416,13 @@ public class CameraEngine {
                 return null;
             }
 
-            lastNdviValue = ndviSum / (double) valid;
-            lastNdviValidPixels = valid;
+            if (targetLeafValid > 0) {
+                lastNdviValue = ndviSum / (double) targetLeafValid;
+                lastNdviValidPixels = targetLeafValid;
+            } else {
+                lastNdviValue = Double.NaN;
+                lastNdviValidPixels = 0;
+            }
             lastNdviComputedAt = System.currentTimeMillis();
 
             return bitmapToJpeg(
@@ -5174,10 +5437,213 @@ public class CameraEngine {
     }
 
     /**
-     * Estimate the scalar NDVI from paired points sampled from the same source
-     * coordinates. Never sort Red and NIR independently: doing so destroys
-     * spatial pixel pairing and produces a mathematically meaningless mean.
-     * The actual false-colour image is rendered by the GPU.
+     * Builds a coarse foliage mask, labels its connected components, and keeps
+     * only the component nearest the center focus point. This prevents multiple
+     * separate leaves elsewhere in the crop from all receiving the target-green
+     * overlay. Other valid pixels remain mapped through the NDVI legend palette.
+     */
+    private byte[] buildSingleTargetLeafMask(
+            Bitmap source,
+            Rect rgbRect,
+            int width,
+            int height,
+            int nirWidth,
+            int nirHeight,
+            int[] nirPixels,
+            int focusStep,
+            int focusWidth,
+            int focusHeight
+    ) {
+        final int count = focusWidth * focusHeight;
+        final byte[] candidates = new byte[count];
+        final int[] rgbRow = new int[width];
+
+        for (int fy = 0; fy < focusHeight; fy++) {
+            final int y = Math.min(height - 1, fy * focusStep);
+            source.getPixels(rgbRow, 0, width, rgbRect.left, rgbRect.top + y, width, 1);
+            final float normalizedY = ((float) y + 0.5f) / (float) height;
+
+            for (int fx = 0; fx < focusWidth; fx++) {
+                final int x = Math.min(width - 1, fx * focusStep);
+                final float normalizedX = ((float) x + 0.5f) / (float) width;
+                if (!isInsideNdviTargetRoi(normalizedX, normalizedY)) {
+                    continue;
+                }
+
+                final int rgbColor = rgbRow[x];
+                if (!isVisibleFoliageColorCandidate(rgbColor)) {
+                    continue;
+                }
+
+                final long mapped = mapUnifiedPixelToNir(
+                        x, y, width, height, nirWidth, nirHeight
+                );
+                if (mapped < 0L) {
+                    continue;
+                }
+
+                final int nirX = (int) (mapped >> 32);
+                final int nirY = (int) mapped;
+                final int redEncoded = Color.red(rgbColor);
+                final int nirEncoded = pixelNirIntensity(nirPixels[nirY * nirWidth + nirX]);
+                final float ndvi = calculateRelativeNdvi(redEncoded, nirEncoded);
+                final boolean signalClipped =
+                        (redEncoded >= 250 && nirEncoded >= NDVI_MIN_VALID_SIGNAL)
+                                || (nirEncoded >= 250 && redEncoded >= NDVI_MIN_VALID_SIGNAL);
+
+                if (signalClipped
+                        || (Float.isFinite(ndvi)
+                        && ndvi >= NDVI_TARGET_COLOR_FALLBACK_THRESHOLD)) {
+                    candidates[fy * focusWidth + fx] = 1;
+                }
+            }
+        }
+
+        return selectSingleConnectedComponentNearCenter(candidates, focusWidth, focusHeight);
+    }
+
+    private byte[] selectSingleConnectedComponentNearCenter(
+            byte[] candidates,
+            int width,
+            int height
+    ) {
+        final int count = width * height;
+        final int[] labels = new int[count];
+        final int[] queue = new int[count];
+        final byte[] selected = new byte[count];
+        final int minArea = Math.max(
+                NDVI_FOCUS_MIN_COMPONENT_PIXELS,
+                count / 20000
+        );
+
+        int nextLabel = 0;
+        int bestLabel = 0;
+        int bestArea = 0;
+        double bestScore = Double.POSITIVE_INFINITY;
+        // Reject near-frame-sized blobs: they are more likely to be clothing,
+        // a wall, or another background region than one leaf.
+        final int maxLeafArea = Math.max(minArea + 1, (int) Math.round(count * 0.28d));
+
+        for (int start = 0; start < count; start++) {
+            if (candidates[start] == 0 || labels[start] != 0) {
+                continue;
+            }
+
+            nextLabel++;
+            int head = 0;
+            int tail = 0;
+            int area = 0;
+            int minX = width, minY = height, maxX = -1, maxY = -1;
+            long sumX = 0L, sumY = 0L;
+            double nearestDistance = Double.POSITIVE_INFINITY;
+            queue[tail++] = start;
+            labels[start] = nextLabel;
+
+            while (head < tail) {
+                final int index = queue[head++];
+                final int x = index % width;
+                final int y = index / width;
+                area++;
+                sumX += x;
+                sumY += y;
+                minX = Math.min(minX, x);
+                minY = Math.min(minY, y);
+                maxX = Math.max(maxX, x);
+                maxY = Math.max(maxY, y);
+
+                final double nx = ((double) x + 0.5d) / (double) width;
+                final double ny = ((double) y + 0.5d) / (double) height;
+                final double dx = nx - 0.5d;
+                final double dy = ny - 0.5d;
+                nearestDistance = Math.min(nearestDistance, dx * dx + dy * dy);
+
+                // 4-connectivity avoids merging separate leaves/background objects
+                // through a single diagonal pixel. A tiny gap may split a leaf, which is
+                // preferable to painting a large false-positive block green.
+                if (x > 0) {
+                    final int neighbor = index - 1;
+                    if (candidates[neighbor] != 0 && labels[neighbor] == 0) {
+                        labels[neighbor] = nextLabel;
+                        queue[tail++] = neighbor;
+                    }
+                }
+                if (x + 1 < width) {
+                    final int neighbor = index + 1;
+                    if (candidates[neighbor] != 0 && labels[neighbor] == 0) {
+                        labels[neighbor] = nextLabel;
+                        queue[tail++] = neighbor;
+                    }
+                }
+                if (y > 0) {
+                    final int neighbor = index - width;
+                    if (candidates[neighbor] != 0 && labels[neighbor] == 0) {
+                        labels[neighbor] = nextLabel;
+                        queue[tail++] = neighbor;
+                    }
+                }
+                if (y + 1 < height) {
+                    final int neighbor = index + width;
+                    if (candidates[neighbor] != 0 && labels[neighbor] == 0) {
+                        labels[neighbor] = nextLabel;
+                        queue[tail++] = neighbor;
+                    }
+                }
+            }
+
+            if (area < minArea || area > maxLeafArea) {
+                continue;
+            }
+
+            // Score the component by its centroid's distance to the actual focus
+            // seed, with a modest area reward. This avoids selecting a tiny noisy
+            // speck merely because one pixel happens to touch the exact centre.
+            final double centroidX = (sumX / (double) area + 0.5d) / (double) width;
+            final double centroidY = (sumY / (double) area + 0.5d) / (double) height;
+            final double dx = centroidX - 0.5d;
+            final double dy = centroidY - 0.5d;
+            final double centroidDistance = dx * dx + dy * dy;
+            final double boxArea = Math.max(1.0d,
+                    (double) (maxX - minX + 1) * (double) (maxY - minY + 1));
+            final double fillRatio = area / boxArea;
+
+            // A near-solid rectangular component is usually a background/object region,
+            // not a single leaf. Fail closed instead of painting a large green block.
+            // The threshold is intentionally not too strict because real leaves can overlap.
+            if (fillRatio > 0.88d) {
+                continue;
+            }
+
+            // Prefer a coherent component whose centroid is close to the focus seed.
+            // Penalize both sparse noise and overly box-like regions; this is a geometric
+            // heuristic and does not replace a semantic leaf segmentation model.
+            final double boxLikePenalty = Math.max(0.0d, fillRatio - 0.62d) * 0.10d;
+            final double score = centroidDistance
+                    + (0.025d / Math.sqrt(Math.max(1, area)))
+                    + Math.max(0.0d, 0.12d - fillRatio) * 0.08d
+                    + boxLikePenalty;
+            if (score < bestScore - 1.0e-9d
+                    || (Math.abs(score - bestScore) <= 1.0e-9d && area > bestArea)) {
+                bestScore = score;
+                bestArea = area;
+                bestLabel = nextLabel;
+            }
+        }
+
+        if (bestLabel == 0) {
+            return selected;
+        }
+        for (int i = 0; i < count; i++) {
+            if (labels[i] == bestLabel) {
+                selected[i] = 1;
+            }
+        }
+        return selected;
+    }
+
+    /**
+     * Legacy GPU-path statistic. The single-target connected-component preview
+     * uses CPU statistics from its selected component; this sampler remains for
+     * renderer compatibility and must never sort RGB/NIR samples independently.
      */
     private void updateGpuNdviStatisticsIfDue(Bitmap source) {
         if (source == null || source.isRecycled()) {
@@ -5235,10 +5701,14 @@ public class CameraEngine {
                             nir.left, nir.top + nirY, nirWidth, 1);
                     cachedNirY = nirY;
                 }
-                final int redEncoded = Color.red(rgbRow[localX]);
+                final int rgbColor = rgbRow[localX];
+                final int redEncoded = Color.red(rgbColor);
                 final int nirEncoded = pixelNirIntensity(nirRow[nirX]);
                 final float value = calculateRelativeNdvi(redEncoded, nirEncoded);
-                if (Float.isFinite(value)) {
+                final float normalizedX = ((float) localX + 0.5f) / (float) rgbWidth;
+                final float normalizedY = ((float) localY + 0.5f) / (float) rgbHeight;
+                if (Float.isFinite(value)
+                        && isTargetLeafCandidate(value, rgbColor, normalizedX, normalizedY, false)) {
                     ndviSum += value;
                     valid++;
                 }
@@ -5247,7 +5717,7 @@ public class CameraEngine {
 
         if (valid > 0) {
             lastNdviValue = ndviSum / (double) valid;
-            lastNdviValidPixels = valid; // grid sample count, not full-frame pixel count
+            lastNdviValidPixels = valid; // sampled target-ROI foliage candidates with a valid index
         } else {
             lastNdviValue = Double.NaN;
             lastNdviValidPixels = 0;
@@ -5287,6 +5757,15 @@ public class CameraEngine {
                         rgb,
                         nir,
                         lastNdviNirGain,
+                        ndviReferenceCalibrationEnabled,
+                        decodeSrgb(ndviRedDarkSample8Bit),
+                        decodeSrgb(ndviRedWhiteSample8Bit),
+                        ndviRedDarkReferenceReflectance,
+                        ndviRedWhiteReferenceReflectance,
+                        decodeSrgb(ndviNirDarkSample8Bit),
+                        decodeSrgb(ndviNirWhiteSample8Bit),
+                        ndviNirDarkReferenceReflectance,
+                        ndviNirWhiteReferenceReflectance,
                         NIR_REGISTRATION_SCALE_X,
                         NIR_REGISTRATION_SCALE_Y,
                         NIR_REGISTRATION_SHIFT_X_PX,
@@ -5390,6 +5869,12 @@ public class CameraEngine {
         );
         event.put("registrationCalibrated", false);
         event.put("semanticVegetationClassificationAvailable", false);
+        event.put("greenVegetationMaskAvailable", true);
+        event.put("referenceCalibrationEnabled", ndviReferenceCalibrationEnabled);
+        event.put("referenceCalibrationModel", "TWO_POINT_PER_BAND_REFERENCE_NORMALIZATION");
+        event.put("vegetationMaskMethod", "CENTER_NEAREST_CONNECTED_FOLIAGE_COMPONENT_WITH_CONTINUOUS_NDVI_PALETTE");
+        event.put("vegetationMaskIndexThreshold", NDVI_TARGET_MIN_INDEX_THRESHOLD);
+        event.put("targetRoi", "CENTER_64_PERCENT");
         event.put(
                 "registrationModel",
                 "NORMALIZED_AFFINE_GPU_UNCALIBRATED_DEFAULTS"
@@ -5433,6 +5918,28 @@ public class CameraEngine {
                     true
             );
         }
+    }
+
+    /**
+     * Reports the current RGB/NIR registration configuration. The current mapping
+     * is a configured affine transform (scale/rotation/shift), not automatic
+     * feature-based registration. Callers can use this diagnostic to avoid
+     * presenting the alignment as calibrated when offsets have not been measured.
+     */
+    private HashMap<String, Object> getNdviRegistrationState() {
+        HashMap<String, Object> state = new HashMap<>();
+        state.put("mode", "CONFIGURED_AFFINE");
+        state.put("automaticFeatureAlignment", false);
+        state.put("scaleX", NIR_REGISTRATION_SCALE_X);
+        state.put("scaleY", NIR_REGISTRATION_SCALE_Y);
+        state.put("rotationDegrees", NIR_REGISTRATION_ROTATION_DEG);
+        state.put("shiftXPixels", NIR_REGISTRATION_SHIFT_X_PX);
+        state.put("shiftYPixels", NIR_REGISTRATION_SHIFT_Y_PX);
+        state.put("requiresReferenceAlignmentTest",
+                NIR_REGISTRATION_SHIFT_X_PX == 0.0f
+                        && NIR_REGISTRATION_SHIFT_Y_PX == 0.0f
+                        && NIR_REGISTRATION_ROTATION_DEG == 0.0f);
+        return state;
     }
 
     /**
@@ -5507,17 +6014,64 @@ public class CameraEngine {
         return SRGB_TO_LINEAR_LUT[clampInt(encodedByte, 0, 255)];
     }
 
+    /** Map a sampled channel between measured dark/bright reference signals. */
+    private static float normalizeReferenceReflectance(
+            int sampleEncoded,
+            int darkSampleEncoded,
+            int whiteSampleEncoded,
+            float darkReferenceReflectance,
+            float whiteReferenceReflectance
+    ) {
+        final float sampleLinear = decodeSrgb(sampleEncoded);
+        final float darkLinear = decodeSrgb(darkSampleEncoded);
+        final float whiteLinear = decodeSrgb(whiteSampleEncoded);
+        final float signalSpan = whiteLinear - darkLinear;
+        if (!Float.isFinite(sampleLinear) || !Float.isFinite(signalSpan) || signalSpan < 0.02f) {
+            return Float.NaN;
+        }
+        final float fraction = clampFloat((sampleLinear - darkLinear) / signalSpan, 0.0f, 1.0f);
+        final float reflectance = darkReferenceReflectance
+                + fraction * (whiteReferenceReflectance - darkReferenceReflectance);
+        return Float.isFinite(reflectance) ? clampFloat(reflectance, 0.0f, 1.0f) : Float.NaN;
+    }
+
     /**
-     * Relative digital NDVI from paired encoded channels. The inverse sRGB
-     * transfer is an approximation for JPEG sources, not radiometric calibration.
+     * Compute NDVI from paired channels. With valid reference data, each channel
+     * is normalized independently using measured dark/bright targets. Without
+     * references, retain the prior relative digital NDVI behavior. JPEG encoding
+     * means reference-normalized output is still an approximation, not calibrated RAW reflectance.
      */
     private float calculateRelativeNdvi(int redEncoded, int nirEncoded) {
         if (redEncoded < NDVI_MIN_VALID_SIGNAL || nirEncoded < NDVI_MIN_VALID_SIGNAL
                 || redEncoded >= 250 || nirEncoded >= 250) {
             return Float.NaN;
         }
-        final float red = decodeSrgb(redEncoded);
-        final float nir = decodeSrgb(nirEncoded) * lastNdviNirGain;
+
+        final float red;
+        final float nir;
+        if (ndviReferenceCalibrationEnabled) {
+            red = normalizeReferenceReflectance(
+                    redEncoded,
+                    ndviRedDarkSample8Bit,
+                    ndviRedWhiteSample8Bit,
+                    ndviRedDarkReferenceReflectance,
+                    ndviRedWhiteReferenceReflectance
+            );
+            nir = normalizeReferenceReflectance(
+                    nirEncoded,
+                    ndviNirDarkSample8Bit,
+                    ndviNirWhiteSample8Bit,
+                    ndviNirDarkReferenceReflectance,
+                    ndviNirWhiteReferenceReflectance
+            );
+        } else {
+            red = decodeSrgb(redEncoded);
+            nir = decodeSrgb(nirEncoded) * lastNdviNirGain;
+        }
+
+        if (!Float.isFinite(red) || !Float.isFinite(nir)) {
+            return Float.NaN;
+        }
         final float denominator = red + nir;
         if (!Float.isFinite(denominator) || denominator < NDVI_MIN_LINEAR_DENOMINATOR) {
             return Float.NaN;
@@ -5527,16 +6081,101 @@ public class CameraEngine {
     }
 
     /**
-     * False-colour palette for the relative digital index only. Green is an
-     * index value, not a semantic claim that the object is biological vegetation.
-     * A trained classifier must be a separate, validated mask.
+     * Returns true when a normalized pixel lies in the central target ROI.
+     * The screen's decorative focus brackets are not passed to native code,
+     * so this centered ROI approximates the visible focus frame (about 64%
+     * of crop width and height) without changing the Flutter/UI structure.
      */
-    private static int ndviDisplayColor(float ndvi, int rgbColor) {
+    private static boolean isInsideNdviTargetRoi(float normalizedX, float normalizedY) {
+        return normalizedX >= NDVI_TARGET_ROI_MIN_X
+                && normalizedX <= NDVI_TARGET_ROI_MAX_X
+                && normalizedY >= NDVI_TARGET_ROI_MIN_Y
+                && normalizedY <= NDVI_TARGET_ROI_MAX_Y;
+    }
+
+    /**
+     * RGB colour heuristic for green or yellow foliage. Yellow foliage is
+     * intentionally supported because the supplied target leaves are yellowish
+     * in the visible image; a strict green-only rule incorrectly rejects them.
+     * This is still a heuristic, not a trained semantic leaf classifier.
+     */
+    private static boolean isVisibleFoliageColorCandidate(int rgbColor) {
+        final float red = Color.red(rgbColor) / 255.0f;
+        final float green = Color.green(rgbColor) / 255.0f;
+        final float blue = Color.blue(rgbColor) / 255.0f;
+        final float total = red + green + blue;
+        if (total < NDVI_MIN_RGB_TOTAL) {
+            return false;
+        }
+
+        final float nr = red / total;
+        final float ng = green / total;
+        final float nb = blue / total;
+        final float excessGreen = 2.0f * ng - nr - nb;
+
+        final boolean greenFoliage =
+                green > red * NDVI_VEG_GREEN_RED_RATIO
+                        && green > blue * NDVI_VEG_GREEN_BLUE_RATIO
+                        && excessGreen >= NDVI_VEG_GREEN_EXCESS_MIN;
+
+        // A minimum chroma gate rejects neutral gray/white background. Warm yellow
+        // and slightly orange leaves are accepted when both red and green exceed blue.
+        final float maxShare = Math.max(nr, Math.max(ng, nb));
+        final float minShare = Math.min(nr, Math.min(ng, nb));
+        final boolean chromatic = (maxShare - minShare) >= 0.085f;
+        final boolean yellowOrWarmFoliage = chromatic
+                && nr >= 0.30f
+                && ng >= 0.22f
+                && (nr - ng) <= 0.17f
+                && ng >= nr * 0.58f
+                && nr > nb * 1.20f
+                && ng > nb * 1.12f;
+
+        return greenFoliage || yellowOrWarmFoliage;
+    }
+
+    /**
+     * Candidate predicate shared with the coarser connected-component mask.
+     * A location must lie inside the approximate focus brackets, match a restrained
+     * green/yellow foliage heuristic, and have a usable or clipped paired signal.
+     */
+    private static boolean isTargetLeafCandidate(
+            float ndvi,
+            int rgbColor,
+            float normalizedX,
+            float normalizedY,
+            boolean signalClipped
+    ) {
+        if (!isInsideNdviTargetRoi(normalizedX, normalizedY)
+                || !isVisibleFoliageColorCandidate(rgbColor)) {
+            return false;
+        }
+        if (signalClipped) {
+            return true;
+        }
+        return Float.isFinite(ndvi)
+                && ndvi >= NDVI_TARGET_COLOR_FALLBACK_THRESHOLD;
+    }
+
+    /**
+     * Continuous NDVI false-colour palette matching the UI legend:
+     * -1 = red, 0 = yellow, +1 = green. The selected single leaf is overlaid
+     * in solid green by buildNdviJpeg(); every other valid pixel uses this map.
+     */
+    private static int ndviPaletteColor(float ndvi) {
         final float value = clampFloat(ndvi, -1.0f, 1.0f);
         if (value <= 0.0f) {
-            return blendColor(0xFFC91424, 0xFFFFD52A, value + 1.0f);
+            return blendColor(
+                    NDVI_PALETTE_RED,
+                    NDVI_PALETTE_YELLOW,
+                    value + 1.0f
+            );
         }
-        return blendColor(0xFFFFD52A, 0xFF0DA83B, value);
+        return blendColor(
+                NDVI_PALETTE_YELLOW,
+                NDVI_PALETTE_GREEN,
+                value
+        );
     }
 
     private static int blendColor(int colorA, int colorB, float amount) {
@@ -5601,15 +6240,26 @@ public class CameraEngine {
         data.put("min", -1.0);
         data.put("max", 1.0);
         data.put("validPixels", lastNdviValidPixels);
-        data.put("metric", "RELATIVE_DIGITAL_NDVI");
+        data.put("metric", currentNdviMetric());
         data.put("source", "UNIFIED_RGB_NIR_NORMALIZED_MAPPED_CROP");
         data.put("normalized", true);
         data.put("registrationModel", "NORMALIZED_AFFINE_UNCALIBRATED_DEFAULTS");
         data.put("registrationCalibrated", false);
         data.put("nirGain", lastNdviNirGain);
-        data.put("nirGainMethod", "FIXED_NEUTRAL_GAIN_UNCALIBRATED");
+        data.put("nirGainMethod", ndviReferenceCalibrationEnabled
+                ? "REFERENCE_NORMALIZATION_NO_EXTRA_GAIN"
+                : "FIXED_NEUTRAL_GAIN_UNCALIBRATED");
         data.put("radiometricCalibration", false);
+        data.put("referenceCalibrationEnabled", ndviReferenceCalibrationEnabled);
+        data.put("referenceCalibrationModel", "TWO_POINT_PER_BAND_REFERENCE_NORMALIZATION");
         data.put("semanticVegetationClassificationAvailable", false);
+        data.put("greenVegetationMaskAvailable", true);
+        data.put("singleTargetLeafComponent", true);
+        data.put("ndviDisplayPalette", "RED(-1)-YELLOW(0)-GREEN(+1)");
+        data.put("vegetationMaskMethod", "CENTER_NEAREST_CONNECTED_FOLIAGE_COMPONENT_WITH_CONTINUOUS_NDVI_PALETTE");
+        data.put("vegetationMaskIndexThreshold", NDVI_TARGET_MIN_INDEX_THRESHOLD);
+        data.put("targetRoi", "CENTER_64_PERCENT_NEAREST_SINGLE_COMPONENT");
+        data.put("ndviPopulation", "CENTER_TARGET_ROI_VALID_INDEX_PIXELS");
         data.put("validPixelCountIsSampled", true);
 
         sendEvent("ndvi", data);
@@ -7663,8 +8313,14 @@ public class CameraEngine {
                             ? "NORMALIZED_AFFINE_UNCALIBRATED_DEFAULTS"
                             : "NONE");
                     data.put("semanticVegetationClassificationAvailable", false);
+                    data.put("greenVegetationMaskAvailable", "NDVI".equals(processedBand));
                     if ("NDVI".equals(processedBand)) {
-                        data.put("metric", "RELATIVE_DIGITAL_NDVI");
+                        data.put("vegetationMaskMethod", "CENTER_NEAREST_CONNECTED_FOLIAGE_COMPONENT_WITH_CONTINUOUS_NDVI_PALETTE");
+                        data.put("vegetationMaskIndexThreshold", NDVI_TARGET_MIN_INDEX_THRESHOLD);
+                        data.put("targetRoi", "CENTER_64_PERCENT_NEAREST_SINGLE_COMPONENT");
+                        data.put("metric", currentNdviMetric());
+                        data.put("referenceCalibrationEnabled", ndviReferenceCalibrationEnabled);
+                        data.put("referenceCalibrationModel", "TWO_POINT_PER_BAND_REFERENCE_NORMALIZATION");
                     }
                     data.put("width", captureWidth);
                     data.put("height", captureHeight);
@@ -7673,7 +8329,7 @@ public class CameraEngine {
                             && Double.isFinite(captureProcessingResult.ndvi)) {
                         data.put("ndvi", captureProcessingResult.ndvi);
                         data.put("ndviValidPixels", captureProcessingResult.validPixels);
-                        data.put("ndviMetric", "RELATIVE_DIGITAL_NDVI");
+                        data.put("ndviMetric", currentNdviMetric());
                     }
 
                     sendEvent("captureSaved", data);
@@ -10393,13 +11049,9 @@ public class CameraEngine {
     }
 
     /**
-     * Minimal OpenGL ES 2.0 offscreen/surface renderer for the live NDVI path.
-     *
-     * The shader reads ONLY:
-     *   - red channel from the RGB optical ROI
-     *   - NIR intensity from the NIR optical ROI
-     *
-     * It writes ONLY the false-colour NDVI result. No RGB base image is used.
+     * Minimal OpenGL ES 2.0 renderer retained for compatibility. Its palette
+     * matches the NDVI legend. Single-leaf connected-component mode selects the
+     * CPU path because a single fragment-shader pass cannot label one global blob.
      */
     private static final class GpuNdviRenderer {
 
@@ -10422,6 +11074,15 @@ public class CameraEngine {
                         + "uniform vec2 uRot;"
                         + "uniform float uGain;"
                         + "uniform float uMinSignal;"
+                        + "uniform float uReferenceCalibration;"
+                        + "uniform float uRedDarkSignal;"
+                        + "uniform float uRedWhiteSignal;"
+                        + "uniform float uRedDarkReflectance;"
+                        + "uniform float uRedWhiteReflectance;"
+                        + "uniform float uNirDarkSignal;"
+                        + "uniform float uNirWhiteSignal;"
+                        + "uniform float uNirDarkReflectance;"
+                        + "uniform float uNirWhiteReflectance;"
                         + "varying vec2 vUv;"
                         + ""
                         + "float linearizeSrgb(float c){"
@@ -10429,11 +11090,37 @@ public class CameraEngine {
                         + "  if (c <= 0.04045) return c / 12.92;"
                         + "  return pow((c + 0.055) / 1.055, 2.4);"
                         + "}"
+                        + "float referenceReflectance(float signal, float darkSignal, float whiteSignal, float darkReflectance, float whiteReflectance){"
+                        + "  float span = whiteSignal - darkSignal;"
+                        + "  if (span < 0.02) return -1.0;"
+                        + "  float fraction = clamp((signal - darkSignal) / span, 0.0, 1.0);"
+                        + "  return clamp(mix(darkReflectance, whiteReflectance, fraction), 0.0, 1.0);"
+                        + "}"
                         + ""
-                        + "vec3 ndviColor(float ndvi, vec3 visible){"
-                        + "  float t = clamp((ndvi + 1.0) * 0.5, 0.0, 1.0);"
-                        + "  if (t < 0.5) return mix(vec3(0.788, 0.078, 0.141), vec3(1.000, 0.835, 0.165), t * 2.0);"
-                        + "  return mix(vec3(1.000, 0.835, 0.165), vec3(0.051, 0.659, 0.231), (t - 0.5) * 2.0);"
+                        + "vec3 ndviColor(float ndvi, vec3 visible, vec2 uv, bool ndviValid, bool signalClipped){"
+                        + "  float value = clamp(ndvi, -1.0, 1.0);"
+                        + "  vec3 red = vec3(0.788, 0.078, 0.141);"
+                        + "  vec3 yellow = vec3(1.000, 0.835, 0.165);"
+                        + "  vec3 green = vec3(0.051, 0.659, 0.231);"
+                        + "  vec3 palette = value <= 0.0 ? mix(red, yellow, value + 1.0) : mix(yellow, green, value);"
+                        + "  bool inTarget = uv.x >= " + NDVI_TARGET_ROI_MIN_X
+                        + "      && uv.x <= " + NDVI_TARGET_ROI_MAX_X
+                        + "      && uv.y >= " + NDVI_TARGET_ROI_MIN_Y
+                        + "      && uv.y <= " + NDVI_TARGET_ROI_MAX_Y + ";"
+                        + "  float total = visible.r + visible.g + visible.b;"
+                        + "  if (total < " + NDVI_MIN_RGB_TOTAL + ") return palette;"
+                        + "  float nr = visible.r / total;"
+                        + "  float ng = visible.g / total;"
+                        + "  float nb = visible.b / total;"
+                        + "  float excessGreen = 2.0 * ng - nr - nb;"
+                        + "  bool greenFoliage = visible.g > visible.r * " + NDVI_VEG_GREEN_RED_RATIO
+                        + "      && visible.g > visible.b * " + NDVI_VEG_GREEN_BLUE_RATIO
+                        + "      && excessGreen >= " + NDVI_VEG_GREEN_EXCESS_MIN + ";"
+                        + "  bool yellowFoliage = nr >= ng && (nr - ng) <= " + NDVI_YELLOW_MAX_RED_GREEN_DIFF
+                        + "      && ng >= " + NDVI_YELLOW_MIN_GREEN_SHARE + " && nr > nb * 1.20 && ng > nb * 1.12;"
+                        + "  bool targetLeaf = inTarget && (greenFoliage || yellowFoliage)"
+                        + "      && (signalClipped || (ndviValid && ndvi >= " + NDVI_TARGET_MIN_INDEX_THRESHOLD + "));"
+                        + "  return targetLeaf ? green : palette;"
                         + "}"
                         + ""
                         + "void main(){"
@@ -10460,20 +11147,36 @@ public class CameraEngine {
                         + "      && nirSample.b > nirSample.g + 0.047;"
                         + "  float nirSignal = magentaNir ? nirMaxRB : dot(nirSample.rgb, vec3(0.299, 0.587, 0.114));"
                         + "  float nirEncoded = floor(clamp(nirSignal, 0.0, 1.0) * 255.0 + 0.0001) / 255.0;"
-                        + "  if (redEncoded < uMinSignal || nirEncoded < uMinSignal"
-                        + "      || redEncoded >= 0.98 || nirEncoded >= 0.98) {"
-                        + "    gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);"
+                        + "  if (redEncoded < uMinSignal || nirEncoded < uMinSignal) {"
+                        + "    gl_FragColor = vec4(ndviColor(0.0, rgbSample.rgb, vUv, false, false), 1.0);"
                         + "    return;"
                         + "  }"
-                        + "  float red = linearizeSrgb(redEncoded);"
-                        + "  float nir = linearizeSrgb(nirEncoded) * uGain;"
+                        + "  if (redEncoded >= 0.98 || nirEncoded >= 0.98) {"
+                        + "    gl_FragColor = vec4(ndviColor(0.0, rgbSample.rgb, vUv, false, true), 1.0);"
+                        + "    return;"
+                        + "  }"
+                        + "  float redSignalLinear = linearizeSrgb(redEncoded);"
+                        + "  float nirSignalLinear = linearizeSrgb(nirEncoded);"
+                        + "  float red;"
+                        + "  float nir;"
+                        + "  if (uReferenceCalibration > 0.5) {"
+                        + "    red = referenceReflectance(redSignalLinear, uRedDarkSignal, uRedWhiteSignal, uRedDarkReflectance, uRedWhiteReflectance);"
+                        + "    nir = referenceReflectance(nirSignalLinear, uNirDarkSignal, uNirWhiteSignal, uNirDarkReflectance, uNirWhiteReflectance);"
+                        + "    if (red < 0.0 || nir < 0.0) {"
+                        + "      gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);"
+                        + "      return;"
+                        + "    }"
+                        + "  } else {"
+                        + "    red = redSignalLinear;"
+                        + "    nir = nirSignalLinear * uGain;"
+                        + "  }"
                         + "  float denom = nir + red;"
                         + "  if (denom < 0.0035) {"
-                        + "    gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);"
+                        + "    gl_FragColor = vec4(ndviColor(0.0, rgbSample.rgb, vUv, false, false), 1.0);"
                         + "    return;"
                         + "  }"
                         + "  float ndvi = clamp((nir - red) / denom, -1.0, 1.0);"
-                        + "  gl_FragColor = vec4(ndviColor(ndvi, rgbSample.rgb), 1.0);"
+                        + "  gl_FragColor = vec4(ndviColor(ndvi, rgbSample.rgb, vUv, true, false), 1.0);"
                         + "}";
 
         private final Surface surface;
@@ -10498,6 +11201,15 @@ public class CameraEngine {
         private int rotHandle = -1;
         private int gainHandle = -1;
         private int minSignalHandle = -1;
+        private int referenceCalibrationHandle = -1;
+        private int redDarkSignalHandle = -1;
+        private int redWhiteSignalHandle = -1;
+        private int redDarkReflectanceHandle = -1;
+        private int redWhiteReflectanceHandle = -1;
+        private int nirDarkSignalHandle = -1;
+        private int nirWhiteSignalHandle = -1;
+        private int nirDarkReflectanceHandle = -1;
+        private int nirWhiteReflectanceHandle = -1;
 
         private FloatBuffer vertexBuffer;
 
@@ -10604,6 +11316,15 @@ public class CameraEngine {
             rotHandle = GLES20.glGetUniformLocation(program, "uRot");
             gainHandle = GLES20.glGetUniformLocation(program, "uGain");
             minSignalHandle = GLES20.glGetUniformLocation(program, "uMinSignal");
+            referenceCalibrationHandle = GLES20.glGetUniformLocation(program, "uReferenceCalibration");
+            redDarkSignalHandle = GLES20.glGetUniformLocation(program, "uRedDarkSignal");
+            redWhiteSignalHandle = GLES20.glGetUniformLocation(program, "uRedWhiteSignal");
+            redDarkReflectanceHandle = GLES20.glGetUniformLocation(program, "uRedDarkReflectance");
+            redWhiteReflectanceHandle = GLES20.glGetUniformLocation(program, "uRedWhiteReflectance");
+            nirDarkSignalHandle = GLES20.glGetUniformLocation(program, "uNirDarkSignal");
+            nirWhiteSignalHandle = GLES20.glGetUniformLocation(program, "uNirWhiteSignal");
+            nirDarkReflectanceHandle = GLES20.glGetUniformLocation(program, "uNirDarkReflectance");
+            nirWhiteReflectanceHandle = GLES20.glGetUniformLocation(program, "uNirWhiteReflectance");
 
             int[] textures = new int[1];
             GLES20.glGenTextures(1, textures, 0);
@@ -10652,6 +11373,15 @@ public class CameraEngine {
                 Rect rgb,
                 Rect nir,
                 float gain,
+                boolean referenceCalibrationEnabled,
+                float redDarkSignal,
+                float redWhiteSignal,
+                float redDarkReflectance,
+                float redWhiteReflectance,
+                float nirDarkSignal,
+                float nirWhiteSignal,
+                float nirDarkReflectance,
+                float nirWhiteReflectance,
                 float scaleX,
                 float scaleY,
                 float shiftX,
@@ -10747,6 +11477,15 @@ public class CameraEngine {
                     minSignalHandle,
                     GPU_NDVI_MIN_SIGNAL
             );
+            GLES20.glUniform1f(referenceCalibrationHandle, referenceCalibrationEnabled ? 1.0f : 0.0f);
+            GLES20.glUniform1f(redDarkSignalHandle, redDarkSignal);
+            GLES20.glUniform1f(redWhiteSignalHandle, redWhiteSignal);
+            GLES20.glUniform1f(redDarkReflectanceHandle, redDarkReflectance);
+            GLES20.glUniform1f(redWhiteReflectanceHandle, redWhiteReflectance);
+            GLES20.glUniform1f(nirDarkSignalHandle, nirDarkSignal);
+            GLES20.glUniform1f(nirWhiteSignalHandle, nirWhiteSignal);
+            GLES20.glUniform1f(nirDarkReflectanceHandle, nirDarkReflectance);
+            GLES20.glUniform1f(nirWhiteReflectanceHandle, nirWhiteReflectance);
 
             GLES20.glDrawArrays(
                     GLES20.GL_TRIANGLES,

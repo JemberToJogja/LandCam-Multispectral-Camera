@@ -5,7 +5,7 @@ import '../models/landcam_models.dart';
 /// LANDCAM settings sheet.
 ///
 /// Preview display controls are independent from capture output. All changes
-/// are delegated to callbacks owned by the page/view model.
+/// are delegated to callbacks owned by the page/ViewModel.
 class SettingsSheet extends StatelessWidget {
   const SettingsSheet({
     super.key,
@@ -37,12 +37,10 @@ class SettingsSheet extends StatelessWidget {
 
   String get _selectedPreviewMode {
     final value = previewDisplayMode?.trim().toUpperCase();
-
     if (value != null &&
         const {'PROCESSED', 'FULL_FRAME', 'MULTI_VIEW'}.contains(value)) {
       return value;
     }
-
     return captureMode.trim().toUpperCase() == 'RAW'
         ? 'FULL_FRAME'
         : 'PROCESSED';
@@ -50,14 +48,11 @@ class SettingsSheet extends StatelessWidget {
 
   Future<void> _selectPreviewMode(String mode) async {
     if (previewChangeInFlight || mode == _selectedPreviewMode) return;
-
     final callback = onPreviewDisplayMode;
     if (callback != null) {
       await callback(mode);
       return;
     }
-
-    // Compatibility for older callers that only expose a two-state setting.
     final legacyCallback = onCaptureMode;
     if (legacyCallback != null && mode != 'MULTI_VIEW') {
       await legacyCallback();
@@ -69,8 +64,7 @@ class SettingsSheet extends StatelessWidget {
     final foreground = _uiForeground(dark);
     final secondary = _uiSecondary(dark);
     final screenHeight = MediaQuery.sizeOf(context).height;
-    final sheetHeight =
-        (screenHeight * .50).clamp(280.0, 350.0).toDouble();
+    final sheetHeight = (screenHeight * .50).clamp(280.0, 350.0).toDouble();
     final compact = screenHeight < 680;
 
     return SafeArea(
@@ -84,9 +78,8 @@ class SettingsSheet extends StatelessWidget {
             constraints: const BoxConstraints(maxWidth: 760),
             child: Material(
               color: _uiSurface(dark),
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(16),
-              ),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(16)),
               clipBehavior: Clip.antiAlias,
               child: Column(
                 children: [
@@ -200,13 +193,11 @@ class SettingsSheet extends StatelessWidget {
                                 child: _PreviewModeButton(
                                   dark: dark,
                                   label: 'PROCESSED',
-                                  selected:
-                                      _selectedPreviewMode == 'PROCESSED',
+                                  selected: _selectedPreviewMode == 'PROCESSED',
                                   enabled: !previewChangeInFlight &&
                                       (onPreviewDisplayMode != null ||
                                           onCaptureMode != null),
-                                  onTap: () =>
-                                      _selectPreviewMode('PROCESSED'),
+                                  onTap: () => _selectPreviewMode('PROCESSED'),
                                 ),
                               ),
                               const SizedBox(width: 7),
@@ -219,8 +210,7 @@ class SettingsSheet extends StatelessWidget {
                                   enabled: !previewChangeInFlight &&
                                       (onPreviewDisplayMode != null ||
                                           onCaptureMode != null),
-                                  onTap: () =>
-                                      _selectPreviewMode('FULL_FRAME'),
+                                  onTap: () => _selectPreviewMode('FULL_FRAME'),
                                 ),
                               ),
                               const SizedBox(width: 7),
@@ -232,8 +222,7 @@ class SettingsSheet extends StatelessWidget {
                                       _selectedPreviewMode == 'MULTI_VIEW',
                                   enabled: !previewChangeInFlight &&
                                       onPreviewDisplayMode != null,
-                                  onTap: () =>
-                                      _selectPreviewMode('MULTI_VIEW'),
+                                  onTap: () => _selectPreviewMode('MULTI_VIEW'),
                                 ),
                               ),
                             ],
@@ -280,7 +269,6 @@ class _PreviewModeButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final accent = _uiAccent(dark);
     final foreground = selected ? _activeTextOn(accent) : _uiForeground(dark);
-
     return Material(
       color: selected ? accent : _uiSurfaceAlt(dark),
       borderRadius: BorderRadius.circular(6),
@@ -347,7 +335,6 @@ class _SettingsTile extends StatelessWidget {
     final secondary = active
         ? _activeTextOn(accent).withValues(alpha: .78)
         : _uiMuted(dark);
-
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -414,11 +401,7 @@ class _SettingsTile extends StatelessWidget {
 }
 
 class _AdvancedSettingsButton extends StatelessWidget {
-  const _AdvancedSettingsButton({
-    required this.dark,
-    required this.onTap,
-  });
-
+  const _AdvancedSettingsButton({required this.dark, required this.onTap});
   final bool dark;
   final VoidCallback onTap;
 
@@ -426,7 +409,6 @@ class _AdvancedSettingsButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final foreground = _uiForeground(dark);
     final accent = _uiAccent(dark);
-
     return Material(
       color: _uiSurfaceAlt(dark),
       borderRadius: BorderRadius.circular(6),
@@ -483,8 +465,8 @@ class _AdvancedSettingsButton extends StatelessWidget {
 
 /// Connection methods and session diagnostics.
 ///
-/// QR scanning and confirmation belong exclusively to QrPairingScannerPage.
-/// The QR option here only opens that page via onScanQr.
+/// NFC, Wi-Fi and QR scanning remain available. Bluetooth, USB/PTP and HDMI/UVC
+/// remain visible as future options but are intentionally disabled in this UI.
 class ConnectionSheet extends StatelessWidget {
   const ConnectionSheet({
     super.key,
@@ -514,6 +496,8 @@ class ConnectionSheet extends StatelessWidget {
     required this.onStartNfc,
     this.onOpenMethods,
     this.onConnectBluetooth,
+    this.onScanBluetoothDevices,
+    this.onConnectBluetoothDevice,
     this.onConnectWifi,
     this.onConnectWifiCredentials,
     this.onScanQr,
@@ -554,25 +538,25 @@ class ConnectionSheet extends StatelessWidget {
 
   @Deprecated('Connection methods are displayed directly in this sheet.')
   final VoidCallback? onOpenMethods;
-
+  @Deprecated('Bluetooth is currently disabled in the connection sheet.')
   final Future<void> Function()? onConnectBluetooth;
-
-  /// Starts a manual Wi-Fi connection using values entered inline in this UI.
+  @Deprecated('Bluetooth is currently disabled in the connection sheet.')
+  final Future<List<Map<String, dynamic>>> Function()?
+      onScanBluetoothDevices;
+  @Deprecated('Bluetooth is currently disabled in the connection sheet.')
+  final Future<bool> Function(String deviceAddress)? onConnectBluetoothDevice;
+  @Deprecated('Use onConnectWifiCredentials; Wi-Fi credentials are entered inline.')
+  final Future<void> Function()? onConnectWifi;
   final Future<bool> Function({
     required String ssid,
     required String password,
     required String securityType,
   })? onConnectWifiCredentials;
-
-  @Deprecated(
-    'Use onConnectWifiCredentials; Wi-Fi credentials are entered inline.',
-  )
-  final Future<void> Function()? onConnectWifi;
-
   final Future<void> Function()? onScanQr;
+  @Deprecated('USB / PTP is currently disabled in the connection sheet.')
   final Future<void> Function()? onConnectUsb;
+  @Deprecated('HDMI / UVC is currently disabled in the connection sheet.')
   final Future<void> Function()? onConnectUvc;
-
   @Deprecated('Network discovery is not shown as a primary connection method.')
   final Future<void> Function() onScan;
   final Future<void> Function() onReconnect;
@@ -584,41 +568,36 @@ class ConnectionSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final normalizedStatus = status.trim().toUpperCase();
-
     const knownOperations = <String>{
       'RECONNECTING',
       'REFRESHING LIVE VIEW',
       'DISCONNECTING',
     };
-
     final explicitOperation = connectionOperation?.trim().toUpperCase();
-    final activeOperation =
-        explicitOperation != null && explicitOperation.isNotEmpty
-            ? explicitOperation
-            : knownOperations.contains(normalizedStatus)
-                ? normalizedStatus
-                : null;
-
+    final activeOperation = explicitOperation != null &&
+            explicitOperation.isNotEmpty
+        ? explicitOperation
+        : knownOperations.contains(normalizedStatus)
+            ? normalizedStatus
+            : null;
     final busy = operationInFlight || activeOperation != null;
     final reconnecting = activeOperation == 'RECONNECTING';
     final refreshing = activeOperation == 'REFRESHING LIVE VIEW';
     final disconnecting = activeOperation == 'DISCONNECTING';
-
     final foreground = _uiForeground(dark);
     final secondary = _uiSecondary(dark);
     final accent = _uiAccent(dark);
     final border = _uiBorder(dark);
-
     final themedExpansion = Theme.of(context).copyWith(
       dividerColor: border,
       splashColor: accent.withValues(alpha: .07),
       highlightColor: Colors.transparent,
       colorScheme: Theme.of(context).colorScheme.copyWith(
-            primary: accent,
-            secondary: accent,
-            surface: _uiSurface(dark),
-            onSurface: foreground,
-          ),
+        primary: accent,
+        secondary: accent,
+        surface: _uiSurface(dark),
+        onSurface: foreground,
+      ),
     );
 
     return SafeArea(
@@ -627,9 +606,7 @@ class ConnectionSheet extends StatelessWidget {
         heightFactor: .94,
         child: Material(
           color: _uiSurface(dark),
-          borderRadius: const BorderRadius.vertical(
-            top: Radius.circular(16),
-          ),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
           clipBehavior: Clip.antiAlias,
           child: Column(
             children: [
@@ -682,7 +659,7 @@ class ConnectionSheet extends StatelessWidget {
                   children: [
                     _SectionHeading(
                       title: 'Connect',
-                      subtitle: 'Choose a connection method.',
+                      subtitle: 'Choose an available connection method.',
                       dark: dark,
                     ),
                     const SizedBox(height: 10),
@@ -698,12 +675,10 @@ class ConnectionSheet extends StatelessWidget {
                       nfcListening: nfcListening,
                       operationInFlight: busy,
                       onNfc: onStartNfc,
-                      onBluetooth: onConnectBluetooth,
                       initialSsid: ssid ?? '',
                       onWifiCredentials: onConnectWifiCredentials,
+                      onLegacyWifi: onConnectWifi,
                       onQr: onScanQr,
-                      onUsb: onConnectUsb,
-                      onUvc: onConnectUvc,
                     ),
                     const SizedBox(height: 23),
                     _SectionHeading(
@@ -740,9 +715,7 @@ class ConnectionSheet extends StatelessWidget {
                           child: _SessionControlButton(
                             dark: dark,
                             icon: Icons.link_off_rounded,
-                            label: disconnecting
-                                ? 'Disconnecting'
-                                : 'Disconnect',
+                            label: disconnecting ? 'Disconnecting' : 'Disconnect',
                             danger: true,
                             busy: disconnecting,
                             disabled: busy,
@@ -756,16 +729,11 @@ class ConnectionSheet extends StatelessWidget {
                     Theme(
                       data: themedExpansion,
                       child: ExpansionTile(
-                        key: const PageStorageKey<String>(
-                          'connection-details',
-                        ),
+                        key: const PageStorageKey<String>('connection-details'),
                         tilePadding: const EdgeInsets.symmetric(horizontal: 2),
-                        childrenPadding: const EdgeInsets.fromLTRB(0, 0, 0, 12),
-                        leading: Icon(
-                          Icons.tune_rounded,
-                          size: 19,
-                          color: secondary,
-                        ),
+                        childrenPadding:
+                            const EdgeInsets.fromLTRB(0, 0, 0, 12),
+                        leading: Icon(Icons.tune_rounded, size: 19, color: secondary),
                         title: Text(
                           'Connection details',
                           style: TextStyle(
@@ -786,10 +754,7 @@ class ConnectionSheet extends StatelessWidget {
                           _DetailGroup(
                             dark: dark,
                             title: 'Network',
-                            rows: {
-                              'SSID': _displayValue(ssid),
-                              'Status': status,
-                            },
+                            rows: {'SSID': _displayValue(ssid), 'Status': status},
                           ),
                           _DetailGroup(
                             dark: dark,
@@ -808,32 +773,21 @@ class ConnectionSheet extends StatelessWidget {
                             title: 'Active image',
                             rows: {
                               'Band': currentBand.title,
-                              'Source':
-                                  sourceLabel ?? currentBand.sourceLabel,
-                              'Frame': frameWidth != null &&
-                                      frameHeight != null
-                                  ? '${frameWidth} × $frameHeight'
+                              'Source': sourceLabel ?? currentBand.sourceLabel,
+                              'Frame': frameWidth != null && frameHeight != null
+                                  ? '$frameWidth × $frameHeight'
                                   : 'Not available',
-                              'Bit depth':
-                                  bitDepth?.toString() ?? 'Not available',
+                              'Bit depth': bitDepth?.toString() ?? 'Not available',
                             },
                           ),
                           _DetailGroup(
                             dark: dark,
                             title: 'Capabilities',
                             rows: {
-                              'Live view': supportsLiveView
-                                  ? 'Supported'
-                                  : 'Unavailable',
-                              'Capture': supportsCapture
-                                  ? 'Supported'
-                                  : 'Unavailable',
-                              'Autofocus': supportsAutofocus
-                                  ? 'Continuous'
-                                  : 'Unavailable',
-                              'Unified crop': dualOpticalRoiAvailable
-                                  ? 'Supported'
-                                  : 'Unavailable',
+                              'Live view': supportsLiveView ? 'Supported' : 'Unavailable',
+                              'Capture': supportsCapture ? 'Supported' : 'Unavailable',
+                              'Autofocus': supportsAutofocus ? 'Continuous' : 'Unavailable',
+                              'Unified crop': dualOpticalRoiAvailable ? 'Supported' : 'Unavailable',
                               'RGB source': 'Left → unified',
                               'NIR source': 'Right → unified',
                               'Registration': 'Centered affine',
@@ -846,16 +800,11 @@ class ConnectionSheet extends StatelessWidget {
                     Theme(
                       data: themedExpansion,
                       child: ExpansionTile(
-                        key: const PageStorageKey<String>(
-                          'diagnostic-log-expansion',
-                        ),
+                        key: const PageStorageKey<String>('diagnostic-log-expansion'),
                         tilePadding: const EdgeInsets.symmetric(horizontal: 2),
-                        childrenPadding: const EdgeInsets.fromLTRB(0, 0, 0, 12),
-                        leading: Icon(
-                          Icons.terminal_rounded,
-                          size: 19,
-                          color: secondary,
-                        ),
+                        childrenPadding:
+                            const EdgeInsets.fromLTRB(0, 0, 0, 12),
+                        leading: Icon(Icons.terminal_rounded, size: 19, color: secondary),
                         title: Text(
                           'Diagnostic log',
                           style: TextStyle(
@@ -866,10 +815,7 @@ class ConnectionSheet extends StatelessWidget {
                         ),
                         subtitle: Text(
                           '${logs.length} entries',
-                          style: TextStyle(
-                            color: secondary,
-                            fontSize: 11,
-                          ),
+                          style: TextStyle(color: secondary, fontSize: 11),
                         ),
                         children: [
                           Padding(
@@ -882,26 +828,16 @@ class ConnectionSheet extends StatelessWidget {
                                       await onCopy();
                                     } catch (error) {
                                       if (!context.mounted) return;
-
-                                      ScaffoldMessenger.maybeOf(context)
-                                          ?.showSnackBar(
+                                      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
                                         SnackBar(
-                                          content: Text(
-                                            'Could not copy diagnostic log: '
-                                            '${_cleanError(error)}',
-                                          ),
+                                          content: Text('Could not copy diagnostic log: ${_cleanError(error)}'),
                                         ),
                                       );
                                     }
                                   },
-                                  icon: const Icon(
-                                    Icons.copy_rounded,
-                                    size: 16,
-                                  ),
+                                  icon: const Icon(Icons.copy_rounded, size: 16),
                                   label: const Text('Copy log'),
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: accent,
-                                  ),
+                                  style: TextButton.styleFrom(foregroundColor: accent),
                                 ),
                                 const SizedBox(width: 4),
                                 TextButton.icon(
@@ -909,41 +845,23 @@ class ConnectionSheet extends StatelessWidget {
                                     try {
                                       onClear();
                                     } catch (error) {
-                                      ScaffoldMessenger.maybeOf(context)
-                                          ?.showSnackBar(
+                                      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
                                         SnackBar(
-                                          content: Text(
-                                            'Could not clear diagnostic log: '
-                                            '${_cleanError(error)}',
-                                          ),
+                                          content: Text('Could not clear diagnostic log: ${_cleanError(error)}'),
                                         ),
                                       );
                                     }
                                   },
-                                  icon: Icon(
-                                    Icons.delete_outline_rounded,
-                                    size: 16,
-                                    color: _uiDanger(dark),
-                                  ),
-                                  label: Text(
-                                    'Clear log',
-                                    style: TextStyle(
-                                      color: _uiDanger(dark),
-                                    ),
-                                  ),
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: _uiDanger(dark),
-                                  ),
+                                  icon: Icon(Icons.delete_outline_rounded, size: 16, color: _uiDanger(dark)),
+                                  label: Text('Clear log', style: TextStyle(color: _uiDanger(dark))),
+                                  style: TextButton.styleFrom(foregroundColor: _uiDanger(dark)),
                                 ),
                               ],
                             ),
                           ),
                           Container(
                             width: double.infinity,
-                            constraints: const BoxConstraints(
-                              minHeight: 84,
-                              maxHeight: 260,
-                            ),
+                            constraints: const BoxConstraints(minHeight: 84, maxHeight: 260),
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
                               color: _uiConsole(dark),
@@ -954,47 +872,27 @@ class ConnectionSheet extends StatelessWidget {
                                     alignment: Alignment.centerLeft,
                                     child: Text(
                                       'No diagnostic entries yet.',
-                                      style: TextStyle(
-                                        color: secondary,
-                                        fontSize: 12,
-                                      ),
+                                      style: TextStyle(color: secondary, fontSize: 12),
                                     ),
                                   )
                                 : ListView.separated(
-                                    // IMPORTANT:
-                                    // This nested scrollable must have its
-                                    // own unique PageStorageKey. Without it,
-                                    // it can inherit the ExpansionTile key.
-                                    // ExpansionTile stores bool state while
-                                    // ListView expects a double scroll offset.
-                                    key: const PageStorageKey<String>(
-                                      'diagnostic-log-entries',
-                                    ),
+                                    key: const PageStorageKey<String>('diagnostic-log-entries'),
                                     primary: false,
                                     shrinkWrap: true,
-                                    physics:
-                                        const ClampingScrollPhysics(),
+                                    physics: const ClampingScrollPhysics(),
                                     padding: EdgeInsets.zero,
                                     itemCount: logs.length,
-                                    separatorBuilder: (_, __) => Divider(
-                                      height: 10,
-                                      color: border,
-                                    ),
+                                    separatorBuilder: (_, __) => Divider(height: 10, color: border),
                                     itemBuilder: (context, index) {
                                       final log = logs[index];
                                       final level = log.level.toUpperCase();
-
                                       final logColor = level == 'ERROR'
                                           ? _uiDanger(dark)
-                                          : level == 'WARN' ||
-                                                  level == 'WARNING'
+                                          : level == 'WARN' || level == 'WARNING'
                                               ? accent
                                               : foreground;
-
                                       return SelectableText(
-                                        '${log.time}  '
-                                        '${log.level.padRight(5)}  '
-                                        '${log.message}',
+                                        '${log.time}  ${log.level.padRight(5)}  ${log.message}',
                                         style: TextStyle(
                                           color: logColor,
                                           fontFamily: 'monospace',
@@ -1041,34 +939,27 @@ class _ConnectionMethodsPanel extends StatefulWidget {
     required this.nfcListening,
     required this.operationInFlight,
     required this.onNfc,
-    required this.onBluetooth,
     required this.initialSsid,
     required this.onWifiCredentials,
+    required this.onLegacyWifi,
     required this.onQr,
-    required this.onUsb,
-    required this.onUvc,
   });
 
   final bool dark;
   final bool nfcListening;
   final bool operationInFlight;
   final Future<void> Function() onNfc;
-  final Future<void> Function()? onBluetooth;
   final String initialSsid;
-
   final Future<bool> Function({
     required String ssid,
     required String password,
     required String securityType,
   })? onWifiCredentials;
-
+  final Future<void> Function()? onLegacyWifi;
   final Future<void> Function()? onQr;
-  final Future<void> Function()? onUsb;
-  final Future<void> Function()? onUvc;
 
   @override
-  State<_ConnectionMethodsPanel> createState() =>
-      _ConnectionMethodsPanelState();
+  State<_ConnectionMethodsPanel> createState() => _ConnectionMethodsPanelState();
 }
 
 class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
@@ -1086,15 +977,12 @@ class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
   @override
   void initState() {
     super.initState();
-    _ssidController = TextEditingController(
-      text: widget.initialSsid.trim(),
-    );
+    _ssidController = TextEditingController(text: widget.initialSsid.trim());
   }
 
   @override
   void didUpdateWidget(covariant _ConnectionMethodsPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-
     if (oldWidget.initialSsid != widget.initialSsid && !_wifiFormOpen) {
       _ssidController.text = widget.initialSsid.trim();
     }
@@ -1109,21 +997,16 @@ class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
 
   void _toggleWifiForm() {
     if (widget.operationInFlight || _submittingWifi) return;
-
     setState(() {
       _wifiFormOpen = !_wifiFormOpen;
       _wifiFeedback = null;
       _wifiSucceeded = null;
-
-      if (!_wifiFormOpen) {
-        _passwordController.clear();
-      }
+      if (!_wifiFormOpen) _passwordController.clear();
     });
   }
 
   void _cancelWifiForm() {
     if (_submittingWifi) return;
-
     setState(() {
       _wifiFormOpen = false;
       _wifiFeedback = null;
@@ -1133,23 +1016,41 @@ class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
   }
 
   Future<void> _submitWifi() async {
-    if (_submittingWifi || widget.operationInFlight) return;
-    if (_wifiFormKey.currentState?.validate() != true) return;
+    if (_submittingWifi ||
+        widget.operationInFlight ||
+        _wifiFormKey.currentState?.validate() != true) {
+      return;
+    }
 
     final callback = widget.onWifiCredentials;
-
     if (callback == null) {
+      final legacy = widget.onLegacyWifi;
+      if (legacy != null) {
+        try {
+          await legacy();
+          if (!mounted) return;
+          setState(() {
+            _wifiSucceeded = true;
+            _wifiFeedback = 'Wi-Fi request sent.';
+          });
+        } catch (error) {
+          if (!mounted) return;
+          setState(() {
+            _wifiSucceeded = false;
+            _wifiFeedback = 'Wi-Fi request failed: ${_cleanError(error)}';
+          });
+        }
+        return;
+      }
       setState(() {
         _wifiSucceeded = false;
-        _wifiFeedback =
-            'Manual Wi-Fi connection is not available in this build.';
+        _wifiFeedback = 'Manual Wi-Fi connection is not available in this build.';
       });
       return;
     }
 
     final networkName = _ssidController.text.trim();
     final password = _securityType == 'OPEN' ? '' : _passwordController.text;
-
     setState(() {
       _submittingWifi = true;
       _wifiFeedback = 'Sending Wi-Fi connection request…';
@@ -1162,9 +1063,7 @@ class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
         password: password,
         securityType: _securityType,
       );
-
       if (!mounted) return;
-
       setState(() {
         _submittingWifi = false;
         _wifiSucceeded = accepted;
@@ -1174,7 +1073,6 @@ class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
       });
     } catch (error) {
       if (!mounted) return;
-
       setState(() {
         _submittingWifi = false;
         _wifiSucceeded = false;
@@ -1186,7 +1084,6 @@ class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
   @override
   Widget build(BuildContext context) {
     final dark = widget.dark;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1201,50 +1098,55 @@ class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
               spacing: spacing,
               runSpacing: 3,
               children: [
+                // Available: NFC.
                 SizedBox(
                   width: itemWidth,
                   child: _TransportMethodButton(
                     dark: dark,
                     icon: Icons.nfc_rounded,
                     label: widget.nfcListening ? 'NFC READY' : 'NFC pairing',
+                    helper: 'Pair using NFC when supported.',
                     active: widget.nfcListening,
                     activeColor: const Color(0xFF22C55E),
                     disabled: widget.operationInFlight,
                     onTap: widget.onNfc,
                   ),
                 ),
-                SizedBox(
-                  width: itemWidth,
-                  child: _TransportMethodButton(
-                    dark: dark,
-                    icon: Icons.bluetooth_rounded,
-                    label: 'Bluetooth',
-                    disabled: widget.operationInFlight,
-                    onTap: widget.onBluetooth,
-                  ),
-                ),
+                // Available: Wi-Fi credentials.
                 SizedBox(
                   width: itemWidth,
                   child: _TransportMethodButton(
                     dark: dark,
                     icon: Icons.wifi_rounded,
                     label: 'Wi-Fi',
+                    helper: 'Connect using the camera Wi-Fi SSID and password.',
                     active: _wifiFormOpen,
-                    disabled:
-                        widget.operationInFlight || _submittingWifi,
+                    disabled: widget.operationInFlight || _submittingWifi,
                     onTap: () async => _toggleWifiForm(),
                   ),
                 ),
+                // Available: QR scan flow.
                 SizedBox(
                   width: itemWidth,
                   child: _TransportMethodButton(
                     dark: dark,
                     icon: Icons.qr_code_scanner_rounded,
                     label: 'Scan QR code',
-                    helper:
-                        'Scan and confirm Wi-Fi on the separate QR scanner.',
+                    helper: 'Scan the camera Wi-Fi QR code.',
                     disabled: widget.operationInFlight,
                     onTap: widget.onQr,
+                  ),
+                ),
+                // Deliberately disabled: keep visible for future support.
+                SizedBox(
+                  width: itemWidth,
+                  child: _TransportMethodButton(
+                    dark: dark,
+                    icon: Icons.bluetooth_rounded,
+                    label: 'Bluetooth (soon)',
+                    helper: 'Not available yet. Use NFC, Wi-Fi, or QR scan.',
+                    disabled: true,
+                    onTap: null,
                   ),
                 ),
                 SizedBox(
@@ -1252,9 +1154,10 @@ class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
                   child: _TransportMethodButton(
                     dark: dark,
                     icon: Icons.usb_rounded,
-                    label: 'USB / PTP',
-                    disabled: widget.operationInFlight,
-                    onTap: widget.onUsb,
+                    label: 'USB / PTP (soon)',
+                    helper: 'USB / PTP is not available yet.',
+                    disabled: true,
+                    onTap: null,
                   ),
                 ),
                 SizedBox(
@@ -1262,9 +1165,10 @@ class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
                   child: _TransportMethodButton(
                     dark: dark,
                     icon: Icons.videocam_outlined,
-                    label: 'HDMI / UVC',
-                    disabled: widget.operationInFlight,
-                    onTap: widget.onUvc,
+                    label: 'HDMI / UVC (soon)',
+                    helper: 'HDMI / UVC is not available yet.',
+                    disabled: true,
+                    onTap: null,
                   ),
                 ),
               ],
@@ -1292,7 +1196,6 @@ class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
     final secondary = _uiSecondary(dark);
     final border = _uiBorderStrong(dark);
     final danger = _uiDanger(dark);
-
     final formEnabled = !_submittingWifi && !widget.operationInFlight;
 
     return Container(
@@ -1342,15 +1245,10 @@ class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
               ),
               validator: (value) {
                 final name = value?.trim() ?? '';
-
-                if (name.isEmpty) {
-                  return 'Enter the camera Wi-Fi name.';
-                }
-
+                if (name.isEmpty) return 'Enter the camera Wi-Fi name.';
                 if (name.codeUnits.length > 32) {
                   return 'Wi-Fi name cannot exceed 32 characters.';
                 }
-
                 return null;
               },
             ),
@@ -1365,28 +1263,18 @@ class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
               dropdownColor: _uiSurface(dark),
               style: TextStyle(color: foreground, fontSize: 13),
               items: const [
-                DropdownMenuItem(
-                  value: 'WPA2',
-                  child: Text('WPA / WPA2'),
-                ),
-                DropdownMenuItem(
-                  value: 'OPEN',
-                  child: Text('Open network'),
-                ),
+                DropdownMenuItem(value: 'WPA2', child: Text('WPA / WPA2')),
+                DropdownMenuItem(value: 'OPEN', child: Text('Open network')),
               ],
               onChanged: formEnabled
-                  ? (value) {
-                      setState(() {
+                  ? (value) => setState(() {
                         _securityType = value ?? 'WPA2';
-
                         if (_securityType == 'OPEN') {
                           _passwordController.clear();
                         }
-
                         _wifiFeedback = null;
                         _wifiSucceeded = null;
-                      });
-                    }
+                      })
                   : null,
             ),
             const SizedBox(height: 10),
@@ -1410,9 +1298,7 @@ class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
                 suffixIcon: IconButton(
                   tooltip: _hidePassword ? 'Show password' : 'Hide password',
                   onPressed: formEnabled && _securityType != 'OPEN'
-                      ? () => setState(
-                            () => _hidePassword = !_hidePassword,
-                          )
+                      ? () => setState(() => _hidePassword = !_hidePassword)
                       : null,
                   icon: Icon(
                     _hidePassword
@@ -1424,13 +1310,10 @@ class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
               ),
               validator: (value) {
                 if (_securityType == 'OPEN') return null;
-
                 final length = value?.length ?? 0;
-
                 if (length < 8 || length > 63) {
                   return 'Password must contain 8–63 characters.';
                 }
-
                 return null;
               },
             ),
@@ -1493,14 +1376,10 @@ class _ConnectionMethodsPanelState extends State<_ConnectionMethodsPanel> {
                         ? const SizedBox(
                             width: 15,
                             height: 15,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 1.7,
-                            ),
+                            child: CircularProgressIndicator(strokeWidth: 1.7),
                           )
                         : const Icon(Icons.link_rounded, size: 16),
-                    label: Text(
-                      _submittingWifi ? 'CONNECTING…' : 'CONNECT',
-                    ),
+                    label: Text(_submittingWifi ? 'CONNECTING…' : 'CONNECT'),
                   ),
                 ),
               ],
@@ -1521,26 +1400,19 @@ InputDecoration _wifiInputDecoration({
 }) {
   final secondary = _uiSecondary(dark);
   final border = _uiBorderStrong(dark);
-
   return InputDecoration(
     labelText: label,
     hintText: hint,
     helperText: helper,
     helperMaxLines: 2,
     labelStyle: TextStyle(color: secondary, fontSize: 12),
-    hintStyle: TextStyle(
-      color: secondary.withValues(alpha: .7),
-      fontSize: 12,
-    ),
+    hintStyle: TextStyle(color: secondary.withValues(alpha: .7), fontSize: 12),
     helperStyle: TextStyle(color: secondary, fontSize: 10),
     errorStyle: TextStyle(color: _uiDanger(dark), fontSize: 10),
     filled: true,
     fillColor: _uiSurface(dark),
     isDense: true,
-    contentPadding: const EdgeInsets.symmetric(
-      horizontal: 12,
-      vertical: 13,
-    ),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
     suffixIcon: suffixIcon,
     enabledBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(5),
@@ -1548,10 +1420,7 @@ InputDecoration _wifiInputDecoration({
     ),
     focusedBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(5),
-      borderSide: BorderSide(
-        color: _uiAccent(dark),
-        width: 1.3,
-      ),
+      borderSide: BorderSide(color: _uiAccent(dark), width: 1.3),
     ),
     errorBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(5),
@@ -1559,19 +1428,14 @@ InputDecoration _wifiInputDecoration({
     ),
     focusedErrorBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(5),
-      borderSide: BorderSide(
-        color: _uiDanger(dark),
-        width: 1.3,
-      ),
+      borderSide: BorderSide(color: _uiDanger(dark), width: 1.3),
     ),
   );
 }
 
 String _cleanError(Object error) {
   final value = error.toString().trim();
-
   if (value.isEmpty) return 'Unknown error.';
-
   return value.replaceFirst(RegExp(r'^Exception:\s*'), '');
 }
 
@@ -1605,9 +1469,8 @@ class _TransportMethodButton extends StatelessWidget {
     final foreground = active ? selectedColor : _uiForeground(dark);
 
     return Tooltip(
-      message: configured
-          ? (helper ?? label)
-          : '$label is not available in this build.',
+      message: helper ??
+          (configured ? label : '$label is not available in this build.'),
       child: SizedBox(
         height: 50,
         width: double.infinity,
@@ -1616,29 +1479,19 @@ class _TransportMethodButton extends StatelessWidget {
           style: TextButton.styleFrom(
             foregroundColor: foreground,
             disabledForegroundColor: _uiMuted(dark),
-            backgroundColor: active
-                ? selectedColor.withValues(alpha: .12)
-                : Colors.transparent,
+            backgroundColor:
+                active ? selectedColor.withValues(alpha: .12) : Colors.transparent,
             overlayColor: accent.withValues(alpha: .08),
             alignment: Alignment.centerLeft,
-            padding: const EdgeInsets.symmetric(
-              horizontal: 10,
-              vertical: 8,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             minimumSize: Size.zero,
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             visualDensity: VisualDensity.compact,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(5),
-            ),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
           ),
           child: Row(
             children: [
-              Icon(
-                icon,
-                size: 19,
-                color: enabled ? accent : _uiMuted(dark),
-              ),
+              Icon(icon, size: 19, color: enabled ? accent : _uiMuted(dark)),
               const SizedBox(width: 9),
               Expanded(
                 child: Text(
@@ -1649,19 +1502,14 @@ class _TransportMethodButton extends StatelessWidget {
                   style: TextStyle(
                     color: enabled ? foreground : _uiMuted(dark),
                     fontSize: 12,
-                    fontWeight:
-                        active ? FontWeight.w700 : FontWeight.w500,
+                    fontWeight: active ? FontWeight.w700 : FontWeight.w500,
                     letterSpacing: -.1,
                   ),
                 ),
               ),
               if (active) ...[
                 const SizedBox(width: 4),
-                Icon(
-                  Icons.circle,
-                  size: 6,
-                  color: selectedColor,
-                ),
+                Icon(Icons.circle, size: 6, color: selectedColor),
               ],
             ],
           ),
@@ -1683,125 +1531,102 @@ class _SectionHeading extends StatelessWidget {
   final bool dark;
 
   @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: TextStyle(
-            color: _uiForeground(dark),
-            fontSize: 16,
-            height: 1.15,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -.25,
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              color: _uiForeground(dark),
+              fontSize: 16,
+              height: 1.15,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -.25,
+            ),
           ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          subtitle,
-          style: TextStyle(
-            color: _uiSecondary(dark),
-            fontSize: 12,
-            height: 1.35,
+          const SizedBox(height: 4),
+          Text(
+            subtitle,
+            style: TextStyle(
+              color: _uiSecondary(dark),
+              fontSize: 12,
+              height: 1.35,
+            ),
           ),
-        ),
-      ],
-    );
-  }
+        ],
+      );
 }
 
 class _OperationNotice extends StatelessWidget {
-  const _OperationNotice({
-    required this.dark,
-    required this.label,
-  });
-
+  const _OperationNotice({required this.dark, required this.label});
   final bool dark;
   final String label;
 
   @override
-  Widget build(BuildContext context) {
-    final accent = _uiAccent(dark);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 15,
-            height: 15,
-            child: CircularProgressIndicator(
-              strokeWidth: 1.8,
-              valueColor: AlwaysStoppedAnimation<Color>(accent),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                color: _uiSecondary(dark),
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 15,
+              height: 15,
+              child: CircularProgressIndicator(
+                strokeWidth: 1.8,
+                valueColor: AlwaysStoppedAnimation<Color>(_uiAccent(dark)),
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: _uiSecondary(dark),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
 }
 
 class _SheetHandle extends StatelessWidget {
   const _SheetHandle({required this.dark});
-
   final bool dark;
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 40,
-      height: 4,
-      decoration: BoxDecoration(
-        color: _uiBorderStrong(dark),
-        borderRadius: BorderRadius.circular(99),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Container(
+        width: 40,
+        height: 4,
+        decoration: BoxDecoration(
+          color: _uiBorderStrong(dark),
+          borderRadius: BorderRadius.circular(99),
+        ),
+      );
 }
 
 class _IconFrame extends StatelessWidget {
-  const _IconFrame({
-    required this.dark,
-    required this.child,
-  });
-
+  const _IconFrame({required this.dark, required this.child});
   final bool dark;
   final Widget child;
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 36,
-      height: 36,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: _uiSurfaceAlt(dark),
-        border: Border.all(color: _uiBorderStrong(dark)),
-        borderRadius: BorderRadius.circular(7),
-      ),
-      child: child,
-    );
-  }
+  Widget build(BuildContext context) => Container(
+        width: 36,
+        height: 36,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: _uiSurfaceAlt(dark),
+          border: Border.all(color: _uiBorderStrong(dark)),
+          borderRadius: BorderRadius.circular(7),
+        ),
+        child: child,
+      );
 }
 
 class _SheetStatusIndicator extends StatelessWidget {
-  const _SheetStatusIndicator({
-    required this.link,
-    required this.dark,
-  });
-
+  const _SheetStatusIndicator({required this.link, required this.dark});
   final CameraLink link;
   final bool dark;
 
@@ -1812,17 +1637,13 @@ class _SheetStatusIndicator extends StatelessWidget {
       CameraLink.error => _uiDanger(dark),
       _ => _uiMuted(dark),
     };
-
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
           width: 7,
           height: 7,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-          ),
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
         const SizedBox(width: 7),
         ConstrainedBox(
@@ -1858,7 +1679,6 @@ class _DetailGroup extends StatelessWidget {
   Widget build(BuildContext context) {
     final foreground = _uiForeground(dark);
     final secondary = _uiSecondary(dark);
-
     return Padding(
       padding: const EdgeInsets.only(top: 13, bottom: 4),
       child: Column(
@@ -1907,11 +1727,7 @@ class _DetailGroup extends StatelessWidget {
                 ],
               ),
             ),
-          Divider(
-            height: 12,
-            thickness: 1,
-            color: _uiBorder(dark),
-          ),
+          Divider(height: 12, thickness: 1, color: _uiBorder(dark)),
         ],
       ),
     );
@@ -1944,11 +1760,10 @@ class _SessionControlButton extends StatelessWidget {
         : danger
             ? _uiDanger(dark)
             : _uiForeground(dark);
-
-    final border =
-        danger ? _uiDanger(dark).withValues(alpha: .6) : _uiBorderStrong(dark);
+    final border = danger
+        ? _uiDanger(dark).withValues(alpha: .6)
+        : _uiBorderStrong(dark);
     final accent = _uiAccent(dark);
-
     return SizedBox(
       height: 44,
       width: double.infinity,
@@ -1958,22 +1773,14 @@ class _SessionControlButton extends StatelessWidget {
           foregroundColor: foreground,
           disabledForegroundColor: _uiMuted(dark),
           backgroundColor: Colors.transparent,
-          overlayColor:
-              (danger ? _uiDanger(dark) : accent).withValues(alpha: .07),
-          side: BorderSide(
-            color: disabled ? _uiBorder(dark) : border,
-          ),
+          overlayColor: (danger ? _uiDanger(dark) : accent).withValues(alpha: .07),
+          side: BorderSide(color: disabled ? _uiBorder(dark) : border),
           padding: const EdgeInsets.symmetric(horizontal: 5),
           minimumSize: Size.zero,
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           visualDensity: VisualDensity.compact,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(5),
-          ),
-          textStyle: const TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+          textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -1997,10 +1804,7 @@ class _SessionControlButton extends StatelessWidget {
                   label,
                   maxLines: 1,
                   softWrap: false,
-                  style: TextStyle(
-                    color: foreground,
-                    fontSize: 11,
-                  ),
+                  style: TextStyle(color: foreground, fontSize: 11),
                 ),
               ),
             ),
@@ -2013,7 +1817,6 @@ class _SessionControlButton extends StatelessWidget {
 
 String _displayValue(String? value) {
   final normalized = value?.trim();
-
   return normalized == null || normalized.isEmpty
       ? 'Not available'
       : normalized;
@@ -2025,37 +1828,27 @@ String _displayValue(String? value) {
 
 Color _uiForeground(bool dark) =>
     dark ? const Color(0xFFF2F6F3) : const Color(0xFF111612);
-
 Color _uiSurface(bool dark) =>
     dark ? const Color(0xFF101512) : const Color(0xFFFFFFFF);
-
 Color _uiSurfaceAlt(bool dark) =>
     dark ? const Color(0xFF171D19) : const Color(0xFFE7ECE9);
-
 Color _uiConsole(bool dark) =>
     dark ? const Color(0xFF080B09) : const Color(0xFFE1E8E3);
-
 Color _uiAccent(bool dark) =>
     dark ? const Color(0xFF55D98B) : const Color(0xFF1D7E4B);
-
 Color _uiSecondary(bool dark) =>
     (dark ? const Color(0xFFE7EEE9) : const Color(0xFF2D3831))
         .withValues(alpha: .76);
-
 Color _uiMuted(bool dark) =>
     (dark ? const Color(0xFFB4BFB8) : const Color(0xFF56635B))
         .withValues(alpha: .78);
-
 Color _uiBorder(bool dark) =>
     (dark ? const Color(0xFFB8C4BD) : const Color(0xFF35423A))
         .withValues(alpha: .16);
-
 Color _uiBorderStrong(bool dark) =>
     (dark ? const Color(0xFFB8C4BD) : const Color(0xFF35423A))
         .withValues(alpha: .30);
-
 Color _uiDanger(bool dark) =>
     dark ? const Color(0xFFE56B6F) : const Color(0xFFB64045);
-
 Color _activeTextOn(Color background) =>
     background.computeLuminance() > .5 ? Colors.black : Colors.white;

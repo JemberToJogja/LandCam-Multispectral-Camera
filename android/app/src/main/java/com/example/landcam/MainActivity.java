@@ -1,6 +1,18 @@
 package com.example.landcam;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothGatt;
+import android.bluetooth.BluetoothGattCallback;
+import android.bluetooth.BluetoothGattService;
+import android.bluetooth.BluetoothManager;
+import android.bluetooth.BluetoothProfile;
+import android.bluetooth.le.BluetoothLeScanner;
+import android.bluetooth.le.ScanCallback;
+import android.bluetooth.le.ScanResult;
+import android.bluetooth.le.ScanSettings;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -14,6 +26,8 @@ import android.nfc.NdefRecord;
 import android.nfc.NfcAdapter;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.View;
@@ -22,9 +36,11 @@ import android.view.WindowManager;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
@@ -53,6 +69,10 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
     private static final String PREFS_NAME = "landcam_connection";
     private static final String PREF_PREFERRED_TRANSPORT = "preferred_transport";
     private static final int WIFI_PERMISSION_REQUEST = 100;
+    private static final int BLUETOOTH_PERMISSION_REQUEST = 101;
+    private static final int BLUETOOTH_ENABLE_REQUEST = 102;
+    private static final long BLUETOOTH_SCAN_TIMEOUT_MS = 7000L;
+    private static final long BLUETOOTH_CONNECT_TIMEOUT_MS = 18000L;
     private static final int GPU_NDVI_TEXTURE_WIDTH = 960;
     private static final int GPU_NDVI_TEXTURE_HEIGHT = 960;
     private static final String ACTION_USB_PERMISSION_SUFFIX = ".USB_PERMISSION";
@@ -88,6 +108,32 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
     private volatile String activeTransport = "WIFI";
     private volatile String transportStatus = "DISCONNECTED";
     private volatile String transportStatusReason = "NO ACTIVE CAMERA CONNECTION";
+
+    // BLE transport state. A GATT link is transport connectivity only; it does
+    // not imply that a camera-control protocol or live-view endpoint exists.
+    private BluetoothAdapter bluetoothAdapter;
+    private BluetoothLeScanner bluetoothLeScanner;
+    private BluetoothGatt bluetoothGatt;
+    private String bluetoothConnectedAddress;
+    private final Handler bluetoothHandler = new Handler(Looper.getMainLooper());
+    private final Map<String, Map<String, Object>> bluetoothScanResults =
+            new LinkedHashMap<>();
+
+    private ScanCallback bluetoothScanCallback;
+    private MethodChannel.Result pendingBluetoothScanResult;
+    private Runnable bluetoothScanTimeout;
+
+    private MethodChannel.Result pendingBluetoothConnectResult;
+    private Runnable bluetoothConnectTimeout;
+
+    // Permission/adapter prompts are asynchronous MethodChannel operations.
+    private MethodChannel.Result pendingBluetoothPermissionResult;
+    private Runnable pendingBluetoothPermissionAction;
+    private Object pendingBluetoothPermissionFallback;
+
+    private MethodChannel.Result pendingBluetoothEnableResult;
+    private Runnable pendingBluetoothEnableAction;
+    private Object pendingBluetoothEnableFallback;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -298,7 +344,7 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
                     return;
                 }
                 case "connectBluetooth":
-                    result.success(reportUnsupportedTransport("BLUETOOTH", "BLUETOOTH_TRANSPORT_NOT_INTEGRATED"));
+                    connectBluetoothDevice(call.arguments, result);
                     return;
                 case "connectUsbPtp":
                     result.success(reportUnsupportedTransport("USB_PTP", "USB_PTP_SESSION_NOT_INTEGRATED"));
@@ -307,8 +353,7 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
                     result.success(reportUnsupportedTransport("HDMI_UVC", "UVC_VIDEO_PIPELINE_NOT_INTEGRATED"));
                     return;
                 case "scanBluetoothDevices":
-                    reportUnsupportedTransport("BLUETOOTH", "BLUETOOTH_DISCOVERY_NOT_INTEGRATED");
-                    result.success(new ArrayList<Map<String, Object>>());
+                    scanBluetoothDevices(result);
                     return;
                 case "scanUsbDevices":
                     result.success(scanUsbDevices());
@@ -325,6 +370,8 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
                         transportStatusReason = "DISCONNECT REQUESTED";
                         sendEvent("transportStatus", getTransportStatusPayload());
                         result.success(true);
+                    } else if ("BLUETOOTH".equals(transport)) {
+                        result.success(disconnectBluetooth());
                     } else {
                         result.success(reportUnsupportedTransport(transport, "TRANSPORT_DISCONNECT_NOT_INTEGRATED"));
                     }
@@ -340,12 +387,16 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
                     result.success(getConnectionDiagnostics());
                     return;
                 case "disconnect":
-                    ensureEngine().disconnect();
-                    activeTransport = "WIFI";
-                    transportStatus = "DISCONNECTING";
-                    transportStatusReason = "DISCONNECT REQUESTED";
-                    sendEvent("transportStatus", getTransportStatusPayload());
-                    result.success(true);
+                    if ("BLUETOOTH".equals(activeTransport)) {
+                        result.success(disconnectBluetooth());
+                    } else {
+                        ensureEngine().disconnect();
+                        activeTransport = "WIFI";
+                        transportStatus = "DISCONNECTING";
+                        transportStatusReason = "DISCONNECT REQUESTED";
+                        sendEvent("transportStatus", getTransportStatusPayload());
+                        result.success(true);
+                    }
                     return;
                 default:
                     result.notImplemented();
@@ -353,6 +404,758 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
         } catch (Exception e) {
             Log.e(TAG, "Method call failed: " + call.method, e);
             result.error("NATIVE_ERROR", safeMessage(e), null);
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Bluetooth Low Energy (BLE) discovery and GATT connection
+    // ---------------------------------------------------------------------
+
+    private BluetoothAdapter getBluetoothAdapterSafe() {
+        if (bluetoothAdapter != null) return bluetoothAdapter;
+
+        BluetoothManager manager =
+                (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+        bluetoothAdapter = manager != null
+                ? manager.getAdapter()
+                : BluetoothAdapter.getDefaultAdapter();
+        return bluetoothAdapter;
+    }
+
+    private boolean hasBluetoothConnectPermission() {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.S
+                || checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)
+                == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private boolean hasBluetoothScanPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            return checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN)
+                    == PackageManager.PERMISSION_GRANTED;
+        }
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.M
+                || checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private boolean isBluetoothEnabledSafe() {
+        BluetoothAdapter adapter = getBluetoothAdapterSafe();
+        if (adapter == null) return false;
+        try {
+            return adapter.isEnabled();
+        } catch (SecurityException error) {
+            return false;
+        }
+    }
+
+    /** Request the API-level-appropriate runtime permissions before using BLE. */
+    private void runBluetoothOperationWithPermissions(
+            MethodChannel.Result result,
+            Object fallback,
+            boolean needsScan,
+            Runnable onGranted
+    ) {
+        List<String> missing = new ArrayList<>();
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (needsScan
+                    && checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN)
+                    != PackageManager.PERMISSION_GRANTED) {
+                missing.add(Manifest.permission.BLUETOOTH_SCAN);
+            }
+            if (checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)
+                    != PackageManager.PERMISSION_GRANTED) {
+                missing.add(Manifest.permission.BLUETOOTH_CONNECT);
+            }
+        } else if (needsScan
+                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                && checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+            missing.add(Manifest.permission.ACCESS_FINE_LOCATION);
+        }
+
+        if (missing.isEmpty()) {
+            try {
+                onGranted.run();
+            } catch (Exception error) {
+                Log.e(TAG, "Bluetooth operation could not start", error);
+                sendEvent("engineWarning",
+                        "BLUETOOTH OPERATION FAILED: " + safeMessage(error));
+                // Most actions either finish synchronously or retain the result
+                // for an asynchronous scan/GATT callback. Do not complete it a
+                // second time here if an async operation has already retained it.
+            }
+            return;
+        }
+
+        if (pendingBluetoothPermissionResult != null) {
+            sendEvent("engineWarning", "BLUETOOTH PERMISSION REQUEST ALREADY IN PROGRESS");
+            result.success(fallback);
+            return;
+        }
+
+        pendingBluetoothPermissionResult = result;
+        pendingBluetoothPermissionAction = onGranted;
+        pendingBluetoothPermissionFallback = fallback;
+
+        try {
+            requestPermissions(
+                    missing.toArray(new String[0]),
+                    BLUETOOTH_PERMISSION_REQUEST
+            );
+        } catch (Exception error) {
+            pendingBluetoothPermissionResult = null;
+            pendingBluetoothPermissionAction = null;
+            pendingBluetoothPermissionFallback = null;
+            sendEvent("engineWarning",
+                    "COULD NOT REQUEST BLUETOOTH PERMISSIONS: " + safeMessage(error));
+            result.success(fallback);
+        }
+    }
+
+    /** Android does not allow apps to silently switch Bluetooth on. */
+    private void runWhenBluetoothEnabled(
+            MethodChannel.Result result,
+            Object fallback,
+            Runnable onEnabled
+    ) {
+        BluetoothAdapter adapter = getBluetoothAdapterSafe();
+        if (adapter == null) {
+            sendEvent("engineWarning", "THIS DEVICE DOES NOT SUPPORT BLUETOOTH");
+            result.success(fallback);
+            return;
+        }
+
+        final boolean enabled;
+        try {
+            enabled = adapter.isEnabled();
+        } catch (SecurityException error) {
+            sendEvent("engineWarning", "BLUETOOTH CONNECT PERMISSION IS REQUIRED");
+            result.success(fallback);
+            return;
+        }
+
+        if (enabled) {
+            onEnabled.run();
+            return;
+        }
+
+        if (pendingBluetoothEnableResult != null) {
+            sendEvent("engineWarning", "BLUETOOTH ACTIVATION REQUEST ALREADY IN PROGRESS");
+            result.success(fallback);
+            return;
+        }
+
+        pendingBluetoothEnableResult = result;
+        pendingBluetoothEnableAction = onEnabled;
+        pendingBluetoothEnableFallback = fallback;
+
+        try {
+            startActivityForResult(
+                    new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE),
+                    BLUETOOTH_ENABLE_REQUEST
+            );
+        } catch (Exception error) {
+            pendingBluetoothEnableResult = null;
+            pendingBluetoothEnableAction = null;
+            pendingBluetoothEnableFallback = null;
+            sendEvent("engineWarning",
+                    "COULD NOT REQUEST BLUETOOTH ACTIVATION: " + safeMessage(error));
+            result.success(fallback);
+        }
+    }
+
+    private void scanBluetoothDevices(MethodChannel.Result result) {
+        List<Map<String, Object>> fallback = new ArrayList<>();
+        runBluetoothOperationWithPermissions(
+                result,
+                fallback,
+                true,
+                () -> runWhenBluetoothEnabled(
+                        result,
+                        fallback,
+                        () -> beginBluetoothScan(result)
+                )
+        );
+    }
+
+    @SuppressLint("MissingPermission")
+    private void beginBluetoothScan(MethodChannel.Result result) {
+        BluetoothAdapter adapter = getBluetoothAdapterSafe();
+        if (adapter == null) {
+            sendEvent("engineWarning", "THIS DEVICE DOES NOT SUPPORT BLUETOOTH");
+            result.success(new ArrayList<Map<String, Object>>());
+            return;
+        }
+        if (pendingBluetoothScanResult != null) {
+            sendEvent("engineWarning", "A BLUETOOTH SCAN IS ALREADY RUNNING");
+            result.success(snapshotBluetoothScanResults());
+            return;
+        }
+
+        synchronized (bluetoothScanResults) {
+            bluetoothScanResults.clear();
+        }
+
+        // Include already-bonded LE and dual-mode devices. Classic-only devices
+        // are omitted because this implementation connects with BLE/GATT.
+        try {
+            Set<BluetoothDevice> bondedDevices = adapter.getBondedDevices();
+            for (BluetoothDevice device : bondedDevices) {
+                Map<String, Object> item = bluetoothDevicePayload(
+                        device, false, null, null);
+                if (item != null) {
+                    synchronized (bluetoothScanResults) {
+                        bluetoothScanResults.put(
+                                String.valueOf(item.get("address")), item);
+                    }
+                }
+            }
+        } catch (SecurityException error) {
+            sendEvent("engineWarning",
+                    "COULD NOT READ PAIRED BLUETOOTH DEVICES: " + safeMessage(error));
+        }
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+            List<Map<String, Object>> devices = snapshotBluetoothScanResults();
+            sendEvent("bluetoothDevices", devices);
+            result.success(devices);
+            return;
+        }
+
+        final BluetoothLeScanner scanner;
+        try {
+            scanner = adapter.getBluetoothLeScanner();
+        } catch (SecurityException error) {
+            sendEvent("engineWarning", "BLUETOOTH SCAN PERMISSION IS REQUIRED");
+            List<Map<String, Object>> devices = snapshotBluetoothScanResults();
+            sendEvent("bluetoothDevices", devices);
+            result.success(devices);
+            return;
+        }
+
+        if (scanner == null) {
+            sendEvent("engineWarning", "BLUETOOTH LE SCANNER IS UNAVAILABLE");
+            List<Map<String, Object>> devices = snapshotBluetoothScanResults();
+            sendEvent("bluetoothDevices", devices);
+            result.success(devices);
+            return;
+        }
+
+        bluetoothLeScanner = scanner;
+        pendingBluetoothScanResult = result;
+
+        ScanCallback callback = new ScanCallback() {
+            @Override
+            public void onScanResult(int callbackType, ScanResult scanResult) {
+                if (scanResult == null || scanResult.getDevice() == null) return;
+                bluetoothHandler.post(() -> {
+                    if (bluetoothScanCallback != this) return;
+                    String advertisedName = null;
+                    if (scanResult.getScanRecord() != null) {
+                        advertisedName = scanResult.getScanRecord().getDeviceName();
+                    }
+                    Map<String, Object> item = bluetoothDevicePayload(
+                            scanResult.getDevice(), true,
+                            scanResult.getRssi(), advertisedName);
+                    if (item == null) return;
+                    synchronized (bluetoothScanResults) {
+                        bluetoothScanResults.put(
+                                String.valueOf(item.get("address")), item);
+                    }
+                });
+            }
+
+            @Override
+            public void onBatchScanResults(List<ScanResult> results) {
+                if (results == null) return;
+                for (ScanResult scanResult : results) {
+                    onScanResult(ScanSettings.CALLBACK_TYPE_ALL_MATCHES, scanResult);
+                }
+            }
+
+            @Override
+            public void onScanFailed(int errorCode) {
+                bluetoothHandler.post(() -> {
+                    if (bluetoothScanCallback != this) return;
+                    finishBluetoothScan("BLUETOOTH LE SCAN FAILED: " + errorCode);
+                });
+            }
+        };
+
+        bluetoothScanCallback = callback;
+        try {
+            ScanSettings settings = new ScanSettings.Builder()
+                    .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+                    .build();
+            scanner.startScan(null, settings, callback);
+            sendEvent("log", mapOf(
+                    "level", "INFO",
+                    "message", "Bluetooth LE scan started"
+            ));
+            bluetoothScanTimeout = () -> finishBluetoothScan(null);
+            bluetoothHandler.postDelayed(
+                    bluetoothScanTimeout, BLUETOOTH_SCAN_TIMEOUT_MS);
+        } catch (Exception error) {
+            Log.e(TAG, "Bluetooth LE scan could not start", error);
+            finishBluetoothScan(
+                    "BLUETOOTH SCAN ERROR: " + safeMessage(error));
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private Map<String, Object> bluetoothDevicePayload(
+            BluetoothDevice device,
+            boolean foundByBleScan,
+            Integer rssi,
+            String advertisedName
+    ) {
+        if (device == null) return null;
+        try {
+            int type = device.getType();
+            if (!foundByBleScan && type == BluetoothDevice.DEVICE_TYPE_CLASSIC) {
+                return null;
+            }
+
+            String address = device.getAddress();
+            if (address == null || address.trim().isEmpty()) return null;
+
+            String name = safeBluetoothDeviceName(device);
+            if (name == null || name.trim().isEmpty()) name = advertisedName;
+            if (name == null || name.trim().isEmpty()) {
+                name = "BLE device " + address.substring(
+                        Math.max(0, address.length() - 5));
+            }
+
+            String deviceType;
+            switch (type) {
+                case BluetoothDevice.DEVICE_TYPE_LE:
+                    deviceType = "LE";
+                    break;
+                case BluetoothDevice.DEVICE_TYPE_DUAL:
+                    deviceType = "DUAL";
+                    break;
+                case BluetoothDevice.DEVICE_TYPE_CLASSIC:
+                    deviceType = "CLASSIC";
+                    break;
+                default:
+                    deviceType = "UNKNOWN";
+                    break;
+            }
+
+            Map<String, Object> item = new HashMap<>();
+            item.put("deviceId", address);
+            item.put("address", address);
+            item.put("name", name);
+            item.put("paired", device.getBondState() == BluetoothDevice.BOND_BONDED);
+            item.put("deviceType", deviceType);
+            item.put("transport", "BLE");
+            item.put("discoveredByScan", foundByBleScan);
+            if (rssi != null) item.put("rssi", rssi);
+            return item;
+        } catch (SecurityException error) {
+            sendEvent("engineWarning",
+                    "BLUETOOTH PERMISSION ERROR WHILE READING DEVICE: " + safeMessage(error));
+            return null;
+        } catch (Exception error) {
+            Log.w(TAG, "Could not read Bluetooth device", error);
+            return null;
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private String safeBluetoothDeviceName(BluetoothDevice device) {
+        try {
+            String name = device == null ? null : device.getName();
+            return name == null ? "" : name;
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
+    private List<Map<String, Object>> snapshotBluetoothScanResults() {
+        synchronized (bluetoothScanResults) {
+            return new ArrayList<>(bluetoothScanResults.values());
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private void finishBluetoothScan(String warning) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            bluetoothHandler.post(() -> finishBluetoothScan(warning));
+            return;
+        }
+
+        if (bluetoothScanTimeout != null) {
+            bluetoothHandler.removeCallbacks(bluetoothScanTimeout);
+            bluetoothScanTimeout = null;
+        }
+
+        BluetoothLeScanner scanner = bluetoothLeScanner;
+        ScanCallback callback = bluetoothScanCallback;
+        bluetoothLeScanner = null;
+        bluetoothScanCallback = null;
+
+        if (scanner != null && callback != null) {
+            try {
+                scanner.stopScan(callback);
+            } catch (Exception error) {
+                Log.w(TAG, "Stopping Bluetooth scan failed", error);
+            }
+        }
+
+        MethodChannel.Result result = pendingBluetoothScanResult;
+        pendingBluetoothScanResult = null;
+        List<Map<String, Object>> devices = snapshotBluetoothScanResults();
+
+        if (warning != null && !warning.trim().isEmpty()) {
+            sendEvent("engineWarning", warning);
+        } else if (devices.isEmpty()) {
+            sendEvent("engineWarning",
+                    "NO BLE DEVICES FOUND. PUT THE CAMERA IN BLUETOOTH PAIRING MODE AND SCAN AGAIN.");
+        }
+
+        sendEvent("bluetoothDevices", devices);
+        sendEvent("log", mapOf(
+                "level", devices.isEmpty() ? "WARN" : "INFO",
+                "message", "Bluetooth LE scan finished: " + devices.size() + " device(s)"
+        ));
+        if (result != null) result.success(devices);
+    }
+
+    private void connectBluetoothDevice(Object arguments, MethodChannel.Result result) {
+        Map<String, Object> payload = readMapArguments(arguments);
+        Object rawId = payload == null ? arguments : payload.get("deviceId");
+        if (rawId == null && payload != null) rawId = payload.get("address");
+        String address = stringValue(rawId);
+
+        if (address == null || !address.matches("(?i)[0-9a-f]{2}(:[0-9a-f]{2}){5}")) {
+            sendEvent("engineWarning", "BLUETOOTH CONNECTION REQUIRES A VALID DEVICE ADDRESS");
+            result.success(false);
+            return;
+        }
+
+        runBluetoothOperationWithPermissions(
+                result,
+                false,
+                false,
+                () -> runWhenBluetoothEnabled(
+                        result,
+                        false,
+                        () -> beginBluetoothGattConnection(address, result)
+                )
+        );
+    }
+
+    @SuppressLint("MissingPermission")
+    private void beginBluetoothGattConnection(
+            String address,
+            MethodChannel.Result result
+    ) {
+        if (pendingBluetoothConnectResult != null) {
+            sendEvent("engineWarning", "A BLUETOOTH CONNECTION ATTEMPT IS ALREADY IN PROGRESS");
+            result.success(false);
+            return;
+        }
+
+        BluetoothAdapter adapter = getBluetoothAdapterSafe();
+        if (adapter == null) {
+            sendEvent("engineWarning", "THIS DEVICE DOES NOT SUPPORT BLUETOOTH");
+            result.success(false);
+            return;
+        }
+
+        final BluetoothDevice device;
+        try {
+            device = adapter.getRemoteDevice(address);
+        } catch (Exception error) {
+            sendEvent("engineWarning", "INVALID BLUETOOTH DEVICE: " + safeMessage(error));
+            result.success(false);
+            return;
+        }
+
+        // Replacing a previous BLE link is explicit; it does not disconnect the
+        // independent CameraEngine/Wi-Fi session.
+        closeBluetoothGattQuietly();
+        pendingBluetoothConnectResult = result;
+        activeTransport = "BLUETOOTH";
+        transportStatus = "CONNECTING";
+        transportStatusReason = "CONNECTING TO BLE DEVICE " + address;
+        sendEvent("transportStatus", getTransportStatusPayload());
+        sendEvent("log", mapOf(
+                "level", "INFO",
+                "message", "Connecting to Bluetooth LE device " + address
+        ));
+
+        BluetoothGattCallback callback = new BluetoothGattCallback() {
+            @Override
+            public void onConnectionStateChange(
+                    BluetoothGatt gatt,
+                    int status,
+                    int newState
+            ) {
+                bluetoothHandler.post(() -> {
+                    if (bluetoothGatt != gatt) {
+                        try { gatt.close(); } catch (Exception ignored) { }
+                        return;
+                    }
+
+                    if (status == BluetoothGatt.GATT_SUCCESS
+                            && newState == BluetoothProfile.STATE_CONNECTED) {
+                        bluetoothConnectedAddress = address;
+                        Log.i(TAG, "BLE GATT connected: address=" + address
+                                + ", name=" + safeBluetoothDeviceName(device));
+                        activeTransport = "BLUETOOTH";
+                        transportStatus = "CONNECTED";
+                        transportStatusReason =
+                                "BLE LINK CONNECTED; CAMERA CONTROL NOT VERIFIED";
+                        sendEvent("transportStatus", getTransportStatusPayload());
+                        sendEvent("transportCapabilities", getTransportCapabilities("BLUETOOTH"));
+                        sendEvent("bluetoothConnected", mapOf(
+                                "address", address,
+                                "name", safeBluetoothDeviceName(device),
+                                "gattConnected", true,
+                                "bleConnected", true,
+                                "connectionMode", "BLE_GATT",
+                                "cameraControlVerified", false
+                        ));
+                        sendEvent("log", mapOf(
+                                "level", "INFO",
+                                "message", "BLE GATT link connected; this does not confirm Sony camera-control services"
+                        ));
+                        finishPendingBluetoothConnect(true);
+
+                        try {
+                            gatt.discoverServices();
+                        } catch (Exception error) {
+                            sendEvent("engineWarning",
+                                    "BLE CONNECTED, BUT SERVICE DISCOVERY FAILED: " + safeMessage(error));
+                        }
+                        return;
+                    }
+
+                    if (newState == BluetoothProfile.STATE_DISCONNECTED
+                            || status != BluetoothGatt.GATT_SUCCESS) {
+                        Log.w(TAG, "BLE GATT state changed: address=" + address
+                                + ", status=" + status + ", newState=" + newState);
+                        sendEvent("log", mapOf(
+                                "level", status == BluetoothGatt.GATT_SUCCESS ? "INFO" : "ERROR",
+                                "message", "BLE GATT state change: address=" + address
+                                        + ", status=" + status + ", newState=" + newState
+                        ));
+                        boolean wasConnecting = pendingBluetoothConnectResult != null;
+                        cancelBluetoothConnectTimeout();
+                        bluetoothGatt = null;
+                        bluetoothConnectedAddress = null;
+                        try { gatt.close(); } catch (Exception ignored) { }
+
+                        activeTransport = "BLUETOOTH";
+                        transportStatus = wasConnecting ? "ERROR" : "DISCONNECTED";
+                        transportStatusReason = wasConnecting
+                                ? "BLE CONNECTION FAILED (GATT STATUS " + status + ")"
+                                : "BLE CONNECTION LOST (GATT STATUS " + status + ")";
+                        sendEvent("transportStatus", getTransportStatusPayload());
+                        sendEvent("transportCapabilities", getTransportCapabilities("BLUETOOTH"));
+                        sendEvent("bluetoothDisconnected", mapOf(
+                                "address", address,
+                                "status", status,
+                                "wasConnecting", wasConnecting
+                        ));
+                        sendEvent("engineWarning", transportStatusReason);
+                        if (wasConnecting) finishPendingBluetoothConnect(false);
+                    }
+                });
+            }
+
+            @Override
+            public void onServicesDiscovered(BluetoothGatt gatt, int status) {
+                bluetoothHandler.post(() -> {
+                    if (bluetoothGatt != gatt) return;
+                    List<String> serviceUuids = new ArrayList<>();
+                    if (status == BluetoothGatt.GATT_SUCCESS) {
+                        for (BluetoothGattService service : gatt.getServices()) {
+                            serviceUuids.add(service.getUuid().toString());
+                        }
+                    }
+                    sendEvent("bluetoothServices", mapOf(
+                            "address", address,
+                            "success", status == BluetoothGatt.GATT_SUCCESS,
+                            "status", status,
+                            "services", serviceUuids,
+                            "connectionMode", "BLE_GATT",
+                            "gattConnected", bluetoothGatt == gatt
+                    ));
+                    sendEvent("log", mapOf(
+                            "level", status == BluetoothGatt.GATT_SUCCESS ? "INFO" : "WARN",
+                            "message", "BLE GATT service discovery status=" + status
+                                    + ", services=" + serviceUuids.size()
+                    ));
+                });
+            }
+        };
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                bluetoothGatt = device.connectGatt(
+                        this, false, callback, BluetoothDevice.TRANSPORT_LE);
+            } else {
+                bluetoothGatt = device.connectGatt(this, false, callback);
+            }
+
+            if (bluetoothGatt == null) {
+                finishPendingBluetoothConnect(false);
+                transportStatus = "ERROR";
+                transportStatusReason = "BLUETOOTH GATT CONNECTION COULD NOT START";
+                sendEvent("transportStatus", getTransportStatusPayload());
+                sendEvent("engineWarning", transportStatusReason);
+                return;
+            }
+
+            bluetoothConnectTimeout = () -> {
+                if (pendingBluetoothConnectResult != result) return;
+                finishPendingBluetoothConnect(false);
+                closeBluetoothGattQuietly();
+                activeTransport = "BLUETOOTH";
+                transportStatus = "ERROR";
+                transportStatusReason = "BLUETOOTH GATT CONNECTION TIMED OUT";
+                sendEvent("transportStatus", getTransportStatusPayload());
+                sendEvent("transportCapabilities", getTransportCapabilities("BLUETOOTH"));
+                sendEvent("engineWarning", transportStatusReason);
+            };
+            bluetoothHandler.postDelayed(
+                    bluetoothConnectTimeout, BLUETOOTH_CONNECT_TIMEOUT_MS);
+        } catch (Exception error) {
+            finishPendingBluetoothConnect(false);
+            closeBluetoothGattQuietly();
+            activeTransport = "BLUETOOTH";
+            transportStatus = "ERROR";
+            transportStatusReason = "BLUETOOTH GATT CONNECTION FAILED: " + safeMessage(error);
+            sendEvent("transportStatus", getTransportStatusPayload());
+            sendEvent("transportCapabilities", getTransportCapabilities("BLUETOOTH"));
+            sendEvent("engineWarning", transportStatusReason);
+        }
+    }
+
+    private void cancelBluetoothConnectTimeout() {
+        if (bluetoothConnectTimeout != null) {
+            bluetoothHandler.removeCallbacks(bluetoothConnectTimeout);
+            bluetoothConnectTimeout = null;
+        }
+    }
+
+    private void finishPendingBluetoothConnect(boolean connected) {
+        cancelBluetoothConnectTimeout();
+        MethodChannel.Result result = pendingBluetoothConnectResult;
+        pendingBluetoothConnectResult = null;
+        if (result != null) result.success(connected);
+    }
+
+    @SuppressLint("MissingPermission")
+    private void closeBluetoothGattQuietly() {
+        BluetoothGatt current = bluetoothGatt;
+        bluetoothGatt = null;
+        bluetoothConnectedAddress = null;
+        if (current == null) return;
+        try { current.disconnect(); } catch (Exception ignored) { }
+        try { current.close(); } catch (Exception ignored) { }
+    }
+
+    private boolean disconnectBluetooth() {
+        if (pendingBluetoothScanResult != null) {
+            finishBluetoothScan("BLUETOOTH SCAN CANCELLED BY DISCONNECT");
+        }
+        if (pendingBluetoothConnectResult != null) {
+            finishPendingBluetoothConnect(false);
+        }
+        closeBluetoothGattQuietly();
+        activeTransport = "BLUETOOTH";
+        transportStatus = "DISCONNECTED";
+        transportStatusReason = "BLUETOOTH LE DISCONNECTED";
+        sendEvent("transportStatus", getTransportStatusPayload());
+        sendEvent("transportCapabilities", getTransportCapabilities("BLUETOOTH"));
+        sendEvent("bluetoothDisconnected", mapOf(
+                "address", "",
+                "status", BluetoothGatt.GATT_SUCCESS,
+                "wasConnecting", false
+        ));
+        sendEvent("log", mapOf(
+                "level", "INFO",
+                "message", "Bluetooth LE disconnected"
+        ));
+        return true;
+    }
+
+    private void cleanupBluetooth() {
+        if (bluetoothScanTimeout != null) {
+            bluetoothHandler.removeCallbacks(bluetoothScanTimeout);
+            bluetoothScanTimeout = null;
+        }
+        BluetoothLeScanner scanner = bluetoothLeScanner;
+        ScanCallback callback = bluetoothScanCallback;
+        bluetoothLeScanner = null;
+        bluetoothScanCallback = null;
+        if (scanner != null && callback != null) {
+            try { scanner.stopScan(callback); } catch (Exception ignored) { }
+        }
+        MethodChannel.Result scanResult = pendingBluetoothScanResult;
+        pendingBluetoothScanResult = null;
+        if (scanResult != null) {
+            try { scanResult.success(new ArrayList<Map<String, Object>>()); }
+            catch (Exception ignored) { }
+        }
+        if (pendingBluetoothConnectResult != null) {
+            try { finishPendingBluetoothConnect(false); } catch (Exception ignored) { }
+        } else {
+            cancelBluetoothConnectTimeout();
+        }
+        closeBluetoothGattQuietly();
+
+        MethodChannel.Result permissionResult = pendingBluetoothPermissionResult;
+        Object permissionFallback = pendingBluetoothPermissionFallback;
+        pendingBluetoothPermissionResult = null;
+        pendingBluetoothPermissionAction = null;
+        pendingBluetoothPermissionFallback = null;
+        if (permissionResult != null) {
+            try { permissionResult.success(permissionFallback); }
+            catch (Exception ignored) { }
+        }
+
+        MethodChannel.Result enableResult = pendingBluetoothEnableResult;
+        Object enableFallback = pendingBluetoothEnableFallback;
+        pendingBluetoothEnableResult = null;
+        pendingBluetoothEnableAction = null;
+        pendingBluetoothEnableFallback = null;
+        if (enableResult != null) {
+            try { enableResult.success(enableFallback); }
+            catch (Exception ignored) { }
+        }
+        bluetoothHandler.removeCallbacksAndMessages(null);
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode != BLUETOOTH_ENABLE_REQUEST) return;
+
+        MethodChannel.Result result = pendingBluetoothEnableResult;
+        Runnable action = pendingBluetoothEnableAction;
+        Object fallback = pendingBluetoothEnableFallback;
+        pendingBluetoothEnableResult = null;
+        pendingBluetoothEnableAction = null;
+        pendingBluetoothEnableFallback = null;
+
+        boolean enabled = resultCode == RESULT_OK && isBluetoothEnabledSafe();
+        if (enabled && action != null) {
+            try {
+                action.run();
+            } catch (Exception error) {
+                sendEvent("engineWarning",
+                        "BLUETOOTH OPERATION FAILED AFTER ENABLE: " + safeMessage(error));
+                if (result != null) result.success(fallback);
+            }
+        } else {
+            sendEvent("engineWarning", "BLUETOOTH WAS NOT ENABLED");
+            if (result != null) result.success(fallback);
         }
     }
 
@@ -459,6 +1262,14 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
         payload.put("connected", "CONNECTED".equals(transportStatus)
                 || "STREAMING".equals(transportStatus) || "READY".equals(transportStatus));
         payload.put("reason", transportStatusReason);
+        payload.put("connectionMode", "BLUETOOTH".equals(activeTransport)
+                ? "BLE_GATT" : "WIFI_CAMERA_API");
+        payload.put("bleConnected", "BLUETOOTH".equals(activeTransport)
+                && bluetoothGatt != null && bluetoothConnectedAddress != null
+                && "CONNECTED".equals(transportStatus));
+        if (bluetoothConnectedAddress != null) {
+            payload.put("bluetoothAddress", bluetoothConnectedAddress);
+        }
         return payload;
     }
 
@@ -468,10 +1279,16 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
         HashMap<String, Object> capabilities = new HashMap<>();
         capabilities.put("transport", transport);
         boolean wifi = "WIFI".equals(transport);
-        capabilities.put("supported", wifi);
+        boolean bluetooth = "BLUETOOTH".equals(transport)
+                && bluetoothGatt != null
+                && bluetoothConnectedAddress != null
+                && "CONNECTED".equals(transportStatus);
+        capabilities.put("supported", wifi || bluetooth);
         capabilities.put("canControlCamera", wifi);
         capabilities.put("canReceiveLiveView", wifi);
         capabilities.put("canCapturePhoto", wifi);
+        capabilities.put("bleConnected", bluetooth);
+        capabilities.put("bluetoothAddress", bluetoothConnectedAddress == null ? "" : bluetoothConnectedAddress);
         capabilities.put("canTransferFiles", false);
         // The stock Sony RGB live-view pipeline does not prove that a real NIR
         // channel or aligned RGB/NIR optical ROI exists.
@@ -479,8 +1296,13 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
         capabilities.put("hasNirChannel", false);
         capabilities.put("hasAlignedRedNirPair", false);
         capabilities.put("canCalculateNdvi", false);
-        capabilities.put("reason", wifi ? "CAPABILITIES DEPEND ON THE CONNECTED CAMERA API"
-                : "TRANSPORT IMPLEMENTATION NOT INTEGRATED");
+        capabilities.put("reason", wifi
+                ? "CAPABILITIES DEPEND ON THE CONNECTED CAMERA API"
+                : bluetooth
+                    ? "BLE LINK CONNECTED; CAMERA CONTROL AND LIVE VIEW ARE NOT VERIFIED"
+                    : "BLUETOOTH".equals(transport)
+                        ? "BLE DISCOVERY AND GATT CONNECTION ARE AVAILABLE; NO BLE LINK IS CONNECTED"
+                        : "TRANSPORT IMPLEMENTATION NOT INTEGRATED");
         return capabilities;
     }
 
@@ -495,6 +1317,12 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
         result.put("nfcEnabled", nfcAdapter != null && nfcAdapter.isEnabled());
         result.put("usbHostSupported", getPackageManager().hasSystemFeature("android.hardware.usb.host"));
         result.put("nearbyWifiPermissionGranted", hasWifiPermission());
+        result.put("bluetoothSupported", getBluetoothAdapterSafe() != null);
+        result.put("bluetoothEnabled", isBluetoothEnabledSafe());
+        result.put("bluetoothScanPermissionGranted", hasBluetoothScanPermission());
+        result.put("bluetoothConnectPermissionGranted", hasBluetoothConnectPermission());
+        result.put("bluetoothGattConnected", bluetoothGatt != null && bluetoothConnectedAddress != null);
+        result.put("bluetoothAddress", bluetoothConnectedAddress == null ? "" : bluetoothConnectedAddress);
         result.put("cameraEngineInitialized", cameraEngine != null);
         result.put("ndviTextureAvailable", ndviTextureEntry != null);
         synchronized (pendingEvents) {
@@ -1132,6 +1960,40 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == BLUETOOTH_PERMISSION_REQUEST) {
+            boolean granted = grantResults != null && grantResults.length > 0;
+            if (granted) {
+                for (int value : grantResults) {
+                    if (value != PackageManager.PERMISSION_GRANTED) {
+                        granted = false;
+                        break;
+                    }
+                }
+            }
+
+            MethodChannel.Result result = pendingBluetoothPermissionResult;
+            Runnable action = pendingBluetoothPermissionAction;
+            Object fallback = pendingBluetoothPermissionFallback;
+            pendingBluetoothPermissionResult = null;
+            pendingBluetoothPermissionAction = null;
+            pendingBluetoothPermissionFallback = null;
+
+            sendEvent("bluetoothPermission", granted);
+            if (granted && action != null) {
+                try {
+                    action.run();
+                } catch (Exception error) {
+                    Log.e(TAG, "Bluetooth operation after permission grant failed", error);
+                    sendEvent("engineWarning",
+                            "BLUETOOTH OPERATION FAILED: " + safeMessage(error));
+                    if (result != null) result.success(fallback);
+                }
+            } else {
+                sendEvent("engineWarning", "BLUETOOTH PERMISSION DENIED");
+                if (result != null) result.success(fallback);
+            }
+            return;
+        }
         if (requestCode != WIFI_PERMISSION_REQUEST) return;
         boolean granted = grantResults != null && grantResults.length > 0;
         if (granted) {
@@ -1374,6 +2236,7 @@ public class MainActivity extends FlutterActivity implements CameraEngine.Listen
         nfcStartRequested = false;
         nfcDispatchEnabled = false;
         disableNfcForegroundDispatch();
+        cleanupBluetooth();
         if (usbPermissionReceiverRegistered && usbPermissionReceiver != null) {
             try { unregisterReceiver(usbPermissionReceiver); }
             catch (Exception e) { Log.w(TAG, "USB permission receiver cleanup failed", e); }

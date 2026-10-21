@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -104,6 +103,11 @@ class LandCamViewModel extends ChangeNotifier {
   List<Map<String, dynamic>> _usbDevices = <Map<String, dynamic>>[];
   Map<String, dynamic> _connectionDiagnostics = <String, dynamic>{};
 
+  // BLE/GATT transport identity is independent of camera-control readiness.
+  String? _bluetoothConnectedAddress;
+  String? _bluetoothConnectedName;
+  String? _bluetoothConnectionMode;
+
   // ---------------------------------------------------------------------------
   // Public state
   // ---------------------------------------------------------------------------
@@ -172,6 +176,19 @@ class LandCamViewModel extends ChangeNotifier {
   CameraTransportType get transport => _transport;
   CameraTransportStatus get transportStatus => _transportStatus;
   CameraTransportCapabilities? get transportCapabilities => _transportCapabilities;
+  String? get bluetoothConnectedAddress => _bluetoothConnectedAddress;
+  String? get bluetoothConnectedName => _bluetoothConnectedName;
+  String? get bluetoothConnectionMode => _bluetoothConnectionMode;
+  bool get bluetoothClassicConnected =>
+      _transport == CameraTransportType.bluetooth &&
+      _transportStatus == CameraTransportStatus.connected &&
+      _bluetoothConnectionMode == 'CLASSIC_RFCOMM_SPP' &&
+      (_bluetoothConnectedAddress?.trim().isNotEmpty ?? false);
+  bool get bluetoothGattConnected =>
+      _transport == CameraTransportType.bluetooth &&
+      _transportStatus == CameraTransportStatus.connected &&
+      _bluetoothConnectionMode == 'BLE_GATT' &&
+      (_bluetoothConnectedAddress?.trim().isNotEmpty ?? false);
   List<Map<String, dynamic>> get bluetoothDevices =>
       List<Map<String, dynamic>>.unmodifiable(_bluetoothDevices);
   List<Map<String, dynamic>> get usbDevices =>
@@ -415,6 +432,7 @@ class LandCamViewModel extends ChangeNotifier {
         _handleNfcDetected(data);
         break;
       case 'wifiConnecting':
+        _clearBluetoothConnectionState();
         _link = CameraLink.wifi;
         _transport = CameraTransportType.wifi;
         _transportStatus = CameraTransportStatus.connecting;
@@ -423,7 +441,9 @@ class LandCamViewModel extends ChangeNotifier {
         _clearActiveFrame();
         break;
       case 'wifiConnected':
+        _clearBluetoothConnectionState();
         _link = CameraLink.camera;
+        _transport = CameraTransportType.wifi;
         _transportStatus = CameraTransportStatus.connected;
         _status = 'NETWORK READY';
         _ssid = _ssidFromEvent(data) ?? _ssid;
@@ -454,8 +474,85 @@ class LandCamViewModel extends ChangeNotifier {
         _handleTransportCapabilities(data);
         break;
       case 'bluetoothDevices':
-        _bluetoothDevices = _toMapList(data);
+        _bluetoothDevices = _filterBluetoothCameraCandidates(_toMapList(data));
         break;
+      case 'bluetoothConnected': {
+        final values = _toStringMap(data);
+        final address = values['address']?.toString().trim();
+        final mode = values['connectionMode']?.toString().trim().toUpperCase() ?? '';
+        final gattConfirmed = values['gattConnected'] == true ||
+            values['bleConnected'] == true || mode == 'BLE_GATT';
+        final classicConfirmed = values['classicConnected'] == true ||
+            mode == 'CLASSIC_RFCOMM_SPP';
+        if ((!gattConfirmed && !classicConfirmed) || !_isValidBluetoothAddress(address)) {
+          _addLog('WARN', 'Ignored Bluetooth event without a confirmed BLE/GATT or Classic SPP link and valid address.');
+          break;
+        }
+        final rawName = values['name']?.toString().trim();
+        _setBluetoothConnectedPresentation(
+          deviceName: rawName == null || rawName.isEmpty ? null : rawName,
+          address: address,
+          connectionMode: mode.isEmpty ? (gattConfirmed ? 'BLE_GATT' : 'CLASSIC_RFCOMM_SPP') : mode,
+        );
+        _addLog(
+          'INFO',
+          '${gattConfirmed ? 'Bluetooth LE/GATT' : 'Bluetooth Classic SPP'} connected'
+          '${rawName == null || rawName.isEmpty ? '' : ': $rawName'} ($address). '
+          'Camera control/live view are separate capabilities.',
+        );
+        if (_connectionOperation == 'CONNECTING BLUETOOTH LE' ||
+            _connectionOperation == 'CONNECTING BLUETOOTH') {
+          _finishConnectionOperation(status: _status);
+        }
+        break;
+      }
+      case 'bluetoothServices': {
+        final values = _toStringMap(data);
+        final services = values['services'];
+        final count = services is List ? services.length : 0;
+        if (values['success'] == true) {
+          _addLog('INFO', 'BLE/GATT service discovery succeeded ($count service(s)); camera-control protocol is not verified.');
+          if (count == 0) {
+            _addLog('WARN', 'BLE is connected but no GATT services were exposed.');
+          }
+        } else {
+          _addLog('WARN', 'BLE/GATT service discovery failed (status ${values['status'] ?? 'unknown'}).');
+        }
+        break;
+      }
+      case 'bluetoothDisconnected': {
+        final values = _toStringMap(data);
+        final rawStatus = _parseInt(values['status']) ?? 0;
+        final address = values['address']?.toString().trim();
+        final wasConnecting = values['wasConnecting'] == true ||
+            _connectionOperation == 'CONNECTING BLUETOOTH LE' ||
+            _connectionOperation == 'CONNECTING BLUETOOTH';
+        final failed = wasConnecting || rawStatus != 0;
+        if (_transport == CameraTransportType.bluetooth ||
+            (address != null && address.isNotEmpty && address == _bluetoothConnectedAddress)) {
+          _resetCameraState();
+          _transport = CameraTransportType.bluetooth;
+          _link = failed ? CameraLink.error : CameraLink.idle;
+          _transportStatus = failed ? CameraTransportStatus.error : CameraTransportStatus.disconnected;
+          _status = failed
+              ? 'BLUETOOTH LE CONNECTION FAILED (GATT $rawStatus)'
+              : 'BLUETOOTH LE DISCONNECTED';
+          _clearBluetoothConnectionState();
+          if (_connectionOperation == 'DISCONNECTING' && !failed) {
+            _finishConnectionOperation(status: _status);
+          } else if ((_connectionOperation == 'CONNECTING BLUETOOTH LE' ||
+              _connectionOperation == 'CONNECTING BLUETOOTH') && failed) {
+            _finishConnectionOperation(status: _status);
+          }
+        }
+        _addLog(
+          failed ? 'ERROR' : 'INFO',
+          failed
+              ? 'Bluetooth GATT connection failed/disconnected (status $rawStatus).'
+              : 'Bluetooth GATT link disconnected.',
+        );
+        break;
+      }
       case 'usbDevices':
         _usbDevices = _toMapList(data);
         break;
@@ -463,12 +560,17 @@ class LandCamViewModel extends ChangeNotifier {
         _connectionDiagnostics = _toStringMap(data);
         break;
       case 'liveviewActive':
-        if (data == true || (data is Map && data['active'] == true)) {
+        if (_transport != CameraTransportType.bluetooth &&
+            (data == true || (data is Map && data['active'] == true))) {
           _link = CameraLink.camera;
           _status = 'LIVE VIEW ACTIVE';
         }
         break;
       case 'firstLiveviewFrame':
+        if (_transport == CameraTransportType.bluetooth) {
+          _addLog('WARN', 'Ignored camera live-view readiness while Bluetooth is the selected transport.');
+          break;
+        }
         _link = CameraLink.ready;
         _transportStatus = CameraTransportStatus.streaming;
         _status = 'CAMERA READY';
@@ -967,6 +1069,7 @@ class LandCamViewModel extends ChangeNotifier {
   }
 
   void _handleProcessedFrameEvent(dynamic data) {
+    if (_transport == CameraTransportType.bluetooth) return;
     if (data is! Map || _modeOperationInFlight) return;
     final payloadMode = (data['previewMode']?.toString() ?? 'PROCESSED').trim().toUpperCase();
     final rawDisplayMode = data['previewDisplayMode']?.toString();
@@ -1558,12 +1661,24 @@ class LandCamViewModel extends ChangeNotifier {
   // Bluetooth / USB-PTP / HDMI-UVC
   // ---------------------------------------------------------------------------
 
-  Future<bool> connectBluetooth({String? deviceId}) => _connectTransport(
-        operation: 'CONNECTING BLUETOOTH',
-        transport: CameraTransportType.bluetooth,
-        method: 'connectBluetooth',
-        arguments: <String, Object?>{'deviceId': deviceId},
-      );
+  /// Connects to the selected device through Android BLE/GATT.
+  /// A successful connection confirms the BLE link, not Sony camera-control support.
+  Future<bool> connectBluetooth({String? deviceId}) async {
+    if (_disposed) return false;
+    final address = deviceId?.trim();
+    if (!_isValidBluetoothAddress(address)) {
+      _status = 'BLUETOOTH DEVICE ADDRESS INVALID';
+      _addLog('WARN', 'Select a discovered BLE device with a valid MAC address.');
+      _notify();
+      return false;
+    }
+    return _connectTransport(
+      operation: 'CONNECTING BLUETOOTH LE',
+      transport: CameraTransportType.bluetooth,
+      method: 'connectBluetooth',
+      arguments: <String, Object?>{'deviceId': address, 'address': address},
+    );
+  }
 
   Future<bool> connectUsbPtp({int? deviceId, int? vendorId, int? productId}) => _connectTransport(
         operation: 'CONNECTING USB/PTP',
@@ -1590,25 +1705,75 @@ class LandCamViewModel extends ChangeNotifier {
     required Map<String, Object?> arguments,
   }) async {
     if (!_beginConnectionOperation(operation)) return false;
+
     _transport = transport;
     _transportStatus = CameraTransportStatus.connecting;
+    if (transport == CameraTransportType.bluetooth) {
+      _clearBluetoothConnectionState();
+      _disableCameraCapabilitiesForBluetooth();
+      _transportCapabilities = null;
+    }
     _clearActiveFrame();
     _notify();
+
     try {
       final accepted = await _invokeNativeBool(method, arguments);
       if (_disposed) return false;
+
       if (!accepted) {
-        _failConnectionOperation('$operation request was rejected by native');
-        _transportStatus = CameraTransportStatus.unsupported;
-        _addLog('WARN', '$transport connection not accepted; check hardware and native support');
+        _connectionOperationTimer?.cancel();
+        _connectionOperationTimer = null;
+        _connectionOperation = null;
+        _connectionOperationToken++;
+        _transportStatus = transport == CameraTransportType.bluetooth
+            ? CameraTransportStatus.error
+            : CameraTransportStatus.unsupported;
+        _link = CameraLink.error;
+        _status = transport == CameraTransportType.bluetooth
+            ? 'BLUETOOTH LE CONNECTION FAILED'
+            : '$operation NOT SUPPORTED';
+        _addLog(
+          'ERROR',
+          transport == CameraTransportType.bluetooth
+              ? 'Native BLE/GATT connection failed or was rejected. Check the Android GATT status in the native log.'
+              : '$transport connection was not accepted by native code; check hardware support and diagnostics.',
+        );
+        _notify();
         return false;
       }
-      _addLog('INFO', '$operation requested');
+
+      if (transport == CameraTransportType.bluetooth) {
+        // MainActivity reports true only once its GATT callback is connected.
+        // The event stream may arrive before or after this method result, so
+        // finalize here too and let the same confirmed event safely update it.
+        final address = (arguments['address'] ?? arguments['deviceId'])?.toString().trim();
+        final candidate = _findBluetoothCandidate(address);
+        _setBluetoothConnectedPresentation(
+          deviceName: candidate?['name']?.toString(),
+          address: address,
+          connectionMode: 'BLE_GATT',
+        );
+        _finishConnectionOperation(status: _status);
+        _addLog(
+          'INFO',
+          'Bluetooth LE/GATT connection confirmed by native Android. '
+          'Camera control, live view and shutter are not enabled by a BLE link alone.',
+        );
+      } else {
+        _addLog('INFO', '$operation request accepted by native');
+      }
+      _notify();
       return true;
     } catch (error) {
       if (!_disposed) {
         _failConnectionOperation('$operation failed: $error');
         _transportStatus = CameraTransportStatus.error;
+        _link = CameraLink.error;
+        if (transport == CameraTransportType.bluetooth) {
+          _clearBluetoothConnectionState();
+          _disableCameraCapabilitiesForBluetooth();
+        }
+        _notify();
       }
       return false;
     }
@@ -1618,7 +1783,12 @@ class LandCamViewModel extends ChangeNotifier {
     try {
       final result = await _invokeNativeMapList('scanBluetoothDevices');
       if (_disposed) return const <Map<String, dynamic>>[];
-      _bluetoothDevices = result;
+      _bluetoothDevices = _filterBluetoothCameraCandidates(result);
+      if (_bluetoothDevices.isEmpty) {
+        _addLog('WARN', 'No camera-like BLE device found. Keep the camera in Bluetooth pairing mode and scan again.');
+      } else {
+        _addLog('INFO', 'Bluetooth camera discovery found ${_bluetoothDevices.length} candidate(s)');
+      }
       _notify();
       return List<Map<String, dynamic>>.unmodifiable(_bluetoothDevices);
     } catch (error) {
@@ -1676,7 +1846,11 @@ class LandCamViewModel extends ChangeNotifier {
       final capabilitiesResult = await _invokeNativeDynamic('getTransportCapabilities');
       final diagnosticsResult = await _invokeNativeDynamic('getConnectionDiagnostics');
       if (_disposed) return;
-      _readTransportStatusValue(statusResult);
+      if (statusResult is Map) {
+        _handleTransportStatus(statusResult);
+      } else {
+        _readTransportStatusValue(statusResult);
+      }
       if (capabilitiesResult is Map) {
         _transportCapabilities = CameraTransportCapabilities.fromMap(
           Map<String, dynamic>.from(capabilitiesResult),
@@ -1695,32 +1869,64 @@ class LandCamViewModel extends ChangeNotifier {
 
   Future<void> disconnect() async {
     if (!_beginConnectionOperation('DISCONNECTING')) return;
+    final selectedTransport = _transport;
     try {
-      await NativeBridge.disconnect();
+      final accepted = selectedTransport == CameraTransportType.bluetooth
+          ? await _invokeNativeBool('disconnectTransport', <String, Object?>{
+              'transport': CameraTransportType.bluetooth.nativeName,
+            })
+          : await _disconnectWifiNative();
       if (_disposed) return;
+      if (!accepted) {
+        _failConnectionOperation('Native did not confirm ${selectedTransport.nativeName} disconnect');
+        return;
+      }
       _resetCameraState();
       _link = CameraLink.idle;
+      _transport = selectedTransport;
       _transportStatus = CameraTransportStatus.disconnected;
-      _status = 'DISCONNECTED';
-      _finishConnectionOperation(status: 'DISCONNECTED');
-      _addLog('INFO', 'Camera disconnected');
+      final finalStatus = selectedTransport == CameraTransportType.bluetooth
+          ? 'BLUETOOTH LE DISCONNECTED'
+          : 'DISCONNECTED';
+      _finishConnectionOperation(status: finalStatus);
+      _addLog('INFO', '${selectedTransport.nativeName} disconnected');
     } catch (error) {
       if (!_disposed) _failConnectionOperation('Disconnect failed: $error');
     }
   }
 
+  Future<bool> _disconnectWifiNative() async {
+    try {
+      await NativeBridge.disconnect();
+      return true;
+    } catch (error) {
+      if (!_disposed) _addLog('ERROR', 'Wi-Fi disconnect failed: $error');
+      return false;
+    }
+  }
+
   Future<void> disconnectSelectedTransport() async {
     if (!_beginConnectionOperation('DISCONNECTING')) return;
+    final selectedTransport = _transport;
     try {
-      await _invokeNativeBool('disconnectTransport', <String, Object?>{
-        'transport': _transport.nativeName,
+      final accepted = await _invokeNativeBool('disconnectTransport', <String, Object?>{
+        'transport': selectedTransport.nativeName,
       });
       if (_disposed) return;
+      if (!accepted) {
+        _failConnectionOperation('Native rejected ${selectedTransport.nativeName} disconnect');
+        return;
+      }
       _resetCameraState();
       _link = CameraLink.idle;
+      _transport = selectedTransport;
       _transportStatus = CameraTransportStatus.disconnected;
-      _finishConnectionOperation(status: 'DISCONNECTED');
-      _addLog('INFO', '${_transport.nativeName} disconnected');
+      _finishConnectionOperation(
+        status: selectedTransport == CameraTransportType.bluetooth
+            ? 'BLUETOOTH LE DISCONNECTED'
+            : 'DISCONNECTED',
+      );
+      _addLog('INFO', '${selectedTransport.nativeName} disconnected');
     } catch (error) {
       if (!_disposed) _failConnectionOperation('Transport disconnect failed: $error');
     }
@@ -1763,24 +1969,181 @@ class LandCamViewModel extends ChangeNotifier {
   }
 
   void _handleTransportStatus(dynamic data) {
+    String? reason;
+    Map<String, dynamic>? values;
     if (data is Map) {
-      final rawTransport = data['transport']?.toString();
+      values = _toStringMap(data);
+      final rawTransport = values['transport']?.toString() ?? values['activeTransport']?.toString();
       if (rawTransport != null) _transport = _transportFromNative(rawTransport) ?? _transport;
-      _readTransportStatusValue(data['status'] ?? data['state'] ?? data['transportStatus']);
-      if (data['message'] != null) _status = data['message'].toString();
-      if (data['ssid'] != null) _ssid = data['ssid'].toString();
+      _readTransportStatusValue(values['status'] ?? values['state'] ?? values['transportStatus']);
+      reason = values['reason']?.toString() ?? values['message']?.toString();
+      if (values['ssid'] != null) _ssid = values['ssid'].toString();
     } else {
       _readTransportStatusValue(data);
     }
+
+    if (_transport == CameraTransportType.bluetooth) {
+      _disableCameraCapabilitiesForBluetooth();
+      _clearActiveFrame();
+      final mode = (values?['connectionMode']?.toString() ?? '').trim().toUpperCase();
+      final address = values?['bluetoothAddress']?.toString().trim() ?? values?['address']?.toString().trim();
+      final explicitBle = (values?['bleConnected'] == true || values?['gattConnected'] == true) &&
+          _isValidBluetoothAddress(address);
+      final explicitClassic = values?['bluetoothClassicConnected'] == true &&
+          mode == 'CLASSIC_RFCOMM_SPP' && _isValidBluetoothAddress(address);
+      final confirmed = explicitBle || explicitClassic;
+
+      switch (_transportStatus) {
+        case CameraTransportStatus.connected:
+          if (confirmed) {
+            _setBluetoothConnectedPresentation(
+              deviceName: values?['bluetoothName']?.toString() ?? values?['name']?.toString(),
+              address: address,
+              connectionMode: explicitBle ? 'BLE_GATT' : mode,
+            );
+            if (_connectionOperation == 'CONNECTING BLUETOOTH LE' || _connectionOperation == 'CONNECTING BLUETOOTH') {
+              _finishConnectionOperation(status: _status);
+            }
+          } else if (_connectionOperation == 'CONNECTING BLUETOOTH LE' ||
+              _connectionOperation == 'CONNECTING BLUETOOTH') {
+            // MainActivity can publish a generic transport snapshot immediately
+            // before the dedicated bluetoothConnected event. Wait for the latter.
+            _transportStatus = CameraTransportStatus.connecting;
+            _link = CameraLink.idle;
+            _status = 'WAITING FOR BLE GATT CONFIRMATION';
+          } else if (_bluetoothConnectedAddress != null) {
+            _setBluetoothConnectedPresentation(
+              deviceName: _bluetoothConnectedName,
+              address: _bluetoothConnectedAddress,
+              connectionMode: _bluetoothConnectionMode,
+            );
+          } else {
+            _transportStatus = CameraTransportStatus.unsupported;
+            _link = CameraLink.error;
+            _status = reason?.isNotEmpty == true ? reason! : 'BLUETOOTH LINK NOT CONFIRMED';
+            _addLog('WARN', 'Ignored generic Bluetooth CONNECTED status because no BLE/GATT connection event confirmed the link.');
+          }
+          break;
+        case CameraTransportStatus.connecting:
+          _link = CameraLink.idle;
+          _status = reason?.isNotEmpty == true ? reason! : 'CONNECTING BLUETOOTH LE';
+          break;
+        case CameraTransportStatus.disconnected:
+          _link = CameraLink.idle;
+          _clearBluetoothConnectionState();
+          _status = 'BLUETOOTH LE DISCONNECTED';
+          if (_connectionOperation == 'DISCONNECTING') _finishConnectionOperation(status: _status);
+          break;
+        case CameraTransportStatus.error:
+        case CameraTransportStatus.unsupported:
+          _link = CameraLink.error;
+          _clearBluetoothConnectionState();
+          _status = reason?.isNotEmpty == true ? reason! : 'BLUETOOTH LE/GATT CONNECTION FAILED';
+          if (_connectionOperation == 'CONNECTING BLUETOOTH LE' || _connectionOperation == 'CONNECTING BLUETOOTH') {
+            _finishConnectionOperation(status: _status);
+          }
+          break;
+        case CameraTransportStatus.streaming:
+        case CameraTransportStatus.validating:
+        case CameraTransportStatus.discovering:
+        case CameraTransportStatus.reconnecting:
+          _transportStatus = CameraTransportStatus.unsupported;
+          _link = CameraLink.error;
+          _clearBluetoothConnectionState();
+          _status = 'BLUETOOTH CANNOT PROVIDE CAMERA LIVE VIEW IN THIS BUILD';
+          _addLog('WARN', 'Bluetooth connection does not imply camera live view; use the camera API over Wi-Fi.');
+          break;
+        default:
+          _link = CameraLink.idle;
+          if (reason?.isNotEmpty == true) _status = reason!;
+          break;
+      }
+      return;
+    }
+
+    if (reason?.isNotEmpty == true) _status = reason!;
     if (_transportStatus == CameraTransportStatus.streaming) {
       _link = CameraLink.ready;
     } else if (_transportStatus == CameraTransportStatus.connected) {
       _link = CameraLink.camera;
     } else if (_transportStatus == CameraTransportStatus.disconnected) {
       _link = CameraLink.idle;
-    } else if (_transportStatus == CameraTransportStatus.error) {
+    } else if (_transportStatus == CameraTransportStatus.error || _transportStatus == CameraTransportStatus.unsupported) {
       _link = CameraLink.error;
     }
+  }
+
+  void _disableCameraCapabilitiesForBluetooth() {
+    _supportsLiveView = false;
+    _supportsCapture = false;
+    _supportsAutofocus = false;
+    _dualOpticalRoiAvailable = false;
+    _unifiedSpectralCropAvailable = false;
+    _supportedBands.remove(SpectralBand.nir);
+    _ndviEnabled = false;
+    _ndviPreviewUsesGpu = false;
+    _ndvi = null;
+    _ndviValidPixels = 0;
+    _ndviNirGain = 1.0;
+    _registrationApplied = false;
+    _registrationModel = 'NONE';
+    _previewMode = _previewDisplayMode;
+    _sourceLabel = _sourceLabelForDisplayMode(_previewDisplayMode);
+  }
+
+  void _clearBluetoothConnectionState() {
+    _bluetoothConnectedAddress = null;
+    _bluetoothConnectedName = null;
+    _bluetoothConnectionMode = null;
+  }
+
+  bool _isValidBluetoothAddress(String? address) =>
+      address != null &&
+      RegExp(r'^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$').hasMatch(address.trim());
+
+  Map<String, dynamic>? _findBluetoothCandidate(String? address) {
+    if (address == null) return null;
+    final normalized = address.trim().toUpperCase();
+    for (final device in _bluetoothDevices) {
+      final candidateAddress = device['address']?.toString().trim().toUpperCase();
+      if (candidateAddress == normalized) return device;
+    }
+    return null;
+  }
+
+  bool _isBluetoothCameraCandidate(Map<String, dynamic> device) {
+    if (device['cameraCandidate'] == true) return true;
+    if (device['cameraCandidate'] == false) return false;
+    final type = (device['deviceClassName'] ?? device['majorDeviceClass'] ?? '').toString().toUpperCase();
+    if (type.contains('IMAGING') || type.contains('CAMERA')) return true;
+    final name = (device['name'] ?? device['deviceName'] ?? '').toString().trim();
+    if (name.isEmpty) return false;
+    return RegExp(
+      r'(ILCE[-_ ]?\d{3,4}[A-Z]?|ILCA[-_ ]?\d{2,4}|DSC[-_ ]?[A-Z0-9-]+|ALPHA|DIGITAL CAMERA|CAMERA)',
+      caseSensitive: false,
+    ).hasMatch(name);
+  }
+
+  List<Map<String, dynamic>> _filterBluetoothCameraCandidates(List<Map<String, dynamic>> devices) =>
+      devices.where(_isBluetoothCameraCandidate).toList(growable: false);
+
+  void _setBluetoothConnectedPresentation({
+    String? deviceName,
+    String? address,
+    String? connectionMode,
+  }) {
+    _transport = CameraTransportType.bluetooth;
+    _transportStatus = CameraTransportStatus.connected;
+    _bluetoothConnectedAddress = address ?? _bluetoothConnectedAddress;
+    _bluetoothConnectedName = deviceName ?? _bluetoothConnectedName;
+    _bluetoothConnectionMode = connectionMode ?? 'BLE_GATT';
+    _disableCameraCapabilitiesForBluetooth();
+    _clearActiveFrame();
+    _link = CameraLink.camera;
+    final name = _bluetoothConnectedName;
+    _status = name == null || name.trim().isEmpty
+        ? 'BLE LINK CONNECTED — CAMERA CONTROL NOT VERIFIED'
+        : 'BLE LINK CONNECTED: ${name.trim()} — CAMERA CONTROL NOT VERIFIED';
   }
 
   void _readTransportStatusValue(dynamic value) {
@@ -1847,7 +2210,10 @@ class LandCamViewModel extends ChangeNotifier {
     _connectionOperation = operation;
     _status = operation;
     _connectionOperationTimer?.cancel();
-    _connectionOperationTimer = Timer(_connectionOperationTimeout, () {
+    final timeout = operation == 'CONNECTING BLUETOOTH LE'
+        ? const Duration(seconds: 24)
+        : _connectionOperationTimeout;
+    _connectionOperationTimer = Timer(timeout, () {
       if (_disposed || token != _connectionOperationToken || _connectionOperation == null) return;
       final timedOut = _connectionOperation!;
       _connectionOperation = null;
@@ -1856,7 +2222,12 @@ class LandCamViewModel extends ChangeNotifier {
       if (_transportStatus != CameraTransportStatus.streaming) {
         _transportStatus = CameraTransportStatus.error;
       }
-      _addLog('ERROR', '$timedOut timed out after ${_connectionOperationTimeout.inSeconds} seconds');
+      if (timedOut == 'CONNECTING BLUETOOTH LE') {
+        _link = CameraLink.error;
+        _clearBluetoothConnectionState();
+        _disableCameraCapabilitiesForBluetooth();
+      }
+      _addLog('ERROR', '$timedOut timed out after ${timeout.inSeconds} seconds');
       _notify();
     });
     _addLog('INFO', '$operation started');
@@ -1964,6 +2335,7 @@ class LandCamViewModel extends ChangeNotifier {
     _sourceLabel = _sourceLabelForDisplayMode(_previewDisplayMode);
     _ssid = null;
     _transportCapabilities = null;
+    _clearBluetoothConnectionState();
   }
 
   // ---------------------------------------------------------------------------

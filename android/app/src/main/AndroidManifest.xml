@@ -1,24 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Optional hardware: the app can still install without these features. -->
+    <!-- Hardware opsional agar aplikasi tetap bisa diinstal di perangkat lain. -->
     <uses-feature
         android:name="android.hardware.nfc"
         android:required="false" />
+
     <uses-feature
         android:name="android.hardware.wifi"
         android:required="false" />
+
     <uses-feature
         android:name="android.hardware.bluetooth"
         android:required="false" />
-    <uses-feature
-        android:name="android.hardware.bluetooth_le"
-        android:required="false" />
+
+    <!-- Bluetooth LE sengaja tidak dideklarasikan sebagai fitur aplikasi. -->
+
     <uses-feature
         android:name="android.hardware.usb.host"
         android:required="false" />
 
-    <!-- Wi-Fi camera discovery and HTTP camera API access. -->
+    <!-- Pertahankan opsional jika kamera HP sendiri bukan kebutuhan utama. -->
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+
+    <!-- Akses jaringan dan Wi-Fi untuk komunikasi dengan kamera eksternal. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
@@ -26,32 +33,53 @@
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
-    <!-- NFC and Wi-Fi discovery permissions across Android versions. -->
+    <!-- NFC untuk tag Sony yang kompatibel. -->
     <uses-permission android:name="android.permission.NFC" />
-    <uses-permission
-        android:name="android.permission.ACCESS_FINE_LOCATION"
-        android:maxSdkVersion="32" />
+
+    <!--
+        Wi-Fi scanning: beberapa API, termasuk WifiManager.startScan()
+        dan getScanResults(), masih membutuhkan ACCESS_FINE_LOCATION
+        pada Android 13 ke atas. Permission ini juga harus diminta saat
+        runtime jika workflow tersebut memang digunakan.
+
+        Setelah memeriksa implementasi Wi-Fi, permission ini dapat dibatasi
+        ke maxSdkVersion="32" jika aplikasi tidak memakai API yang
+        membutuhkannya pada Android 13+.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+    <!-- Wi-Fi nearby devices pada Android 13+. -->
     <uses-permission
         android:name="android.permission.NEARBY_WIFI_DEVICES"
         android:usesPermissionFlags="neverForLocation" />
 
-    <!-- Bluetooth discovery/connection. Runtime permission requests are still required. -->
+    <!-- Bluetooth Classic: kompatibilitas Android 11 dan sebelumnya. -->
     <uses-permission
         android:name="android.permission.BLUETOOTH"
         android:maxSdkVersion="30" />
+
     <uses-permission
         android:name="android.permission.BLUETOOTH_ADMIN"
         android:maxSdkVersion="30" />
+
+    <!--
+        BLUETOOTH_SCAN tetap diperlukan untuk discovery perangkat
+        Bluetooth Classic di Android 12+, meskipun aplikasi tidak memakai BLE.
+    -->
     <uses-permission
         android:name="android.permission.BLUETOOTH_SCAN"
         android:usesPermissionFlags="neverForLocation" />
-    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 
-    <!-- Legacy shared-storage permission is needed only on older Android releases. -->
+    <!-- Komunikasi dengan perangkat Bluetooth yang ditemukan atau paired. -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <!-- Penyimpanan lama hanya untuk Android 9 dan sebelumnya. -->
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
 
+    <!-- Hanya diperlukan jika aplikasi menggunakan kamera HP sendiri. -->
     <uses-permission android:name="android.permission.CAMERA" />
 
     <application
@@ -82,17 +110,19 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Recognizes Sony's NDEF MIME type when a tag launches the activity. -->
+            <!-- Membuka aplikasi untuk NDEF MIME type Sony yang kompatibel. -->
             <intent-filter>
                 <action android:name="android.nfc.action.NDEF_DISCOVERED" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="application/x-sony-pmm" />
             </intent-filter>
+
         </activity>
 
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
     </application>
 
     <queries>
