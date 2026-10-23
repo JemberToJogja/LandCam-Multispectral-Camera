@@ -237,19 +237,20 @@ public class CameraEngine {
     private static final float NDVI_VEG_GREEN_EXCESS_MIN = 0.015f;
     // Conservative legacy threshold retained for later calibration comparisons.
     private static final float NDVI_HIGH_INDEX_THRESHOLD = 0.25f;
-    // Candidate-search ROI aligned approximately with the on-screen focus brackets.
-    // A single connected foliage component nearest the center seed becomes the target leaf.
-    private static final float NDVI_TARGET_ROI_MIN_X = 0.18f;
-    private static final float NDVI_TARGET_ROI_MAX_X = 0.82f;
-    private static final float NDVI_TARGET_ROI_MIN_Y = 0.18f;
-    private static final float NDVI_TARGET_ROI_MAX_Y = 0.82f;
+    // Search almost the entire optical crop. The leaf may be held below or to
+    // either side of the frame; a fixed center-only ROI incorrectly rejects it.
+    // The final mask still selects only one coherent foliage-like component.
+    private static final float NDVI_TARGET_ROI_MIN_X = 0.02f;
+    private static final float NDVI_TARGET_ROI_MAX_X = 0.98f;
+    private static final float NDVI_TARGET_ROI_MIN_Y = 0.02f;
+    private static final float NDVI_TARGET_ROI_MAX_Y = 0.98f;
     // Connected-component analysis is bounded so high-resolution capture processing
     // does not allocate a full-resolution flood-fill queue.
     private static final int NDVI_FOCUS_MASK_MAX_PIXELS = 250000;
     private static final int NDVI_FOCUS_MIN_COMPONENT_PIXELS = 5;
-    // RGB/NIR JPEG is uncalibrated; require a modest positive index for target candidates.
-    private static final float NDVI_TARGET_MIN_INDEX_THRESHOLD = 0.05f;
-    private static final float NDVI_TARGET_COLOR_FALLBACK_THRESHOLD = 0.05f;
+    // RGB/NIR JPEG is uncalibrated, so this is a permissive candidate gate only.
+    private static final float NDVI_TARGET_MIN_INDEX_THRESHOLD = -0.10f;
+    private static final float NDVI_TARGET_COLOR_FALLBACK_THRESHOLD = -0.10f;
     // Yellow foliage may be valid target foliage even when green is not the strongest RGB channel.
     private static final float NDVI_YELLOW_MAX_RED_GREEN_DIFF = 0.24f;
     private static final float NDVI_YELLOW_MIN_GREEN_SHARE = 0.22f;
@@ -265,9 +266,9 @@ public class CameraEngine {
     private static final int NDVI_CAPTURE_JPEG_QUALITY = 92;
 
     /**
-     * GPU NDVI path. Live NDVI is rendered directly into a Flutter
-     * SurfaceTexture. No glReadPixels() and no JPEG encode are performed on
-     * the live NDVI path. This is the key performance optimization.
+     * Legacy GPU NDVI path retained for compatibility. The current leaf-mask
+     * policy selects the CPU path because the shader cannot isolate one global
+     * connected leaf component in a single pass.
      */
     private static final int GPU_NDVI_OUTPUT_WIDTH = 960;
     private static final int GPU_NDVI_OUTPUT_HEIGHT = 960;
@@ -276,10 +277,9 @@ public class CameraEngine {
     private static final int GPU_NDVI_STAT_SAMPLE_GRID = 32;
     private static final float GPU_NDVI_MIN_SIGNAL = 6.0f / 255.0f;
 
-    // NIR JPEGs from the camera are rendered as grayscale using luma.
-    // This preserves the camera's intensity differences without inventing a
-    // false colour map.
-    private static final boolean NIR_USE_LUMA = true;
+    // NIR intensity is extracted from the composite's Blue channel only.
+    // The resulting NIR preview is rendered as grayscale; this is still an
+    // encoded-channel estimate, not calibrated spectral reflectance.
 
     /*
      * UI-facing protocol label.
@@ -493,6 +493,15 @@ public class CameraEngine {
     private static final int NDVI_RENDERER_CPU = 2;
 
     /*
+     * A global single-leaf connected-component mask cannot be produced by the
+     * old one-pass GPU fragment shader. Keep the existing renderer class and
+     * pipeline intact, but use the CPU NDVI path so the live preview and saved
+     * preview share the same single-component leaf mask. This is a heuristic
+     * mask, not semantic AI segmentation.
+     */
+    private static final boolean NDVI_USE_CPU_CONNECTED_LEAF_MASK = true;
+
+    /*
      * Renderer policy is sticky for the lifetime of one NDVI session.
      * GPU failures do not make the renderer oscillate GPU -> CPU -> GPU.
      * A surface that is temporarily unavailable does NOT force CPU mode.
@@ -589,9 +598,10 @@ public class CameraEngine {
     private static final String KEY_NDVI_NIR_DARK_REFLECTANCE = "ndvi_nir_dark_reflectance";
     private static final String KEY_NDVI_NIR_WHITE_REFLECTANCE = "ndvi_nir_white_reflectance";
 
-    // Version 2 migrates the previous accidental defaults (RAW + PROCESSED / BALANCED)
-    // to the intended defaults without overwriting other user-selected combinations.
-    private static final int SETTINGS_SCHEMA_VERSION = 2;
+    // Version 2 handles accidental legacy capture/performance defaults.
+    // Version 3 invalidates saved NDVI reference calibration because NIR
+    // extraction now uses the Blue channel only and old NIR samples are incompatible.
+    private static final int SETTINGS_SCHEMA_VERSION = 3;
 
     // MULTI_VIEW is a single JPEG/contact sheet to keep EventChannel traffic low.
     // The five panels use all cells: no sixth placeholder/legend tile is rendered.
@@ -1259,14 +1269,12 @@ public class CameraEngine {
         String savedPreview = normalizePreviewDisplayMode(rawPreview);
 
         /*
-         * A previous build accidentally persisted its UI defaults as
-         * RAW + PROCESSED / BALANCED. Because that build did not record a
-         * settings schema version, migrate only that exact legacy pair once.
-         * Other combinations are treated as intentional user preferences and
-         * are preserved. The selected preview layout is preserved separately.
+         * Schema 2 introduced the one-time migration for accidental legacy
+         * RAW + PROCESSED / BALANCED defaults. Keep that migration scoped to
+         * pre-schema-2 settings so later schema bumps never re-apply it.
          */
         boolean migrateLegacyDefaults =
-                storedSchemaVersion < SETTINGS_SCHEMA_VERSION
+                storedSchemaVersion < 2
                         && CAPTURE_MODE_BOTH.equals(savedCapture)
                         && PERFORMANCE_BALANCED.equals(savedPerformance);
 
@@ -1304,6 +1312,22 @@ public class CameraEngine {
                 KEY_NDVI_NIR_DARK_REFLECTANCE, 0.03f);
         ndviNirWhiteReferenceReflectance = preferences.getFloat(
                 KEY_NDVI_NIR_WHITE_REFLECTANCE, 0.99f);
+
+        /*
+         * Schema 3 changes NIR intensity extraction to Blue-channel-only.
+         * Previously saved two-point NIR samples may have been measured using
+         * max(R, B) or luma, so keeping that calibration would silently mix
+         * incompatible signal definitions. Require a fresh reference calibration.
+         */
+        if (storedSchemaVersion < 3 && ndviReferenceCalibrationEnabled) {
+            ndviReferenceCalibrationEnabled = false;
+            Log.w(
+                    TAG,
+                    "Disabled old NDVI reference calibration because NIR now uses "
+                            + "the Blue channel only; recalibrate before relying on calibrated NDVI"
+            );
+        }
+
         if (ndviReferenceCalibrationEnabled && !isValidNdviReferenceCalibration(
                 ndviRedDarkSample8Bit, ndviRedWhiteSample8Bit,
                 ndviRedDarkReferenceReflectance, ndviRedWhiteReferenceReflectance,
@@ -1474,8 +1498,8 @@ public class CameraEngine {
         data.put("greenVegetationMaskAvailable", true);
         data.put("singleTargetLeafComponent", true);
         data.put("ndviDisplayPalette", "RED(-1)-YELLOW(0)-GREEN(+1)");
-        data.put("vegetationMaskMethod", "CENTER_NEAREST_CONNECTED_FOLIAGE_COMPONENT_WITH_CONTINUOUS_NDVI_PALETTE");
-        data.put("targetRoi", "CENTER_64_PERCENT_NEAREST_SINGLE_COMPONENT");
+        data.put("vegetationMaskMethod", "FULL_CROP_SINGLE_CONNECTED_FOLIAGE_COMPONENT_WITH_CONTINUOUS_NDVI_PALETTE");
+        data.put("targetRoi", "FULL_CROP_SINGLE_COMPONENT");
         data.put("vegetationMaskIndexThreshold", NDVI_TARGET_MIN_INDEX_THRESHOLD);
 
         sendEvent("ndviModeChanged", data);
@@ -5018,7 +5042,8 @@ public class CameraEngine {
                     return;
                 }
 
-                if (ndviRendererMode != NDVI_RENDERER_CPU) {
+                if (!NDVI_USE_CPU_CONNECTED_LEAF_MASK
+                        && ndviRendererMode != NDVI_RENDERER_CPU) {
                     updateGpuNdviStatisticsIfDue(source);
                 }
 
@@ -5036,7 +5061,8 @@ public class CameraEngine {
                  * GPU     -> stay GPU for this NDVI session.
                  * CPU     -> stay CPU for this NDVI session.
                  */
-                if (ndviRendererMode != NDVI_RENDERER_CPU) {
+                if (!NDVI_USE_CPU_CONNECTED_LEAF_MASK
+                        && ndviRendererMode != NDVI_RENDERER_CPU) {
                     gpuRendered =
                             renderGpuNdvi(source);
 
@@ -5437,10 +5463,10 @@ public class CameraEngine {
     }
 
     /**
-     * Builds a coarse foliage mask, labels its connected components, and keeps
-     * only the component nearest the center focus point. This prevents multiple
-     * separate leaves elsewhere in the crop from all receiving the target-green
-     * overlay. Other valid pixels remain mapped through the NDVI legend palette.
+     * Builds a coarse foliage mask over nearly the full crop and keeps one
+     * coherent foliage-like component. The selected component may be below or
+     * beside center; other pixels retain the NDVI legend palette. This remains
+     * a color/geometry heuristic, not semantic leaf recognition.
      */
     private byte[] buildSingleTargetLeafMask(
             Bitmap source,
@@ -5499,7 +5525,54 @@ public class CameraEngine {
             }
         }
 
+        // Close tiny holes caused by sensor/JPEG noise so the selected leaf mask
+        // is more solid, without painting unrelated large regions green.
+        closeSmallMaskGaps(candidates, focusWidth, focusHeight);
+        // A second small closing pass reduces pinholes inside a leaf. The operation
+        // remains local and does not fill large gaps or create a rectangular ROI.
+        closeSmallMaskGaps(candidates, focusWidth, focusHeight);
         return selectSingleConnectedComponentNearCenter(candidates, focusWidth, focusHeight);
+    }
+
+    private static void closeSmallMaskGaps(byte[] mask, int width, int height) {
+        if (mask == null || width < 3 || height < 3) return;
+        final byte[] dilated = new byte[mask.length];
+        final byte[] closed = new byte[mask.length];
+        // 3x3 dilation joins one-pixel breaks in a leaf's candidate mask.
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                boolean on = false;
+                for (int oy = -1; oy <= 1 && !on; oy++) {
+                    final int yy = y + oy;
+                    if (yy < 0 || yy >= height) continue;
+                    for (int ox = -1; ox <= 1; ox++) {
+                        final int xx = x + ox;
+                        if (xx >= 0 && xx < width && mask[yy * width + xx] != 0) {
+                            on = true;
+                            break;
+                        }
+                    }
+                }
+                if (on) dilated[y * width + x] = 1;
+            }
+        }
+        // 3x3 erosion after dilation fills small internal gaps while retaining
+        // the approximate outer contour of the leaf.
+        for (int y = 1; y < height - 1; y++) {
+            for (int x = 1; x < width - 1; x++) {
+                boolean all = true;
+                for (int oy = -1; oy <= 1 && all; oy++) {
+                    for (int ox = -1; ox <= 1; ox++) {
+                        if (dilated[(y + oy) * width + x + ox] == 0) {
+                            all = false;
+                            break;
+                        }
+                    }
+                }
+                if (all) closed[y * width + x] = 1;
+            }
+        }
+        System.arraycopy(closed, 0, mask, 0, mask.length);
     }
 
     private byte[] selectSingleConnectedComponentNearCenter(
@@ -5520,9 +5593,9 @@ public class CameraEngine {
         int bestLabel = 0;
         int bestArea = 0;
         double bestScore = Double.POSITIVE_INFINITY;
-        // Reject near-frame-sized blobs: they are more likely to be clothing,
-        // a wall, or another background region than one leaf.
-        final int maxLeafArea = Math.max(minArea + 1, (int) Math.round(count * 0.28d));
+        // Do not impose a fixed maximum area: a close leaf may occupy most of
+        // the frame. Geometry and foliage-candidate checks below still penalize
+        // solid box-like regions, but cannot replace semantic segmentation.
 
         for (int start = 0; start < count; start++) {
             if (candidates[start] == 0 || labels[start] != 0) {
@@ -5557,46 +5630,29 @@ public class CameraEngine {
                 final double dy = ny - 0.5d;
                 nearestDistance = Math.min(nearestDistance, dx * dx + dy * dy);
 
-                // 4-connectivity avoids merging separate leaves/background objects
-                // through a single diagonal pixel. A tiny gap may split a leaf, which is
-                // preferable to painting a large false-positive block green.
-                if (x > 0) {
-                    final int neighbor = index - 1;
-                    if (candidates[neighbor] != 0 && labels[neighbor] == 0) {
-                        labels[neighbor] = nextLabel;
-                        queue[tail++] = neighbor;
-                    }
-                }
-                if (x + 1 < width) {
-                    final int neighbor = index + 1;
-                    if (candidates[neighbor] != 0 && labels[neighbor] == 0) {
-                        labels[neighbor] = nextLabel;
-                        queue[tail++] = neighbor;
-                    }
-                }
-                if (y > 0) {
-                    final int neighbor = index - width;
-                    if (candidates[neighbor] != 0 && labels[neighbor] == 0) {
-                        labels[neighbor] = nextLabel;
-                        queue[tail++] = neighbor;
-                    }
-                }
-                if (y + 1 < height) {
-                    final int neighbor = index + width;
-                    if (candidates[neighbor] != 0 && labels[neighbor] == 0) {
-                        labels[neighbor] = nextLabel;
-                        queue[tail++] = neighbor;
+                // 8-connectivity keeps small gaps caused by JPEG noise from splitting one leaf.
+                for (int oy = -1; oy <= 1; oy++) {
+                    final int yy = y + oy;
+                    if (yy < 0 || yy >= height) continue;
+                    for (int ox = -1; ox <= 1; ox++) {
+                        if (ox == 0 && oy == 0) continue;
+                        final int xx = x + ox;
+                        if (xx < 0 || xx >= width) continue;
+                        final int neighbor = yy * width + xx;
+                        if (candidates[neighbor] != 0 && labels[neighbor] == 0) {
+                            labels[neighbor] = nextLabel;
+                            queue[tail++] = neighbor;
+                        }
                     }
                 }
             }
 
-            if (area < minArea || area > maxLeafArea) {
+            if (area < minArea) {
                 continue;
             }
 
-            // Score the component by its centroid's distance to the actual focus
-            // seed, with a modest area reward. This avoids selecting a tiny noisy
-            // speck merely because one pixel happens to touch the exact centre.
+            // Prefer the largest coherent foliage candidate so the leaf can be
+            // placed below/aside the center. Center distance is only a weak tie-breaker.
             final double centroidX = (sumX / (double) area + 0.5d) / (double) width;
             final double centroidY = (sumY / (double) area + 0.5d) / (double) height;
             final double dx = centroidX - 0.5d;
@@ -5605,22 +5661,17 @@ public class CameraEngine {
             final double boxArea = Math.max(1.0d,
                     (double) (maxX - minX + 1) * (double) (maxY - minY + 1));
             final double fillRatio = area / boxArea;
-
-            // A near-solid rectangular component is usually a background/object region,
-            // not a single leaf. Fail closed instead of painting a large green block.
-            // The threshold is intentionally not too strict because real leaves can overlap.
-            if (fillRatio > 0.88d) {
-                continue;
-            }
-
-            // Prefer a coherent component whose centroid is close to the focus seed.
-            // Penalize both sparse noise and overly box-like regions; this is a geometric
-            // heuristic and does not replace a semantic leaf segmentation model.
-            final double boxLikePenalty = Math.max(0.0d, fillRatio - 0.62d) * 0.10d;
-            final double score = centroidDistance
-                    + (0.025d / Math.sqrt(Math.max(1, area)))
-                    + Math.max(0.0d, 0.12d - fillRatio) * 0.08d
-                    + boxLikePenalty;
+            // Near-rectangular blocks are unlikely to be a single leaf. This is
+            // a soft penalty because leaf shapes and occlusion vary considerably.
+            final double boxLikePenalty = Math.max(0.0d, fillRatio - 0.58d) * 0.90d;
+            final double largeFramePenalty = area > count * 0.42d
+                    ? ((area / (double) count) - 0.42d) * 1.25d
+                    : 0.0d;
+            final double score = (0.08d * centroidDistance)
+                    + (0.10d / Math.sqrt(Math.max(1, area)))
+                    + Math.max(0.0d, 0.10d - fillRatio) * 0.04d
+                    + boxLikePenalty
+                    + largeFramePenalty;
             if (score < bestScore - 1.0e-9d
                     || (Math.abs(score - bestScore) <= 1.0e-9d && area > bestArea)) {
                 bestScore = score;
@@ -5872,9 +5923,9 @@ public class CameraEngine {
         event.put("greenVegetationMaskAvailable", true);
         event.put("referenceCalibrationEnabled", ndviReferenceCalibrationEnabled);
         event.put("referenceCalibrationModel", "TWO_POINT_PER_BAND_REFERENCE_NORMALIZATION");
-        event.put("vegetationMaskMethod", "CENTER_NEAREST_CONNECTED_FOLIAGE_COMPONENT_WITH_CONTINUOUS_NDVI_PALETTE");
+        event.put("vegetationMaskMethod", "FULL_CROP_SINGLE_CONNECTED_FOLIAGE_COMPONENT_WITH_CONTINUOUS_NDVI_PALETTE");
         event.put("vegetationMaskIndexThreshold", NDVI_TARGET_MIN_INDEX_THRESHOLD);
-        event.put("targetRoi", "CENTER_64_PERCENT");
+        event.put("targetRoi", "FULL_CROP_SINGLE_COMPONENT");
         event.put(
                 "registrationModel",
                 "NORMALIZED_AFFINE_GPU_UNCALIBRATED_DEFAULTS"
@@ -6081,10 +6132,9 @@ public class CameraEngine {
     }
 
     /**
-     * Returns true when a normalized pixel lies in the central target ROI.
-     * The screen's decorative focus brackets are not passed to native code,
-     * so this centered ROI approximates the visible focus frame (about 64%
-     * of crop width and height) without changing the Flutter/UI structure.
+     * Returns true when a normalized pixel lies in the leaf-search area.
+     * The search covers nearly the whole optical crop so leaf placement is not
+     * restricted to the fixed center brackets; one component is selected later.
      */
     private static boolean isInsideNdviTargetRoi(float normalizedX, float normalizedY) {
         return normalizedX >= NDVI_TARGET_ROI_MIN_X
@@ -6118,26 +6168,28 @@ public class CameraEngine {
                         && green > blue * NDVI_VEG_GREEN_BLUE_RATIO
                         && excessGreen >= NDVI_VEG_GREEN_EXCESS_MIN;
 
-        // A minimum chroma gate rejects neutral gray/white background. Warm yellow
-        // and slightly orange leaves are accepted when both red and green exceed blue.
+        // Keep the warm-foliage gate deliberately narrow. A broad orange/brown
+        // test also accepts sunlit floors, skin and clothing, which caused large
+        // background blobs to be painted green in earlier previews. Yellow leaves
+        // are supported, but red-dominant orange regions are not enough by themselves.
         final float maxShare = Math.max(nr, Math.max(ng, nb));
         final float minShare = Math.min(nr, Math.min(ng, nb));
         final boolean chromatic = (maxShare - minShare) >= 0.085f;
         final boolean yellowOrWarmFoliage = chromatic
-                && nr >= 0.30f
-                && ng >= 0.22f
-                && (nr - ng) <= 0.17f
-                && ng >= nr * 0.58f
+                && nr >= 0.28f
+                && ng >= 0.27f
+                && (nr - ng) <= 0.16f
+                && ng >= nr * 0.62f
                 && nr > nb * 1.20f
-                && ng > nb * 1.12f;
+                && ng > nb * 1.15f;
 
         return greenFoliage || yellowOrWarmFoliage;
     }
 
     /**
      * Candidate predicate shared with the coarser connected-component mask.
-     * A location must lie inside the approximate focus brackets, match a restrained
-     * green/yellow foliage heuristic, and have a usable or clipped paired signal.
+     * A location must lie inside the approximate focus brackets, look like
+     * green/yellow foliage in RGB, and have a usable or clipped paired signal.
      */
     private static boolean isTargetLeafCandidate(
             float ndvi,
@@ -6256,9 +6308,9 @@ public class CameraEngine {
         data.put("greenVegetationMaskAvailable", true);
         data.put("singleTargetLeafComponent", true);
         data.put("ndviDisplayPalette", "RED(-1)-YELLOW(0)-GREEN(+1)");
-        data.put("vegetationMaskMethod", "CENTER_NEAREST_CONNECTED_FOLIAGE_COMPONENT_WITH_CONTINUOUS_NDVI_PALETTE");
+        data.put("vegetationMaskMethod", "FULL_CROP_SINGLE_CONNECTED_FOLIAGE_COMPONENT_WITH_CONTINUOUS_NDVI_PALETTE");
         data.put("vegetationMaskIndexThreshold", NDVI_TARGET_MIN_INDEX_THRESHOLD);
-        data.put("targetRoi", "CENTER_64_PERCENT_NEAREST_SINGLE_COMPONENT");
+        data.put("targetRoi", "FULL_CROP_SINGLE_COMPONENT");
         data.put("ndviPopulation", "CENTER_TARGET_ROI_VALID_INDEX_PIXELS");
         data.put("validPixelCountIsSampled", true);
 
@@ -6768,20 +6820,15 @@ public class CameraEngine {
     }
 
     /**
-     * Extracts a digital intensity from the NIR field. The supplied composite
-     * stream renders its NIR optical field magenta (red/blue high, green low),
-     * so luminance underweights the signal severely. For that encoding use the
-     * strongest R/B component; neutral/monochrome pixels still use luminance.
-     * This recovers the preview's encoded intensity only; it is not radiometric calibration.
+     * Extracts NIR intensity from the Blue (B) channel only.
+     *
+     * No red/green channel comparison, max(R, B), or luma fallback is allowed:
+     * every NIR sample uses the same encoded Blue-channel component, both for
+     * NDVI and for the grayscale NIR preview. This is the Blue component of
+     * the composite image, not a guarantee of calibrated sensor reflectance.
      */
     private int pixelNirIntensity(int color) {
-        final int r = Color.red(color);
-        final int g = Color.green(color);
-        final int b = Color.blue(color);
-        if (r > g + 12 && b > g + 12) {
-            return Math.max(r, b);
-        }
-        return pixelLuma(color);
+        return Color.blue(color);
     }
 
     private int pixelLuma(int color) {
@@ -8315,9 +8362,9 @@ public class CameraEngine {
                     data.put("semanticVegetationClassificationAvailable", false);
                     data.put("greenVegetationMaskAvailable", "NDVI".equals(processedBand));
                     if ("NDVI".equals(processedBand)) {
-                        data.put("vegetationMaskMethod", "CENTER_NEAREST_CONNECTED_FOLIAGE_COMPONENT_WITH_CONTINUOUS_NDVI_PALETTE");
+                        data.put("vegetationMaskMethod", "FULL_CROP_SINGLE_CONNECTED_FOLIAGE_COMPONENT_WITH_CONTINUOUS_NDVI_PALETTE");
                         data.put("vegetationMaskIndexThreshold", NDVI_TARGET_MIN_INDEX_THRESHOLD);
-                        data.put("targetRoi", "CENTER_64_PERCENT_NEAREST_SINGLE_COMPONENT");
+                        data.put("targetRoi", "FULL_CROP_SINGLE_COMPONENT");
                         data.put("metric", currentNdviMetric());
                         data.put("referenceCalibrationEnabled", ndviReferenceCalibrationEnabled);
                         data.put("referenceCalibrationModel", "TWO_POINT_PER_BAND_REFERENCE_NORMALIZATION");
@@ -11141,11 +11188,7 @@ public class CameraEngine {
                         + "  vec4 rgbSample = texture2D(uComposite, rgbUv);"
                         + "  vec4 nirSample = texture2D(uComposite, nirUv);"
                         + "  float redEncoded = rgbSample.r;"
-                        + "  float nirMaxRB = max(nirSample.r, nirSample.b);"
-                        + "  float nirMinRB = min(nirSample.r, nirSample.b);"
-                        + "  bool magentaNir = nirSample.r > nirSample.g + 0.047"
-                        + "      && nirSample.b > nirSample.g + 0.047;"
-                        + "  float nirSignal = magentaNir ? nirMaxRB : dot(nirSample.rgb, vec3(0.299, 0.587, 0.114));"
+                        + "  float nirSignal = nirSample.b;"
                         + "  float nirEncoded = floor(clamp(nirSignal, 0.0, 1.0) * 255.0 + 0.0001) / 255.0;"
                         + "  if (redEncoded < uMinSignal || nirEncoded < uMinSignal) {"
                         + "    gl_FragColor = vec4(ndviColor(0.0, rgbSample.rgb, vUv, false, false), 1.0);"
