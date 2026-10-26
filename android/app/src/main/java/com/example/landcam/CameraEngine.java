@@ -5384,6 +5384,16 @@ public class CameraEngine {
         final int[] rgbRow = new int[width];
         final int[] nirPixels = new int[nirWidth * nirHeight];
         final int[] outputRow = new int[sampledWidth];
+        // Low-cost scalar NDVI denoising is enabled for typical live previews.
+        // Keep memory bounded on large still captures; their display path falls
+        // back to the existing scanline median filter.
+        final int scalarSmoothingPixelCount = sampledWidth * sampledHeight;
+        final boolean useScalarDenoising = scalarSmoothingPixelCount > 0
+                && scalarSmoothingPixelCount <= 1200000;
+        final float[] ndviValuesForDenoising = useScalarDenoising
+                ? new float[scalarSmoothingPixelCount] : null;
+        final byte[] ndviDisplayClass = useScalarDenoising
+                ? new byte[scalarSmoothingPixelCount] : null;
         final long[] redSumsByCell = new long[sampledWidth];
         final long[] visibleGreenSumsByCell = new long[sampledWidth];
         final long[] visibleBlueSumsByCell = new long[sampledWidth];
@@ -5406,6 +5416,7 @@ public class CameraEngine {
                 Bitmap.Config.ARGB_8888
         );
         Bitmap fullSizeOutput = null;
+        Bitmap denoisedOutput = null;
         double ndviSum = 0.0d;
         int valid = 0;
         int targetLeafValid = 0;
@@ -5429,23 +5440,26 @@ public class CameraEngine {
                     );
                     for (int blockX = 0; blockX < width; blockX++) {
                         final int cellX = blockX / step;
-                        final long mapped = mapUnifiedPixelToNir(
+                        final long mappedUv = mapUnifiedPixelToNirUv(
                                 blockX, blockY, width, height, nirWidth, nirHeight
                         );
-                        if (mapped < 0L) {
+                        if (mappedUv < 0L) {
                             continue;
                         }
 
-                        final int nirX = (int) (mapped >> 32);
-                        final int nirY = (int) mapped;
+                        final int nirEncoded = sampleNirBlueBilinear(
+                                nirPixels, nirWidth, nirHeight, mappedUv
+                        );
+                        if (nirEncoded < 0) {
+                            continue;
+                        }
                         final int visiblePixel = rgbRow[blockX];
                         redSumsByCell[cellX] += Color.red(visiblePixel);
                         visibleGreenSumsByCell[cellX] += Color.green(visiblePixel);
                         visibleBlueSumsByCell[cellX] += Color.blue(visiblePixel);
-                        // NIR is intentionally sourced from the Blue channel only.
-                        nirBlueSumsByCell[cellX] += pixelNirIntensity(
-                                nirPixels[nirY * nirWidth + nirX]
-                        );
+                        // Bilinear Blue-channel sampling reduces nearest-neighbour
+                        // stair-stepping without inventing a geometric calibration.
+                        nirBlueSumsByCell[cellX] += nirEncoded;
                         pairedSamplesByCell[cellX]++;
                     }
                 }
@@ -5486,6 +5500,11 @@ public class CameraEngine {
                     // the scalar leaf NDVI summary below; it must never paint a
                     // selected region as one flat solid green color.
                     if (Float.isFinite(ndvi)) {
+                        if (useScalarDenoising) {
+                            final int denoiseIndex = sy * sampledWidth + sx;
+                            ndviValuesForDenoising[denoiseIndex] = ndvi;
+                            ndviDisplayClass[denoiseIndex] = (byte) (visibleFoliage ? 1 : 2);
+                        }
                         int paletteColor = ndviPaletteColor(ndvi);
                         // For visibly non-foliage pixels, avoid presenting a negative
                         // uncalibrated digital index as strong red vegetation stress.
@@ -5536,12 +5555,24 @@ public class CameraEngine {
             }
             lastNdviComputedAt = System.currentTimeMillis();
 
-            Bitmap bitmapToEncode = output;
+            // Denoise the scalar NDVI values before final palette rendering where
+            // the preview is small enough for bounded memory use. Neighbourhoods
+            // never mix foliage and non-foliage classes, and invalid/clipped pixels
+            // stay untouched. Large captures retain the established color median.
+            if (useScalarDenoising) {
+                denoisedOutput = smoothNdviValuesAndRecolor(
+                        output, ndviValuesForDenoising, ndviDisplayClass,
+                        sampledWidth, sampledHeight
+                );
+            } else {
+                denoisedOutput = medianDenoiseNdviColors(output);
+            }
+            Bitmap bitmapToEncode = denoisedOutput;
             if (sampledWidth != width || sampledHeight != height) {
                 // Safety fallback only: with native-resolution analysis this branch should
                 // normally not run. Scaling cannot restore information lost by downsampling.
                 fullSizeOutput = Bitmap.createScaledBitmap(
-                        output, width, height, true
+                        denoisedOutput, width, height, true
                 );
                 bitmapToEncode = fullSizeOutput;
             }
@@ -5553,7 +5584,7 @@ public class CameraEngine {
                         + " nirCrop=" + rectToString(nirRect)
                         + " analysis=" + sampledWidth + "x" + sampledHeight
                         + " output=" + bitmapToEncode.getWidth() + "x" + bitmapToEncode.getHeight()
-                        + " step=" + step + " NIR=BLUE_ONLY");
+                        + " step=" + step + " NIR=BLUE_BILINEAR");
             }
 
             return bitmapToJpeg(
@@ -5565,6 +5596,12 @@ public class CameraEngine {
                     && fullSizeOutput != output
                     && !fullSizeOutput.isRecycled()) {
                 fullSizeOutput.recycle();
+            }
+            if (denoisedOutput != null
+                    && denoisedOutput != output
+                    && denoisedOutput != fullSizeOutput
+                    && !denoisedOutput.isRecycled()) {
+                denoisedOutput.recycle();
             }
             if (!output.isRecycled()) {
                 output.recycle();
@@ -5611,17 +5648,20 @@ public class CameraEngine {
                     continue;
                 }
 
-                final long mapped = mapUnifiedPixelToNir(
+                final long mappedUv = mapUnifiedPixelToNirUv(
                         x, y, width, height, nirWidth, nirHeight
                 );
-                if (mapped < 0L) {
+                if (mappedUv < 0L) {
                     continue;
                 }
 
-                final int nirX = (int) (mapped >> 32);
-                final int nirY = (int) mapped;
                 final int redEncoded = Color.red(rgbColor);
-                final int nirEncoded = pixelNirIntensity(nirPixels[nirY * nirWidth + nirX]);
+                final int nirEncoded = sampleNirBlueBilinear(
+                        nirPixels, nirWidth, nirHeight, mappedUv
+                );
+                if (nirEncoded < 0) {
+                    continue;
+                }
                 final float ndvi = calculateRelativeNdvi(redEncoded, nirEncoded);
                 final boolean signalClipped =
                         (redEncoded >= 250 && nirEncoded >= NDVI_MIN_VALID_SIGNAL)
@@ -6104,15 +6144,38 @@ public class CameraEngine {
     }
 
     /**
-     * Maps one unified-output pixel to a source pixel in the NIR crop.
-     *
-     * The return value packs x/y into one long to avoid per-pixel allocations
-     * and, unlike shared scratch fields, remains safe when a capture and the
-     * live-view worker happen to run concurrently.
-     *
-     * -1L means the mapped coordinate falls outside the NIR optical crop.
+     * Maps one unified-output pixel to the nearest source pixel in the NIR crop.
+     * This legacy adapter is retained for existing preview/stat paths. NDVI's
+     * main CPU calculation uses continuous UV and bilinear Blue-channel sampling.
+     * The return value packs x/y into one long; -1L means an invalid mapping.
      */
     private long mapUnifiedPixelToNir(
+            int outputX,
+            int outputY,
+            int outputWidth,
+            int outputHeight,
+            int nirWidth,
+            int nirHeight
+    ) {
+        final long mappedUv = mapUnifiedPixelToNirUv(
+                outputX, outputY, outputWidth, outputHeight, nirWidth, nirHeight
+        );
+        if (mappedUv < 0L) {
+            return -1L;
+        }
+        final float nirU = Float.intBitsToFloat((int) (mappedUv >> 32));
+        final float nirV = Float.intBitsToFloat((int) mappedUv);
+        final int mappedX = clampInt((int) Math.floor(nirU * nirWidth), 0, nirWidth - 1);
+        final int mappedY = clampInt((int) Math.floor(nirV * nirHeight), 0, nirHeight - 1);
+        return (((long) mappedX) << 32) | (mappedY & 0xFFFFFFFFL);
+    }
+
+    /**
+     * Maps an RGB-crop pixel to continuous normalized NIR UV coordinates.
+     * The two float bit patterns are packed into a long to avoid per-pixel
+     * allocations. A negative result means that the coordinate is invalid.
+     */
+    private long mapUnifiedPixelToNirUv(
             int outputX,
             int outputY,
             int outputWidth,
@@ -6124,7 +6187,6 @@ public class CameraEngine {
             return -1L;
         }
 
-        // Match the GPU fragment-centre UV convention exactly.
         final float u = ((float) outputX + 0.5f) / (float) outputWidth;
         final float v = ((float) outputY + 0.5f) / (float) outputHeight;
         final float shiftedX = u - 0.5f
@@ -6145,11 +6207,48 @@ public class CameraEngine {
                 || nirU < 0.0f || nirV < 0.0f || nirU > 1.0f || nirV > 1.0f) {
             return -1L;
         }
+        return (((long) Float.floatToIntBits(nirU)) << 32)
+                | (Float.floatToIntBits(nirV) & 0xFFFFFFFFL);
+    }
 
-        // GLES20.GL_NEAREST samples floor(U * textureSize); use the same rule on CPU.
-        final int mappedX = clampInt((int) Math.floor(nirU * nirWidth), 0, nirWidth - 1);
-        final int mappedY = clampInt((int) Math.floor(nirV * nirHeight), 0, nirHeight - 1);
-        return (((long) mappedX) << 32) | (mappedY & 0xFFFFFFFFL);
+    /**
+     * Bilinearly samples the NIR Blue channel at mapped normalized UV. Coordinates
+     * use the GL_LINEAR texel-centre convention (u * size - 0.5); edge samples
+     * are clamped to the optical crop, never to another source region.
+     * Returns -1 when the mapping or source buffer is invalid.
+     */
+    private int sampleNirBlueBilinear(
+            int[] nirPixels,
+            int nirWidth,
+            int nirHeight,
+            long mappedUv
+    ) {
+        if (mappedUv < 0L || nirPixels == null || nirWidth <= 0 || nirHeight <= 0
+                || nirPixels.length < nirWidth * nirHeight) {
+            return -1;
+        }
+        final float nirU = Float.intBitsToFloat((int) (mappedUv >> 32));
+        final float nirV = Float.intBitsToFloat((int) mappedUv);
+        if (!Float.isFinite(nirU) || !Float.isFinite(nirV)) {
+            return -1;
+        }
+
+        final float px = clampFloat(nirU * nirWidth - 0.5f, 0.0f, nirWidth - 1.0f);
+        final float py = clampFloat(nirV * nirHeight - 0.5f, 0.0f, nirHeight - 1.0f);
+        final int x0 = (int) Math.floor(px);
+        final int y0 = (int) Math.floor(py);
+        final int x1 = Math.min(nirWidth - 1, x0 + 1);
+        final int y1 = Math.min(nirHeight - 1, y0 + 1);
+        final float fx = px - x0;
+        final float fy = py - y0;
+
+        final float p00 = pixelNirIntensity(nirPixels[y0 * nirWidth + x0]);
+        final float p10 = pixelNirIntensity(nirPixels[y0 * nirWidth + x1]);
+        final float p01 = pixelNirIntensity(nirPixels[y1 * nirWidth + x0]);
+        final float p11 = pixelNirIntensity(nirPixels[y1 * nirWidth + x1]);
+        final float top = p00 + (p10 - p00) * fx;
+        final float bottom = p01 + (p11 - p01) * fx;
+        return clampInt(Math.round(top + (bottom - top) * fy), 0, 255);
     }
 
     private static float clampFloat(float value, float min, float max) {
@@ -6294,6 +6393,152 @@ public class CameraEngine {
                 && ng > nb * 1.15f;
 
         return greenFoliage || yellowOrWarmFoliage;
+    }
+
+    /**
+     * Edge-aware 5x5 median in scalar NDVI space, followed by palette rendering.
+     * Only neighbours in the same display class are considered: foliage never
+     * borrows values from the non-foliage background. A minimum support count
+     * leaves thin leaf edges and invalid/clipped pixels unchanged. NDVI statistics
+     * are computed before this display-only operation.
+     */
+    private static Bitmap smoothNdviValuesAndRecolor(
+            Bitmap output,
+            float[] values,
+            byte[] displayClass,
+            int width,
+            int height
+    ) {
+        if (output == null || output.isRecycled() || values == null || displayClass == null
+                || width < 3 || height < 3 || values.length < width * height
+                || displayClass.length < width * height) {
+            return output;
+        }
+
+        final int[] row = new int[width];
+        final float[] neighbourhood = new float[25];
+        for (int y = 0; y < height; y++) {
+            output.getPixels(row, 0, width, 0, y, width, 1);
+            if (y >= 2 && y < height - 2) {
+                for (int x = 2; x < width - 2; x++) {
+                    final int index = y * width + x;
+                    final byte centerClass = displayClass[index];
+                    final float centerValue = values[index];
+                    if ((centerClass != 1 && centerClass != 2) || !Float.isFinite(centerValue)) {
+                        continue;
+                    }
+
+                    int count = 0;
+                    for (int oy = -2; oy <= 2; oy++) {
+                        final int base = (y + oy) * width + x;
+                        for (int ox = -2; ox <= 2; ox++) {
+                            final int neighbourIndex = base + ox;
+                            if (displayClass[neighbourIndex] != centerClass) continue;
+                            final float neighbourValue = values[neighbourIndex];
+                            if (Float.isFinite(neighbourValue)) {
+                                neighbourhood[count++] = neighbourValue;
+                            }
+                        }
+                    }
+
+                    // Requiring 9 of 25 neighbours of the same class keeps the filter
+                    // conservative near leaf/background boundaries and thin stems.
+                    float valueToRender = centerValue;
+                    if (count >= 9) {
+                        Arrays.sort(neighbourhood, 0, count);
+                        valueToRender = neighbourhood[count / 2];
+                    }
+
+                    if (centerClass == 1) {
+                        row[x] = ndviPaletteColor(valueToRender);
+                    } else {
+                        final float warmAmount = clampFloat(
+                                (valueToRender + 1.0f) * 0.5f, 0.0f, 1.0f);
+                        row[x] = blendColor(
+                                NDVI_PALETTE_RED, NDVI_PALETTE_YELLOW, warmAmount);
+                    }
+                }
+            }
+            output.setPixels(row, 0, width, 0, y, width, 1);
+        }
+        return output;
+    }
+
+    /**
+     * 3x3 per-channel median denoiser for false-colour NDVI output.
+     * Uses scanline buffers to keep extra memory bounded. Black invalid-data
+     * pixels are preserved, and the operation is deliberately limited to one
+     * pixel around edges so leaf geometry is not aggressively blurred.
+     */
+    private static Bitmap medianDenoiseNdviColors(Bitmap source) {
+        if (source == null || source.isRecycled()) {
+            return source;
+        }
+        final int width = source.getWidth();
+        final int height = source.getHeight();
+        if (width < 3 || height < 3) {
+            return source;
+        }
+
+        final Bitmap filtered = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        final int[] rowAbove = new int[width];
+        final int[] rowCenter = new int[width];
+        final int[] rowBelow = new int[width];
+        final int[] outRow = new int[width];
+        final int[] neighborhood = new int[9];
+        final int[] reds = new int[9];
+        final int[] greens = new int[9];
+        final int[] blues = new int[9];
+        source.getPixels(rowAbove, 0, width, 0, 0, width, 1);
+        filtered.setPixels(rowAbove, 0, width, 0, 0, width, 1);
+
+        for (int y = 1; y < height - 1; y++) {
+            source.getPixels(rowAbove, 0, width, 0, y - 1, width, 1);
+            source.getPixels(rowCenter, 0, width, 0, y, width, 1);
+            source.getPixels(rowBelow, 0, width, 0, y + 1, width, 1);
+            outRow[0] = rowCenter[0];
+            outRow[width - 1] = rowCenter[width - 1];
+            for (int x = 1; x < width - 1; x++) {
+                final int center = rowCenter[x];
+                if (center == Color.BLACK) {
+                    outRow[x] = center;
+                    continue;
+                }
+                neighborhood[0] = rowAbove[x - 1];
+                neighborhood[1] = rowAbove[x];
+                neighborhood[2] = rowAbove[x + 1];
+                neighborhood[3] = rowCenter[x - 1];
+                neighborhood[4] = center;
+                neighborhood[5] = rowCenter[x + 1];
+                neighborhood[6] = rowBelow[x - 1];
+                neighborhood[7] = rowBelow[x];
+                neighborhood[8] = rowBelow[x + 1];
+                int validCount = 0;
+                for (int color : neighborhood) {
+                    if (color == Color.BLACK) continue;
+                    reds[validCount] = Color.red(color);
+                    greens[validCount] = Color.green(color);
+                    blues[validCount] = Color.blue(color);
+                    validCount++;
+                }
+                if (validCount < 5) {
+                    outRow[x] = center;
+                    continue;
+                }
+                Arrays.sort(reds, 0, validCount);
+                Arrays.sort(greens, 0, validCount);
+                Arrays.sort(blues, 0, validCount);
+                outRow[x] = Color.rgb(
+                        reds[validCount / 2],
+                        greens[validCount / 2],
+                        blues[validCount / 2]
+                );
+            }
+            filtered.setPixels(outRow, 0, width, 0, y, width, 1);
+        }
+        source.getPixels(outRow, 0, width, 0, height - 1, width, 1);
+        filtered.setPixels(outRow, 0, width, 0, height - 1, width, 1);
+        return filtered;
     }
 
     /**
