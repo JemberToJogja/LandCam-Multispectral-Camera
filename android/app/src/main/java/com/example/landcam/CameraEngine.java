@@ -153,7 +153,14 @@ public class CameraEngine {
             40L; // Keep the established ~25 FPS budget; skip wasted decode work before processing.
 
     private static final int NDVI_MIN_VALID_SIGNAL = 6;
-    private static final int NDVI_MAX_PREVIEW_PIXELS = 100000;
+    // NDVI ARTIFACT FIX:
+    // Do not aggregate multiple source pixels into one NDVI value. The old 8 MP
+    // cap caused each analysis cell to be expanded to the full output size, producing
+    // visible square/block artifacts around foliage, shoe edges and textured surfaces.
+    // Analyze at native crop resolution. This costs more CPU/RAM on very large frames;
+    // if the device cannot sustain it, reduce the camera source resolution upstream
+    // rather than silently turning multiple pixels into one NDVI measurement.
+    private static final int NDVI_MAX_ANALYSIS_PIXELS = Integer.MAX_VALUE;
 
     /**
      * LANDCAM dual-optical processing:
@@ -260,10 +267,11 @@ public class CameraEngine {
     private static final int NDVI_PALETTE_RED = 0xFFC91424;
     private static final int NDVI_PALETTE_YELLOW = 0xFFFFD52A;
     private static final int NDVI_PALETTE_GREEN = 0xFF0DA83B;
-    private static final int NDVI_VEGETATION_COLOR = 0xFF0DA83B;
     private static final int NDVI_CLIPPED_UNDEFINED_COLOR = 0xFFFF8C00;
-    private static final int NDVI_PREVIEW_JPEG_QUALITY = 86;
-    private static final int NDVI_CAPTURE_JPEG_QUALITY = 92;
+    // NDVI is a high-frequency false-colour image. Use high JPEG quality to reduce
+    // additional 8x8 DCT blocking/ringing on top of source-camera compression.
+    private static final int NDVI_PREVIEW_JPEG_QUALITY = 98;
+    private static final int NDVI_CAPTURE_JPEG_QUALITY = 96;
 
     /**
      * Legacy GPU NDVI path retained for compatibility. The current leaf-mask
@@ -441,6 +449,28 @@ public class CameraEngine {
 
     private volatile byte[] lastFrameBytes;
     private volatile byte[] lastCompositeFrameBytes;
+
+    /**
+     * Immutable snapshot of the exact NDVI bitmap most recently committed to
+     * the live preview. Processed NDVI capture reuses this frame so the saved
+     * image cannot silently change crop, palette or values by switching to a
+     * differently exposed still JPEG.
+     */
+    private static final class NdviPreviewSnapshot {
+        final byte[] jpeg;
+        final double ndvi;
+        final int validPixels;
+        final long timestampMs;
+
+        NdviPreviewSnapshot(byte[] jpeg, double ndvi, int validPixels, long timestampMs) {
+            this.jpeg = jpeg;
+            this.ndvi = ndvi;
+            this.validPixels = validPixels;
+            this.timestampMs = timestampMs;
+        }
+    }
+
+    private volatile NdviPreviewSnapshot lastNdviPreviewSnapshot;
 
     private volatile int calibratedSourceWidth = -1;
     private volatile int calibratedSourceHeight = -1;
@@ -997,6 +1027,7 @@ public class CameraEngine {
 
             lastNdviEventAt = 0L;
             lastNdviPreviewAt = 0L;
+            lastNdviPreviewSnapshot = null;
             lastNdviComputedAt = 0L;
             lastNdviValue = Double.NaN;
             lastNdviValidPixels = 0;
@@ -1463,6 +1494,8 @@ public class CameraEngine {
         previewGeneration.incrementAndGet();
         previewProcessingSequence.set(0L);
 
+        // Never let a preview from an earlier NDVI session be used by Capture.
+        lastNdviPreviewSnapshot = null;
         lastNdviEventAt = 0L;
         lastNdviPreviewAt = 0L;
         lastNdviComputedAt = 0L;
@@ -1498,7 +1531,7 @@ public class CameraEngine {
         data.put("greenVegetationMaskAvailable", true);
         data.put("singleTargetLeafComponent", true);
         data.put("ndviDisplayPalette", "RED(-1)-YELLOW(0)-GREEN(+1)");
-        data.put("vegetationMaskMethod", "FULL_CROP_SINGLE_CONNECTED_FOLIAGE_COMPONENT_WITH_CONTINUOUS_NDVI_PALETTE");
+        data.put("vegetationMaskMethod", "CONNECTED_FOLIAGE_COMPONENT_FOR_NDVI_STATISTICS_ONLY_CONTINUOUS_PALETTE_DISPLAY");
         data.put("targetRoi", "FULL_CROP_SINGLE_COMPONENT");
         data.put("vegetationMaskIndexThreshold", NDVI_TARGET_MIN_INDEX_THRESHOLD);
 
@@ -5136,11 +5169,7 @@ public class CameraEngine {
                      * A real GPU failure changes the mode to CPU inside
                      * renderGpuNdvi(), making CPU sticky for that NDVI session.
                      */
-                    lastNdviPreviewAt =
-                            System.currentTimeMillis();
-
-                    lastFrameBytes =
-                            ndviPreview;
+                    lastFrameBytes = ndviPreview;
 
                     emitPreviewFrame(
                             ndviPreview,
@@ -5322,8 +5351,8 @@ public class CameraEngine {
             return null;
         }
 
-        Rect rgbRect = unifiedRgbRect();
-        Rect nirRect = nirCropRect;
+        final Rect rgbRect = unifiedRgbRect();
+        final Rect nirRect = nirCropRect;
         if (!isUsableCrop(rgbRect, source.getWidth(), source.getHeight())
                 || !isUsableCrop(nirRect, source.getWidth(), source.getHeight())) {
             return null;
@@ -5336,10 +5365,12 @@ public class CameraEngine {
         }
 
         final long pixelCountLong = (long) width * (long) height;
-        final int maxPixels = preview ? NDVI_MAX_PREVIEW_PIXELS : Integer.MAX_VALUE;
-        final int step = pixelCountLong > maxPixels
+        // Prefer native-resolution NDVI. Coarse cells create a visible square mosaic
+        // after false-colour mapping, especially around leaf edges and textured backgrounds.
+        // Downsample only when the crop exceeds the explicitly bounded analysis budget.
+        final int step = pixelCountLong > NDVI_MAX_ANALYSIS_PIXELS
                 ? Math.max(2, (int) Math.ceil(Math.sqrt(
-                        (double) pixelCountLong / (double) maxPixels)))
+                        (double) pixelCountLong / (double) NDVI_MAX_ANALYSIS_PIXELS)))
                 : 1;
         final int sampledWidth = (width + step - 1) / step;
         final int sampledHeight = (height + step - 1) / step;
@@ -5350,12 +5381,14 @@ public class CameraEngine {
         final int focusWidth = (width + focusStep - 1) / focusStep;
         final int focusHeight = (height + focusStep - 1) / focusStep;
 
-        // The NIR ROI is already kept by the existing optical pipeline. Retain its
-        // paired pixel buffer and perform bounded connected-component selection on
-        // a coarse mask, then paint that one target component at output resolution.
         final int[] rgbRow = new int[width];
         final int[] nirPixels = new int[nirWidth * nirHeight];
         final int[] outputRow = new int[sampledWidth];
+        final long[] redSumsByCell = new long[sampledWidth];
+        final long[] visibleGreenSumsByCell = new long[sampledWidth];
+        final long[] visibleBlueSumsByCell = new long[sampledWidth];
+        final long[] nirBlueSumsByCell = new long[sampledWidth];
+        final int[] pairedSamplesByCell = new int[sampledWidth];
         source.getPixels(
                 nirPixels, 0, nirWidth,
                 nirRect.left, nirRect.top, nirWidth, nirHeight
@@ -5367,62 +5400,114 @@ public class CameraEngine {
                 focusStep, focusWidth, focusHeight
         );
 
-        Bitmap output = Bitmap.createBitmap(
+        final Bitmap output = Bitmap.createBitmap(
                 sampledWidth,
                 sampledHeight,
                 Bitmap.Config.ARGB_8888
         );
+        Bitmap fullSizeOutput = null;
         double ndviSum = 0.0d;
         int valid = 0;
         int targetLeafValid = 0;
 
         try {
             for (int sy = 0; sy < sampledHeight; sy++) {
-                final int y = Math.min(height - 1, sy * step);
-                source.getPixels(
-                        rgbRow, 0, width,
-                        rgbRect.left, rgbRect.top + y, width, 1
-                );
+                final int yStart = sy * step;
+                final int yEnd = Math.min(height, yStart + step);
+                Arrays.fill(redSumsByCell, 0L);
+                Arrays.fill(visibleGreenSumsByCell, 0L);
+                Arrays.fill(visibleBlueSumsByCell, 0L);
+                Arrays.fill(nirBlueSumsByCell, 0L);
+                Arrays.fill(pairedSamplesByCell, 0);
+
+                // Read each source scanline once. Accumulate paired Red/Blue
+                // values into their analysis cells without repeated bitmap reads.
+                for (int blockY = yStart; blockY < yEnd; blockY++) {
+                    source.getPixels(
+                            rgbRow, 0, width,
+                            rgbRect.left, rgbRect.top + blockY, width, 1
+                    );
+                    for (int blockX = 0; blockX < width; blockX++) {
+                        final int cellX = blockX / step;
+                        final long mapped = mapUnifiedPixelToNir(
+                                blockX, blockY, width, height, nirWidth, nirHeight
+                        );
+                        if (mapped < 0L) {
+                            continue;
+                        }
+
+                        final int nirX = (int) (mapped >> 32);
+                        final int nirY = (int) mapped;
+                        final int visiblePixel = rgbRow[blockX];
+                        redSumsByCell[cellX] += Color.red(visiblePixel);
+                        visibleGreenSumsByCell[cellX] += Color.green(visiblePixel);
+                        visibleBlueSumsByCell[cellX] += Color.blue(visiblePixel);
+                        // NIR is intentionally sourced from the Blue channel only.
+                        nirBlueSumsByCell[cellX] += pixelNirIntensity(
+                                nirPixels[nirY * nirWidth + nirX]
+                        );
+                        pairedSamplesByCell[cellX]++;
+                    }
+                }
 
                 for (int sx = 0; sx < sampledWidth; sx++) {
-                    final int x = Math.min(width - 1, sx * step);
-                    final int rgbColor = rgbRow[x];
-                    final long mapped = mapUnifiedPixelToNir(
-                            x, y, width, height, nirWidth, nirHeight
-                    );
-                    if (mapped < 0L) {
+                    final int pairedSamples = pairedSamplesByCell[sx];
+                    if (pairedSamples == 0) {
                         outputRow[sx] = Color.BLACK;
                         continue;
                     }
 
-                    final int nirX = (int) (mapped >> 32);
-                    final int nirY = (int) mapped;
-                    final int nirColor = nirPixels[nirY * nirWidth + nirX];
-                    final int redEncoded = Color.red(rgbColor);
-                    final int nirEncoded = pixelNirIntensity(nirColor);
+                    final int redEncoded = (int) ((redSumsByCell[sx] + pairedSamples / 2L)
+                            / pairedSamples);
+                    final int visibleGreenEncoded = (int) ((visibleGreenSumsByCell[sx]
+                            + pairedSamples / 2L) / pairedSamples);
+                    final int visibleBlueEncoded = (int) ((visibleBlueSumsByCell[sx]
+                            + pairedSamples / 2L) / pairedSamples);
+                    final int nirEncoded = (int) ((nirBlueSumsByCell[sx] + pairedSamples / 2L)
+                            / pairedSamples);
+                    final boolean visibleFoliage = isVisibleFoliageColorCandidate(
+                            Color.rgb(redEncoded, visibleGreenEncoded, visibleBlueEncoded));
                     final float ndvi = calculateRelativeNdvi(redEncoded, nirEncoded);
                     final boolean signalClipped =
                             (redEncoded >= 250 && nirEncoded >= NDVI_MIN_VALID_SIGNAL)
                                     || (nirEncoded >= 250 && redEncoded >= NDVI_MIN_VALID_SIGNAL);
 
-                    final int maskX = clampInt(x / focusStep, 0, focusWidth - 1);
-                    final int maskY = clampInt(y / focusStep, 0, focusHeight - 1);
+                    final int xStart = sx * step;
+                    final int xEnd = Math.min(width, xStart + step);
+                    final int sampleCenterX = xStart + (xEnd - xStart) / 2;
+                    final int sampleCenterY = yStart + (yEnd - yStart) / 2;
+                    final int maskX = clampInt(sampleCenterX / focusStep, 0, focusWidth - 1);
+                    final int maskY = clampInt(sampleCenterY / focusStep, 0, focusHeight - 1);
                     final boolean isSelectedTargetLeaf =
                             targetLeafMask[maskY * focusWidth + maskX] != 0;
 
-                    if (isSelectedTargetLeaf) {
-                        // Exactly one connected foliage component gets the target-green overlay.
-                        outputRow[sx] = NDVI_VEGETATION_COLOR;
-                    } else if (Float.isFinite(ndvi)) {
-                        // All other measured pixels use the same continuous red-yellow-green
-                        // index scale represented by the legend in the upper-left of the UI.
-                        outputRow[sx] = ndviPaletteColor(ndvi);
+                    // Always render the measured per-cell NDVI value with the
+                    // continuous palette. The target-leaf mask is used only for
+                    // the scalar leaf NDVI summary below; it must never paint a
+                    // selected region as one flat solid green color.
+                    if (Float.isFinite(ndvi)) {
+                        int paletteColor = ndviPaletteColor(ndvi);
+                        // For visibly non-foliage pixels, avoid presenting a negative
+                        // uncalibrated digital index as strong red vegetation stress.
+                        // This is a display heuristic only; the numeric NDVI is unchanged.
+                        if (!visibleFoliage) {
+                            // Non-foliage objects (shoes, clothes, skin, furniture,
+                            // soil and similar backgrounds) must never be rendered
+                            // green merely because the uncalibrated paired signal
+                            // happens to produce a positive index. Keep their display
+                            // in the warm red-to-yellow range. This is a display-only
+                            // classification heuristic; the numeric NDVI is unchanged.
+                            final float warmAmount = clampFloat(
+                                    (ndvi + 1.0f) * 0.5f, 0.0f, 1.0f);
+                            paletteColor = blendColor(
+                                    NDVI_PALETTE_RED,
+                                    NDVI_PALETTE_YELLOW,
+                                    warmAmount);
+                        }
+                        outputRow[sx] = paletteColor;
                     } else if (signalClipped) {
-                        // The numeric index is undefined for clipped channels: show amber,
-                        // rather than falsely claiming either vegetation or a low NDVI value.
                         outputRow[sx] = NDVI_CLIPPED_UNDEFINED_COLOR;
                     } else {
-                        // Mapped location but unusable signal; keep no-data distinct from NDVI red.
                         outputRow[sx] = Color.BLACK;
                     }
 
@@ -5451,11 +5536,36 @@ public class CameraEngine {
             }
             lastNdviComputedAt = System.currentTimeMillis();
 
+            Bitmap bitmapToEncode = output;
+            if (sampledWidth != width || sampledHeight != height) {
+                // Safety fallback only: with native-resolution analysis this branch should
+                // normally not run. Scaling cannot restore information lost by downsampling.
+                fullSizeOutput = Bitmap.createScaledBitmap(
+                        output, width, height, true
+                );
+                bitmapToEncode = fullSizeOutput;
+            }
+
+            if (!preview || step > 1) {
+                Log.i(TAG, "NDVI " + (preview ? "preview" : "capture") + " processed: source="
+                        + source.getWidth() + "x" + source.getHeight()
+                        + " rgbCrop=" + rectToString(rgbRect)
+                        + " nirCrop=" + rectToString(nirRect)
+                        + " analysis=" + sampledWidth + "x" + sampledHeight
+                        + " output=" + bitmapToEncode.getWidth() + "x" + bitmapToEncode.getHeight()
+                        + " step=" + step + " NIR=BLUE_ONLY");
+            }
+
             return bitmapToJpeg(
-                    output,
+                    bitmapToEncode,
                     preview ? NDVI_PREVIEW_JPEG_QUALITY : NDVI_CAPTURE_JPEG_QUALITY
             );
         } finally {
+            if (fullSizeOutput != null
+                    && fullSizeOutput != output
+                    && !fullSizeOutput.isRecycled()) {
+                fullSizeOutput.recycle();
+            }
             if (!output.isRecycled()) {
                 output.recycle();
             }
@@ -5485,12 +5595,12 @@ public class CameraEngine {
         final int[] rgbRow = new int[width];
 
         for (int fy = 0; fy < focusHeight; fy++) {
-            final int y = Math.min(height - 1, fy * focusStep);
+            final int y = Math.min(height - 1, fy * focusStep + focusStep / 2);
             source.getPixels(rgbRow, 0, width, rgbRect.left, rgbRect.top + y, width, 1);
             final float normalizedY = ((float) y + 0.5f) / (float) height;
 
             for (int fx = 0; fx < focusWidth; fx++) {
-                final int x = Math.min(width - 1, fx * focusStep);
+                final int x = Math.min(width - 1, fx * focusStep + focusStep / 2);
                 final float normalizedX = ((float) x + 0.5f) / (float) width;
                 if (!isInsideNdviTargetRoi(normalizedX, normalizedY)) {
                     continue;
@@ -6211,8 +6321,9 @@ public class CameraEngine {
 
     /**
      * Continuous NDVI false-colour palette matching the UI legend:
-     * -1 = red, 0 = yellow, +1 = green. The selected single leaf is overlaid
-     * in solid green by buildNdviJpeg(); every other valid pixel uses this map.
+     * -1 = red, 0 = yellow, +1 = green. Every valid pixel retains its own
+     * index-derived colour; the selected leaf component is used for statistics
+     * only and is never drawn as a flat overlay.
      */
     private static int ndviPaletteColor(float ndvi) {
         final float value = clampFloat(ndvi, -1.0f, 1.0f);
@@ -6322,9 +6433,9 @@ public class CameraEngine {
     }
 
     /**
-     * Recalibrates the optical field bounds from the given image. Live view can
-     * reuse a stable calibration; still capture must force a new pass because
-     * shutter/lens movement can shift the fields without changing image dimensions.
+     * Recalibrates optical field bounds when the source geometry changes.
+     * Reuse a stable calibration for the same-sized frame to avoid ROI jitter;
+     * a differently sized still automatically takes the recalibration path.
      */
     private void ensureDualOpticalCalibration(Bitmap source, boolean force) {
         if (source == null || source.isRecycled()) {
@@ -6342,6 +6453,7 @@ public class CameraEngine {
 
         // OpticalProcessor owns field detection and safe-square fallback. CameraEngine
         // copies its rectangles so GPU rendering, CPU NDVI and capture use one ROI source.
+        // Same-size images reuse the cached ROI; changed dimensions trigger recalibration.
         if (force) {
             opticalProcessor.forceDualOpticalCalibration(source);
         } else {
@@ -7831,6 +7943,18 @@ public class CameraEngine {
                 expectedPreviewGeneration
         );
 
+        // Commit only after the preview generation, mode, and cadence guards pass.
+        // Processed NDVI capture then reuses precisely the JPEG published to Flutter.
+        if (isNdviPreview) {
+            lastNdviPreviewSnapshot = new NdviPreviewSnapshot(
+                    jpeg.clone(),
+                    lastNdviValue,
+                    lastNdviValidPixels,
+                    now
+            );
+            lastNdviPreviewAt = now;
+        }
+
         sendEvent(
                 "liveviewFrame",
                 event
@@ -8128,6 +8252,30 @@ public class CameraEngine {
     }
 
     private void takePicture() {
+        /*
+         * Snapshot the frame the user is actually seeing before asynchronous
+         * camera I/O starts. NDVI's processed file uses this same JPEG, rather
+         * than recalculating a different image from the later full-resolution
+         * still with potentially different exposure, framing and ROI detection.
+         */
+        final boolean requestedNdviAtShutter = ndviEnabled;
+        final NdviPreviewSnapshot previewSnapshotAtShutter =
+                requestedNdviAtShutter ? lastNdviPreviewSnapshot : null;
+        final byte[] displayedNdviJpegAtShutter =
+                previewSnapshotAtShutter != null
+                        && previewSnapshotAtShutter.jpeg != null
+                        && previewSnapshotAtShutter.jpeg.length > 0
+                        ? previewSnapshotAtShutter.jpeg.clone()
+                        : null;
+        final double displayedNdviValueAtShutter =
+                previewSnapshotAtShutter == null
+                        ? Double.NaN : previewSnapshotAtShutter.ndvi;
+        final int displayedNdviValidPixelsAtShutter =
+                previewSnapshotAtShutter == null
+                        ? 0 : previewSnapshotAtShutter.validPixels;
+        final long displayedNdviTimestampAtShutter =
+                previewSnapshotAtShutter == null
+                        ? 0L : previewSnapshotAtShutter.timestampMs;
 
         executor.execute(() -> {
             Network network = currentNetwork;
@@ -8146,7 +8294,7 @@ public class CameraEngine {
             final String requestedBand = activeSpectralBand == null
                     ? "RGB"
                     : activeSpectralBand;
-            final boolean requestedNdvi = ndviEnabled;
+            final boolean requestedNdvi = requestedNdviAtShutter;
             final boolean saveRaw =
                     CAPTURE_MODE_RAW.equals(requestedMode)
                             || CAPTURE_MODE_BOTH.equals(requestedMode);
@@ -8273,9 +8421,12 @@ public class CameraEngine {
 
                 Bitmap source = null;
                 try {
-                    // RAW-only capture saves the original bytes directly and avoids
-                    // decoding a 24 MP bitmap, reducing the risk of Android OOM.
-                    if (saveProcessed) {
+                    // If NDVI already has a committed preview snapshot, its JPEG
+                    // is the processed output. Do not decode the full still bitmap
+                    // just to discard it; this avoids a needless 24 MP allocation.
+                    final boolean hasNdviPreviewSnapshot =
+                            requestedNdvi && displayedNdviJpegAtShutter != null;
+                    if (saveProcessed && !hasNdviPreviewSnapshot) {
                         source = BitmapFactory.decodeByteArray(
                                 composite,
                                 0,
@@ -8301,13 +8452,33 @@ public class CameraEngine {
                         rawFileName = saveToGallery(composite, "RAW");
                     }
 
+                    boolean processedFrameMatchesPreview = false;
                     if (saveProcessed) {
-                        captureProcessingResult = processCapturedStill(
-                                source,
-                                band,
-                                requestedNdvi,
-                                requestedProcessingScale
-                        );
+                        if (requestedNdvi && displayedNdviJpegAtShutter != null) {
+                            // Exact visual match: save the same NDVI JPEG that was
+                            // displayed when the shutter was pressed.
+                            captureProcessingResult = new CaptureProcessingResult(
+                                    displayedNdviJpegAtShutter,
+                                    displayedNdviValueAtShutter,
+                                    displayedNdviValidPixelsAtShutter
+                            );
+                            processedFrameMatchesPreview = true;
+                            log("INFO", "Processed NDVI capture reuses displayed preview frame;"
+                                    + " frameAgeMs="
+                                    + Math.max(0L, System.currentTimeMillis()
+                                            - displayedNdviTimestampAtShutter));
+                        } else {
+                            if (requestedNdvi) {
+                                log("WARN", "No committed NDVI preview snapshot at shutter;"
+                                        + " falling back to still-image NDVI processing.");
+                            }
+                            captureProcessingResult = processCapturedStill(
+                                    source,
+                                    band,
+                                    requestedNdvi,
+                                    requestedProcessingScale
+                            );
+                        }
                         byte[] processed = captureProcessingResult.bytes;
                         processedBand = requestedNdvi ? "NDVI" : band;
 
@@ -8352,6 +8523,31 @@ public class CameraEngine {
                                                     : "RGB_LEFT_OPTICAL_ROI"))
                     );
                     data.put("unifiedSpectralCrop", processedFileName != null);
+                    data.put("processedFrameMatchesPreview", processedFrameMatchesPreview);
+                    data.put("processedFrameSource", processedFileName == null
+                            ? "NONE"
+                            : ("NDVI".equals(processedBand)
+                                    ? (processedFrameMatchesPreview
+                                            ? "DISPLAYED_NDVI_PREVIEW"
+                                            : "STILL_IMAGE_REPROCESSED")
+                                    : "STILL_IMAGE_REPROCESSED"));
+                    data.put("ndviPreviewFrameAgeMs", processedFrameMatchesPreview
+                            ? Math.max(0L, System.currentTimeMillis()
+                                    - displayedNdviTimestampAtShutter)
+                            : -1L);
+                    if (processedFileName != null && captureProcessingResult != null
+                            && captureProcessingResult.bytes != null) {
+                        BitmapFactory.Options processedBounds = new BitmapFactory.Options();
+                        processedBounds.inJustDecodeBounds = true;
+                        BitmapFactory.decodeByteArray(
+                                captureProcessingResult.bytes,
+                                0,
+                                captureProcessingResult.bytes.length,
+                                processedBounds
+                        );
+                        data.put("processedWidth", processedBounds.outWidth);
+                        data.put("processedHeight", processedBounds.outHeight);
+                    }
                     final boolean registrationUsed = processedFileName != null
                             && ("NIR".equals(processedBand) || "NDVI".equals(processedBand));
                     data.put("registrationApplied", registrationUsed);
@@ -8420,6 +8616,9 @@ public class CameraEngine {
             final Rect previousRgb = rgbCropRect == null ? null : new Rect(rgbCropRect);
             final Rect previousNir = nirCropRect == null ? null : new Rect(nirCropRect);
             final boolean previousNirAvailable = realNirAvailable;
+            final int previousCalibratedWidth = calibratedSourceWidth;
+            final int previousCalibratedHeight = calibratedSourceHeight;
+            final boolean previousRoiFallbackUsed = opticalProcessor.isRoiFallbackUsed();
             final float previousGain = lastNdviNirGain;
             final double previousNdvi = lastNdviValue;
             final int previousValidPixels = lastNdviValidPixels;
@@ -8429,6 +8628,10 @@ public class CameraEngine {
             double captureNdvi = Double.NaN;
             int captureValidPixels = 0;
             try {
+                // A still may have a different resolution from live view. Force the
+                // OpticalProcessor's capture path so it first projects a compatible
+                // live ROI into still coordinates instead of independently redetecting
+                // the two optical circles from a differently compressed JPEG.
                 ensureDualOpticalCalibration(source, true);
                 if (useNdvi) {
                     result = buildNdviJpeg(source, false);
@@ -8438,14 +8641,26 @@ public class CameraEngine {
                     result = processCompositeForBand(source, band, requestedProcessingScale);
                 }
             } finally {
-                // Keep live-view's state separate from the still's coordinate plane.
+                // Restore both CameraEngine and OpticalProcessor to the exact live-view
+                // calibration after temporary still-coordinate projection. This prevents
+                // capture from changing the next preview's ROI or causing crop jitter.
                 rgbCropRect = previousRgb;
                 nirCropRect = previousNir;
                 realNirAvailable = previousNirAvailable;
-                // Force fresh live-view calibration on the next decoded preview frame.
-                calibratedSourceWidth = -1;
-                calibratedSourceHeight = -1;
-                opticalProcessor.invalidateCalibration();
+                calibratedSourceWidth = previousCalibratedWidth;
+                calibratedSourceHeight = previousCalibratedHeight;
+                if (previousCalibratedWidth > 0 && previousCalibratedHeight > 0) {
+                    opticalProcessor.restoreCachedCalibration(
+                            previousRgb,
+                            previousNir,
+                            previousCalibratedWidth,
+                            previousCalibratedHeight,
+                            previousNirAvailable,
+                            previousRoiFallbackUsed
+                    );
+                } else {
+                    opticalProcessor.invalidateCalibration();
+                }
                 lastNdviNirGain = previousGain;
                 lastNdviValue = previousNdvi;
                 lastNdviValidPixels = previousValidPixels;
@@ -9079,6 +9294,7 @@ public class CameraEngine {
 
         lastCompositeFrameBytes =
                 null;
+        lastNdviPreviewSnapshot = null;
 
         firstFrameSent =
                 false;
@@ -11167,7 +11383,7 @@ public class CameraEngine {
                         + "      && ng >= " + NDVI_YELLOW_MIN_GREEN_SHARE + " && nr > nb * 1.20 && ng > nb * 1.12;"
                         + "  bool targetLeaf = inTarget && (greenFoliage || yellowFoliage)"
                         + "      && (signalClipped || (ndviValid && ndvi >= " + NDVI_TARGET_MIN_INDEX_THRESHOLD + "));"
-                        + "  return targetLeaf ? green : palette;"
+                        + "  return palette;"
                         + "}"
                         + ""
                         + "void main(){"
