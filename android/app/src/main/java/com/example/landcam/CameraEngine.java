@@ -268,9 +268,19 @@ public class CameraEngine {
     private static final int NDVI_PALETTE_YELLOW = 0xFFFFD52A;
     private static final int NDVI_PALETTE_GREEN = 0xFF0DA83B;
     private static final int NDVI_CLIPPED_UNDEFINED_COLOR = 0xFFFF8C00;
+    // SMOOTH NDVI RENDERING (preview == capture):
+    // The measured NDVI field is smoothed as a SCALAR field and enlarged with bicubic
+    // interpolation BEFORE the palette is applied, so the saved/previewed JPEG has no
+    // square pixels even when the live crop is only ~250 px wide. Enlarging cannot add
+    // real detail; it only removes the blocky look. Display-only; numeric NDVI unchanged.
+    private static final int NDVI_DISPLAY_TARGET_LONG_EDGE = 1024;
+    private static final int NDVI_DISPLAY_MAX_SCALE = 4;
+    // Above this many analysis pixels the median/blur pre-smoothing is skipped (bounded CPU/RAM).
+    private static final int NDVI_SMOOTH_MAX_PIXELS = 1500000;
+    private static final int NDVI_PALETTE_LUT_SIZE = 2048;
     // NDVI is a high-frequency false-colour image. Use high JPEG quality to reduce
     // additional 8x8 DCT blocking/ringing on top of source-camera compression.
-    private static final int NDVI_PREVIEW_JPEG_QUALITY = 98;
+    private static final int NDVI_PREVIEW_JPEG_QUALITY = 95;
     private static final int NDVI_CAPTURE_JPEG_QUALITY = 96;
 
     /**
@@ -5383,17 +5393,12 @@ public class CameraEngine {
 
         final int[] rgbRow = new int[width];
         final int[] nirPixels = new int[nirWidth * nirHeight];
-        final int[] outputRow = new int[sampledWidth];
-        // Low-cost scalar NDVI denoising is enabled for typical live previews.
-        // Keep memory bounded on large still captures; their display path falls
-        // back to the existing scanline median filter.
-        final int scalarSmoothingPixelCount = sampledWidth * sampledHeight;
-        final boolean useScalarDenoising = scalarSmoothingPixelCount > 0
-                && scalarSmoothingPixelCount <= 1200000;
-        final float[] ndviValuesForDenoising = useScalarDenoising
-                ? new float[scalarSmoothingPixelCount] : null;
-        final byte[] ndviDisplayClass = useScalarDenoising
-                ? new byte[scalarSmoothingPixelCount] : null;
+        // The measured scalar NDVI (NaN = no usable signal) and a per-pixel foliage-colour
+        // flag are kept so the renderer can build one smooth, artifact-free image.
+        final int analysisPixelCount = sampledWidth * sampledHeight;
+        final float[] ndviField = new float[analysisPixelCount];
+        Arrays.fill(ndviField, Float.NaN);
+        final byte[] foliageField = new byte[analysisPixelCount];
         final long[] redSumsByCell = new long[sampledWidth];
         final long[] visibleGreenSumsByCell = new long[sampledWidth];
         final long[] visibleBlueSumsByCell = new long[sampledWidth];
@@ -5410,11 +5415,9 @@ public class CameraEngine {
                 focusStep, focusWidth, focusHeight
         );
 
-        final Bitmap output = Bitmap.createBitmap(
-                sampledWidth,
-                sampledHeight,
-                Bitmap.Config.ARGB_8888
-        );
+        // Placeholder only (kept so the cleanup code below stays unchanged). The real
+        // image is produced by renderSmoothNdvi().
+        final Bitmap output = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888);
         Bitmap fullSizeOutput = null;
         Bitmap denoisedOutput = null;
         double ndviSum = 0.0d;
@@ -5467,7 +5470,6 @@ public class CameraEngine {
                 for (int sx = 0; sx < sampledWidth; sx++) {
                     final int pairedSamples = pairedSamplesByCell[sx];
                     if (pairedSamples == 0) {
-                        outputRow[sx] = Color.BLACK;
                         continue;
                     }
 
@@ -5495,40 +5497,13 @@ public class CameraEngine {
                     final boolean isSelectedTargetLeaf =
                             targetLeafMask[maskY * focusWidth + maskX] != 0;
 
-                    // Always render the measured per-cell NDVI value with the
-                    // continuous palette. The target-leaf mask is used only for
-                    // the scalar leaf NDVI summary below; it must never paint a
-                    // selected region as one flat solid green color.
+                    // Store the measured value; colours are assigned later by
+                    // renderSmoothNdvi() from the smoothed scalar field.
+                    final int pixelIndex = sy * sampledWidth + sx;
                     if (Float.isFinite(ndvi)) {
-                        if (useScalarDenoising) {
-                            final int denoiseIndex = sy * sampledWidth + sx;
-                            ndviValuesForDenoising[denoiseIndex] = ndvi;
-                            ndviDisplayClass[denoiseIndex] = (byte) (visibleFoliage ? 1 : 2);
-                        }
-                        int paletteColor = ndviPaletteColor(ndvi);
-                        // For visibly non-foliage pixels, avoid presenting a negative
-                        // uncalibrated digital index as strong red vegetation stress.
-                        // This is a display heuristic only; the numeric NDVI is unchanged.
-                        if (!visibleFoliage) {
-                            // Non-foliage objects (shoes, clothes, skin, furniture,
-                            // soil and similar backgrounds) must never be rendered
-                            // green merely because the uncalibrated paired signal
-                            // happens to produce a positive index. Keep their display
-                            // in the warm red-to-yellow range. This is a display-only
-                            // classification heuristic; the numeric NDVI is unchanged.
-                            final float warmAmount = clampFloat(
-                                    (ndvi + 1.0f) * 0.5f, 0.0f, 1.0f);
-                            paletteColor = blendColor(
-                                    NDVI_PALETTE_RED,
-                                    NDVI_PALETTE_YELLOW,
-                                    warmAmount);
-                        }
-                        outputRow[sx] = paletteColor;
-                    } else if (signalClipped) {
-                        outputRow[sx] = NDVI_CLIPPED_UNDEFINED_COLOR;
-                    } else {
-                        outputRow[sx] = Color.BLACK;
+                        ndviField[pixelIndex] = ndvi;
                     }
+                    foliageField[pixelIndex] = (byte) (visibleFoliage ? 1 : 0);
 
                     if (Float.isFinite(ndvi)) {
                         valid++;
@@ -5538,7 +5513,6 @@ public class CameraEngine {
                         }
                     }
                 }
-                output.setPixels(outputRow, 0, sampledWidth, 0, sy, sampledWidth, 1);
             }
 
             if (valid < 64) {
@@ -5555,18 +5529,14 @@ public class CameraEngine {
             }
             lastNdviComputedAt = System.currentTimeMillis();
 
-            // Denoise the scalar NDVI values before final palette rendering where
-            // the preview is small enough for bounded memory use. Neighbourhoods
-            // never mix foliage and non-foliage classes, and invalid/clipped pixels
-            // stay untouched. Large captures retain the established color median.
-            if (useScalarDenoising) {
-                denoisedOutput = smoothNdviValuesAndRecolor(
-                        output, ndviValuesForDenoising, ndviDisplayClass,
-                        sampledWidth, sampledHeight
-                );
-            } else {
-                denoisedOutput = medianDenoiseNdviColors(output);
-            }
+            // Final display: one continuous palette over the whole crop (no hard
+            // foliage/non-foliage palette switch), smoothed and enlarged as a scalar
+            // field. Preview and capture use this same renderer.
+            final int displayScale = step == 1
+                    ? chooseNdviDisplayScale(sampledWidth, sampledHeight) : 1;
+            denoisedOutput = renderSmoothNdvi(
+                    ndviField, foliageField, sampledWidth, sampledHeight, displayScale
+            );
             Bitmap bitmapToEncode = denoisedOutput;
             if (sampledWidth != width || sampledHeight != height) {
                 // Safety fallback only: with native-resolution analysis this branch should
@@ -6562,6 +6532,222 @@ public class CameraEngine {
         }
         return Float.isFinite(ndvi)
                 && ndvi >= NDVI_TARGET_COLOR_FALLBACK_THRESHOLD;
+    }
+
+    private static final int[] NDVI_PALETTE_LUT = buildNdviPaletteLut();
+
+    private static int[] buildNdviPaletteLut() {
+        final int[] lut = new int[NDVI_PALETTE_LUT_SIZE];
+        for (int i = 0; i < lut.length; i++) {
+            lut[i] = ndviPaletteColor(-1.0f + 2.0f * i / (lut.length - 1));
+        }
+        return lut;
+    }
+
+    private static int chooseNdviDisplayScale(int width, int height) {
+        final int longest = Math.max(width, height);
+        if (longest <= 0 || longest >= NDVI_DISPLAY_TARGET_LONG_EDGE) {
+            return 1;
+        }
+        return clampInt(
+                (int) Math.ceil(NDVI_DISPLAY_TARGET_LONG_EDGE / (double) longest),
+                1, NDVI_DISPLAY_MAX_SCALE);
+    }
+
+    /**
+     * Smooth, artifact-free NDVI image.
+     *  1. Pixels without a usable signal are filled from valid neighbours (no black/orange holes).
+     *  2. The scalar field gets a 3x3 median and a small blur (kills speckle, not edges).
+     *  3. Foliage colour is turned into a spatially blurred weight, and the displayed value is
+     *     blended between the NDVI itself (foliage) and the same value mapped into the warm
+     *     red-yellow half of the legend (non-foliage). Because the weight changes smoothly,
+     *     there is no per-pixel switch between two palettes, which caused the mosaic noise.
+     *  4. The field is enlarged with bicubic interpolation and only then coloured.
+     */
+    private static Bitmap renderSmoothNdvi(
+            float[] ndvi,
+            byte[] foliage,
+            int width,
+            int height,
+            int scale
+    ) {
+        final int count = width * height;
+        double sum = 0.0d;
+        int validCount = 0;
+        for (int i = 0; i < count; i++) {
+            if (Float.isFinite(ndvi[i])) {
+                sum += ndvi[i];
+                validCount++;
+            }
+        }
+        final float globalMean = validCount > 0 ? (float) (sum / validCount) : 0.0f;
+
+        float[] field = new float[count];
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                final int i = y * width + x;
+                final float v = ndvi[i];
+                if (Float.isFinite(v)) {
+                    field[i] = v;
+                    continue;
+                }
+                float acc = 0.0f;
+                int n = 0;
+                for (int pass = 0; pass < 2 && n == 0; pass++) {
+                    final int r = pass == 0 ? 2 : 6;
+                    for (int oy = -r; oy <= r; oy++) {
+                        final int yy = y + oy;
+                        if (yy < 0 || yy >= height) continue;
+                        for (int ox = -r; ox <= r; ox++) {
+                            final int xx = x + ox;
+                            if (xx < 0 || xx >= width) continue;
+                            final float nv = ndvi[yy * width + xx];
+                            if (Float.isFinite(nv)) {
+                                acc += nv;
+                                n++;
+                            }
+                        }
+                    }
+                }
+                field[i] = n > 0 ? acc / n : globalMean;
+            }
+        }
+
+        if (count <= NDVI_SMOOTH_MAX_PIXELS) {
+            field = median3x3(field, width, height);
+            boxBlur(field, width, height, 1, 2);
+        }
+
+        final float[] weight = new float[count];
+        for (int i = 0; i < count; i++) {
+            weight[i] = foliage[i] != 0 ? 1.0f : 0.0f;
+        }
+        boxBlur(weight, width, height, Math.max(1, Math.min(width, height) / 160), 2);
+
+        for (int i = 0; i < count; i++) {
+            final float s = clampFloat(field[i], -1.0f, 1.0f);
+            final float w = clampFloat(weight[i], 0.0f, 1.0f);
+            field[i] = w * s + (1.0f - w) * ((s - 1.0f) * 0.5f);
+        }
+
+        final int outW = width * scale;
+        final int outH = height * scale;
+        final int[] xIdx = new int[outW * 4];
+        final float[] xWts = new float[outW * 4];
+        final int[] yIdx = new int[outH * 4];
+        final float[] yWts = new float[outH * 4];
+        fillCubicTaps(width, scale, xIdx, xWts);
+        fillCubicTaps(height, scale, yIdx, yWts);
+
+        // Two-stage (horizontal, then vertical) bicubic enlargement: ~4x cheaper than 4x4 taps.
+        final float[] horizontal = new float[height * outW];
+        for (int y = 0; y < height; y++) {
+            final int srcBase = y * width;
+            final int dstBase = y * outW;
+            for (int ox = 0; ox < outW; ox++) {
+                final int o4 = ox * 4;
+                horizontal[dstBase + ox] =
+                        xWts[o4] * field[srcBase + xIdx[o4]]
+                                + xWts[o4 + 1] * field[srcBase + xIdx[o4 + 1]]
+                                + xWts[o4 + 2] * field[srcBase + xIdx[o4 + 2]]
+                                + xWts[o4 + 3] * field[srcBase + xIdx[o4 + 3]];
+            }
+        }
+
+        final Bitmap result = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888);
+        final int[] row = new int[outW];
+        final int lutMax = NDVI_PALETTE_LUT.length - 1;
+        for (int oy = 0; oy < outH; oy++) {
+            final int o4 = oy * 4;
+            final int r0 = yIdx[o4] * outW;
+            final int r1 = yIdx[o4 + 1] * outW;
+            final int r2 = yIdx[o4 + 2] * outW;
+            final int r3 = yIdx[o4 + 3] * outW;
+            final float w0 = yWts[o4];
+            final float w1 = yWts[o4 + 1];
+            final float w2 = yWts[o4 + 2];
+            final float w3 = yWts[o4 + 3];
+            for (int ox = 0; ox < outW; ox++) {
+                final float v = w0 * horizontal[r0 + ox] + w1 * horizontal[r1 + ox]
+                        + w2 * horizontal[r2 + ox] + w3 * horizontal[r3 + ox];
+                final int lutIndex = clampInt(
+                        Math.round((clampFloat(v, -1.0f, 1.0f) + 1.0f) * 0.5f * lutMax),
+                        0, lutMax);
+                row[ox] = NDVI_PALETTE_LUT[lutIndex];
+            }
+            result.setPixels(row, 0, outW, 0, oy, outW, 1);
+        }
+        return result;
+    }
+
+    /** Catmull-Rom taps (4 per output sample) for enlarging a line of srcLen samples by scale. */
+    private static void fillCubicTaps(int srcLen, int scale, int[] idx, float[] wts) {
+        final int outLen = srcLen * scale;
+        for (int o = 0; o < outLen; o++) {
+            final float s = (o + 0.5f) / scale - 0.5f;
+            final int s0 = (int) Math.floor(s);
+            final float f = s - s0;
+            final float f2 = f * f;
+            final float f3 = f2 * f;
+            wts[o * 4] = -0.5f * f3 + f2 - 0.5f * f;
+            wts[o * 4 + 1] = 1.5f * f3 - 2.5f * f2 + 1.0f;
+            wts[o * 4 + 2] = -1.5f * f3 + 2.0f * f2 + 0.5f * f;
+            wts[o * 4 + 3] = 0.5f * f3 - 0.5f * f2;
+            for (int k = 0; k < 4; k++) {
+                idx[o * 4 + k] = clampInt(s0 - 1 + k, 0, srcLen - 1);
+            }
+        }
+    }
+
+    private static float[] median3x3(float[] src, int width, int height) {
+        final float[] dst = new float[src.length];
+        final float[] window = new float[9];
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int n = 0;
+                for (int oy = -1; oy <= 1; oy++) {
+                    final int yy = clampInt(y + oy, 0, height - 1) * width;
+                    for (int ox = -1; ox <= 1; ox++) {
+                        window[n++] = src[yy + clampInt(x + ox, 0, width - 1)];
+                    }
+                }
+                Arrays.sort(window, 0, 9);
+                dst[y * width + x] = window[4];
+            }
+        }
+        return dst;
+    }
+
+    /** Separable box blur (edge-clamped), repeated passes approximate a Gaussian. */
+    private static void boxBlur(float[] data, int width, int height, int radius, int passes) {
+        final int longest = Math.max(width, height);
+        final float[] line = new float[longest];
+        final float[] out = new float[longest];
+        final float inv = 1.0f / (2 * radius + 1);
+        for (int pass = 0; pass < passes; pass++) {
+            for (int y = 0; y < height; y++) {
+                final int base = y * width;
+                System.arraycopy(data, base, line, 0, width);
+                blurLine(line, out, width, radius, inv);
+                System.arraycopy(out, 0, data, base, width);
+            }
+            for (int x = 0; x < width; x++) {
+                for (int y = 0; y < height; y++) line[y] = data[y * width + x];
+                blurLine(line, out, height, radius, inv);
+                for (int y = 0; y < height; y++) data[y * width + x] = out[y];
+            }
+        }
+    }
+
+    private static void blurLine(float[] in, float[] out, int len, int radius, float inv) {
+        float sum = 0.0f;
+        for (int k = -radius; k <= radius; k++) {
+            sum += in[clampInt(k, 0, len - 1)];
+        }
+        for (int i = 0; i < len; i++) {
+            out[i] = sum * inv;
+            sum += in[clampInt(i + radius + 1, 0, len - 1)] - in[clampInt(i - radius, 0, len - 1)];
+        }
     }
 
     /**
@@ -8521,6 +8707,13 @@ public class CameraEngine {
         final long displayedNdviTimestampAtShutter =
                 previewSnapshotAtShutter == null
                         ? 0L : previewSnapshotAtShutter.timestampMs;
+        // If no committed NDVI preview exists yet, rebuild NDVI from the latest LIVE
+        // frame (same decode size, calibration and renderer as the preview) instead of
+        // reprocessing the full still, which has different exposure and framing and
+        // previously produced a flat orange result.
+        final byte[] liveFrameAtShutter =
+                requestedNdviAtShutter && displayedNdviJpegAtShutter == null
+                        ? lastCompositeFrameBytes : null;
 
         executor.execute(() -> {
             Network network = currentNetwork;
@@ -8671,7 +8864,11 @@ public class CameraEngine {
                     // just to discard it; this avoids a needless 24 MP allocation.
                     final boolean hasNdviPreviewSnapshot =
                             requestedNdvi && displayedNdviJpegAtShutter != null;
-                    if (saveProcessed && !hasNdviPreviewSnapshot) {
+                    final boolean hasLiveFrameFallback =
+                            requestedNdvi && !hasNdviPreviewSnapshot
+                                    && liveFrameAtShutter != null
+                                    && liveFrameAtShutter.length > 0;
+                    if (saveProcessed && !hasNdviPreviewSnapshot && !hasLiveFrameFallback) {
                         source = BitmapFactory.decodeByteArray(
                                 composite,
                                 0,
@@ -8698,6 +8895,7 @@ public class CameraEngine {
                     }
 
                     boolean processedFrameMatchesPreview = false;
+                    boolean processedFromLiveFrame = false;
                     if (saveProcessed) {
                         if (requestedNdvi && displayedNdviJpegAtShutter != null) {
                             // Exact visual match: save the same NDVI JPEG that was
@@ -8713,16 +8911,40 @@ public class CameraEngine {
                                     + Math.max(0L, System.currentTimeMillis()
                                             - displayedNdviTimestampAtShutter));
                         } else {
-                            if (requestedNdvi) {
-                                log("WARN", "No committed NDVI preview snapshot at shutter;"
-                                        + " falling back to still-image NDVI processing.");
+                            if (hasLiveFrameFallback) {
+                                captureProcessingResult =
+                                        processNdviFromLiveFrame(liveFrameAtShutter);
+                                if (captureProcessingResult != null
+                                        && captureProcessingResult.bytes != null
+                                        && captureProcessingResult.bytes.length > 0) {
+                                    processedFromLiveFrame = true;
+                                    log("INFO", "No NDVI preview snapshot at shutter;"
+                                            + " processed output rebuilt from the live frame.");
+                                } else {
+                                    captureProcessingResult = null;
+                                }
                             }
-                            captureProcessingResult = processCapturedStill(
-                                    source,
-                                    band,
-                                    requestedNdvi,
-                                    requestedProcessingScale
-                            );
+                            if (captureProcessingResult == null) {
+                                if (requestedNdvi) {
+                                    log("WARN", "No usable NDVI preview or live frame at shutter;"
+                                            + " falling back to still-image NDVI processing.");
+                                }
+                                if (source == null) {
+                                    source = BitmapFactory.decodeByteArray(
+                                            composite, 0, composite.length);
+                                    if (source == null) {
+                                        throw new IllegalStateException(
+                                                "CAPTURE IMAGE DECODE FAILED"
+                                        );
+                                    }
+                                }
+                                captureProcessingResult = processCapturedStill(
+                                        source,
+                                        band,
+                                        requestedNdvi,
+                                        requestedProcessingScale
+                                );
+                            }
                         }
                         byte[] processed = captureProcessingResult.bytes;
                         processedBand = requestedNdvi ? "NDVI" : band;
@@ -8774,7 +8996,9 @@ public class CameraEngine {
                             : ("NDVI".equals(processedBand)
                                     ? (processedFrameMatchesPreview
                                             ? "DISPLAYED_NDVI_PREVIEW"
-                                            : "STILL_IMAGE_REPROCESSED")
+                                            : (processedFromLiveFrame
+                                                    ? "LIVE_FRAME_REPROCESSED"
+                                                    : "STILL_IMAGE_REPROCESSED"))
                                     : "STILL_IMAGE_REPROCESSED"));
                     data.put("ndviPreviewFrameAgeMs", processedFrameMatchesPreview
                             ? Math.max(0L, System.currentTimeMillis()
@@ -8848,6 +9072,39 @@ public class CameraEngine {
             this.bytes = bytes;
             this.ndvi = ndvi;
             this.validPixels = validPixels;
+        }
+    }
+
+    /**
+     * Builds the processed NDVI output from a live-view composite JPEG using exactly
+     * the preview pipeline (preview decode size, live calibration, same renderer).
+     */
+    private CaptureProcessingResult processNdviFromLiveFrame(byte[] liveJpeg) {
+        if (liveJpeg == null || liveJpeg.length == 0) {
+            return null;
+        }
+        final BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+        options.inSampleSize = choosePreviewSampleSize(liveJpeg);
+        final Bitmap liveSource = BitmapFactory.decodeByteArray(
+                liveJpeg, 0, liveJpeg.length, options);
+        if (liveSource == null) {
+            return null;
+        }
+        synchronized (opticalProcessingLock) {
+            try {
+                ensureDualOpticalCalibration(liveSource);
+                final byte[] jpeg = buildNdviJpeg(liveSource, true);
+                if (jpeg == null || jpeg.length == 0) {
+                    return null;
+                }
+                return new CaptureProcessingResult(
+                        jpeg, lastNdviValue, lastNdviValidPixels);
+            } finally {
+                if (!liveSource.isRecycled()) {
+                    liveSource.recycle();
+                }
+            }
         }
     }
 
@@ -12215,5 +12472,4 @@ public class CameraEngine {
             return apiUrl;
         }
     }
-
 }
