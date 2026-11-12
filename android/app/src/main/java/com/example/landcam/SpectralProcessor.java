@@ -30,11 +30,68 @@ public final class SpectralProcessor {
 
     // Keep these thresholds aligned with the established CameraEngine pipeline.
     private static final int NDVI_MIN_VALID_SIGNAL = 6;
-    private static final int NDVI_MAX_ANALYSIS_PIXELS = Integer.MAX_VALUE;
+    // Preview and capture must look the same. The smoothing, blur radii, display scale and the
+    // "count <= NDVI_SMOOTH_MAX_PIXELS" gate below are all expressed in analysis cells, so a
+    // larger capture crop (e.g. 2000x2000 -> 4M cells, which even skipped the median/blur) was
+    // rendered differently from the ~550x550 preview. Crops above this many pixels are analysed
+    // with step >= 2 so both end up at ~500-700 cells per side. Typical preview crops
+    // (<= ~690x690) are unchanged.
+    private static final int NDVI_MAX_ANALYSIS_PIXELS = 480000;
     private static final float NDVI_FIXED_NIR_GAIN = 1.0f;
     private static final float NDVI_VEG_GREEN_RED_RATIO = 0.62f;
     private static final float NDVI_VEG_GREEN_BLUE_RATIO = 1.10f;
     private static final float NDVI_VEG_GREEN_EXCESS_MIN = 0.015f;
+
+    // ---- Outdoor / direct-sun handling (used only when the frame is detected as "collapsed") ----
+    // Outdoors the NIR channel is far dimmer than Red (measured: Red median ~225/255, NIR median
+    // ~45-95/255), so every pixel's index collapses towards -0.8..-0.95: vegetation then shows
+    // red/orange instead of green and the non-leaf backdrop turns deep red. When the median index
+    // of the whole frame is below COLLAPSE_BG_INDEX, one scene gain is applied to NIR so that
+    // median lands on TARGET_BG_INDEX (the indoor background level), capped at MAX. Frames whose
+    // median is above the threshold (indoor) get gain 1.0, i.e. no change at all.
+    private static final float NDVI_AUTO_GAIN_COLLAPSE_BG_INDEX = -0.55f;
+    private static final float NDVI_AUTO_GAIN_TARGET_BG_INDEX = -0.30f;
+    private static final float NDVI_AUTO_GAIN_MAX = 8.0f;
+    private static final int NDVI_AUTO_GAIN_MAX_SAMPLES = 40000;
+    private static final int NDVI_AUTO_GAIN_MIN_SAMPLES = 300;
+    // Washed-out outdoor foliage: green/blue ~1.10-1.14 and excess-green around 0, while
+    // wall/road/scooters are ~1.00. The indoor values above (1.10 / +0.015) reject most of it,
+    // so the leaf was treated as backdrop. These replace them only in outdoor mode.
+    private static final float NDVI_OUTDOOR_GREEN_BLUE_RATIO = 1.03f;
+    private static final float NDVI_OUTDOOR_GREEN_EXCESS_MIN = -0.015f;
+    // The NIR optic is a little more "zoomed" than the RGB optic outdoors: gradient-correlation
+    // between the registered NIR output and the RGB frame on three independent outdoor pairs
+    // gave a residual scale of 0.91 / 0.93 / 0.94. In outdoor mode the registration scale is
+    // multiplied by this factor (< 1 shows a larger NIR area, i.e. zooms the NIR out). 1.0 = off.
+    private static final float NDVI_OUTDOOR_NIR_SCALE = 0.93f;
+    // Outdoor thematic display, matching the indoor look: the background is held to one orange
+    // class (value NDVI_OUTDOOR_BG_VALUE on the palette scale) with only a small modulation from
+    // the measured index, and the foliage is stretched on its own percentile range over
+    // [LEAF_RANGE_LOW, LEAF_RANGE_HIGH] (yellow -> green) with a soft S-curve (no flat plateaus).
+    // DISPLAY ONLY: Result.ndvi, ndviField and statistics are never changed by it.
+    private static final float NDVI_OUTDOOR_BG_VALUE = -0.59f;
+    private static final float NDVI_OUTDOOR_BG_SPREAD = 0.30f;
+    private static final float NDVI_OUTDOOR_BG_MAX_DEVIATION = 0.15f;
+    private static final float NDVI_OUTDOOR_LEAF_RANGE_LOW = 0.05f;
+    private static final float NDVI_OUTDOOR_LEAF_RANGE_HIGH = 0.75f;
+    private static final float NDVI_OUTDOOR_LEAF_MIN_SPREAD = 0.08f;
+    private static final float NDVI_OUTDOOR_LEAF_CURVE = 0.9f;
+    private static final int NDVI_OUTDOOR_MIN_CELLS = 16;
+    // Relief inside the foliage: the unsmoothed index minus its own masked local average (radius =
+    // min(width,height)/DIVISOR), divided by its RMS and clipped to +-CLIP, is added to the
+    // stretched value with DETAIL_GAIN (in leaf-spread units; 0 = off). Without it a sun-bleached
+    // leaf renders as one smooth "solid" blob because the percentile stretch is dominated by the
+    // broad variation. It only amplifies variation present in the measured per-pixel index.
+    private static final float NDVI_OUTDOOR_DETAIL_GAIN = 0.45f;
+    private static final float NDVI_OUTDOOR_DETAIL_CLIP = 3.0f;
+    private static final int NDVI_OUTDOOR_DETAIL_RADIUS_DIVISOR = 24;
+    // The lens image is a circle inscribed in the crop; the corners are vignette/rim. Foliage is
+    // not detected beyond this radius (share of the crop width) in outdoor mode, so the pink rim
+    // does not turn into green streaks once the NIR edge is replicated.
+    private static final float NDVI_OUTDOOR_LENS_RADIUS = 0.485f;
+    // Direct-sun evidence that does not rely on the NDVI median collapsing: share of sampled Red
+    // values at or above 250/255 (outdoor frames measured 15-27%, indoor frames ~0%).
+    private static final float NDVI_OUTDOOR_CLIPPED_SHARE = 0.10f;
     
     private static final float NDVI_TARGET_ROI_MIN_X = 0.02f;
     private static final float NDVI_TARGET_ROI_MAX_X = 0.98f;
@@ -55,7 +112,7 @@ public final class SpectralProcessor {
     private static final int NDVI_DISPLAY_MAX_SCALE = 4;
     private static final int NDVI_SMOOTH_MAX_PIXELS = 1500000;
     private static final int NDVI_PALETTE_LUT_SIZE = 2048;
-    private static final int NDVI_PREVIEW_JPEG_QUALITY = 95;
+    private static final int NDVI_PREVIEW_JPEG_QUALITY = 98;
     private static final int NDVI_CAPTURE_JPEG_QUALITY = 96;
     private static final int NIR_JPEG_QUALITY = 94;
 
@@ -88,6 +145,24 @@ public final class SpectralProcessor {
         public float nirDarkReferenceReflectance = 0.03f;
         public float nirWhiteReferenceReflectance = 0.99f;
 
+        /**
+         * Scene NIR gain for direct sun (see NDVI_AUTO_GAIN_*). Ignored when reference
+         * calibration is enabled; indoor frames are unaffected because they never collapse.
+         */
+        public boolean autoNirGainEnabled = true;
+
+        /** Outdoor-only multiplier on the registration scale (1.0 = off). */
+        public float outdoorNirScale = NDVI_OUTDOOR_NIR_SCALE;
+
+        /** Outdoor-only thematic display (orange backdrop, yellow-green foliage). */
+        public boolean outdoorDisplayNormalize = true;
+
+        /** Set per call on the private snapshot when the frame was detected as outdoor. */
+        private boolean outdoorColorMode = false;
+
+        /** Outdoor scale < 1 reaches past the NIR crop edge: replicate the edge instead of NoData. */
+        private boolean clampNirEdge = false;
+
         /** Used for NIR preview output; NDVI retains its scalar-field display scale. */
         public double outputScale = 1.0d;
         public int nirJpegQuality = NIR_JPEG_QUALITY;
@@ -97,6 +172,9 @@ public final class SpectralProcessor {
         public Config(Config other) {
             if (other == null) return;
             nirGain = other.nirGain;
+            autoNirGainEnabled = other.autoNirGainEnabled;
+            outdoorNirScale = other.outdoorNirScale;
+            outdoorDisplayNormalize = other.outdoorDisplayNormalize;
             registrationScaleX = other.registrationScaleX;
             registrationScaleY = other.registrationScaleY;
             registrationRotationDegrees = other.registrationRotationDegrees;
@@ -245,6 +323,13 @@ public final class SpectralProcessor {
                     nirCrop.left, nirCrop.top, nirWidth, nirHeight
             );
 
+            if (snapshot.autoNirGainEnabled && !snapshot.referenceCalibrationEnabled
+                    && (estimateAutoNirGain(source, rgbCrop, outputWidth, outputHeight,
+                            nirWidth, nirHeight, nirPixels, snapshot) > 1.05f
+                    || isDirectSunFrame(source, rgbCrop, outputWidth, outputHeight))) {
+                applyOutdoorNirScale(snapshot);
+            }
+
             final int[] outputRow = new int[outputWidth];
             output = Bitmap.createBitmap(
                     outputWidth, outputHeight, Bitmap.Config.ARGB_8888
@@ -364,6 +449,23 @@ public final class SpectralProcessor {
                     nirRect.left, nirRect.top, nirWidth, nirHeight
             );
 
+            // Direct-sun correction on the per-call config snapshot (no effect indoors).
+            if (config.autoNirGainEnabled && !config.referenceCalibrationEnabled) {
+                final float autoGain = estimateAutoNirGain(
+                        source, rgbRect, width, height,
+                        nirWidth, nirHeight, nirPixels, config);
+                final boolean gainApplies = autoGain > 1.05f;
+                if (gainApplies || isDirectSunFrame(source, rgbRect, width, height)) {
+                    if (gainApplies) config.nirGain = config.nirGain * autoGain;
+                    config.outdoorColorMode = true;
+                    applyOutdoorNirScale(config);
+                    if (!preview) {
+                        Log.i(TAG, "NDVI outdoor mode: NIR gain x" + autoGain
+                                + (gainApplies ? "" : " (direct-sun frame, gain not needed)"));
+                    }
+                }
+            }
+
             final byte[] targetLeafMask = buildSingleTargetLeafMask(
                     source, rgbRect, width, height,
                     nirWidth, nirHeight, nirPixels,
@@ -424,7 +526,8 @@ public final class SpectralProcessor {
                     final int nirEncoded = (int) ((nirBlueSumsByCell[sx] + pairedSamples / 2L)
                             / pairedSamples);
                     final boolean visibleFoliage = isVisibleFoliageColorCandidate(
-                            Color.rgb(redEncoded, visibleGreenEncoded, visibleBlueEncoded)
+                            Color.rgb(redEncoded, visibleGreenEncoded, visibleBlueEncoded),
+                            config.outdoorColorMode
                     );
                     final float ndvi = calculateRelativeNdvi(redEncoded, nirEncoded, config);
 
@@ -439,7 +542,9 @@ public final class SpectralProcessor {
 
                     final int pixelIndex = sy * sampledWidth + sx;
                     if (Float.isFinite(ndvi)) ndviField[pixelIndex] = ndvi;
-                    foliageField[pixelIndex] = (byte) (visibleFoliage ? 1 : 0);
+                    final boolean outsideLens = config.outdoorColorMode
+                            && isOutsideLensCircle(sampleCenterX, sampleCenterY, width, height);
+                    foliageField[pixelIndex] = (byte) (visibleFoliage && !outsideLens ? 1 : 0);
 
                     if (Float.isFinite(ndvi)) {
                         valid++;
@@ -465,7 +570,8 @@ public final class SpectralProcessor {
                     : 1;
             denoisedOutput = renderSmoothNdvi(
                     ndviField, foliageField,
-                    sampledWidth, sampledHeight, displayScale
+                    sampledWidth, sampledHeight, displayScale,
+                    config.outdoorColorMode && config.outdoorDisplayNormalize
             );
             if (denoisedOutput == null || denoisedOutput.isRecycled()) return null;
 
@@ -543,7 +649,7 @@ public final class SpectralProcessor {
                 if (!isInsideNdviTargetRoi(normalizedX, normalizedY)) continue;
 
                 final int rgbColor = rgbRow[x];
-                if (!isVisibleFoliageColorCandidate(rgbColor)) continue;
+                if (!isVisibleFoliageColorCandidate(rgbColor, config.outdoorColorMode)) continue;
 
                 final long mappedUv = mapUnifiedPixelToNirUv(
                         x, y, width, height, nirWidth, nirHeight, config
@@ -570,6 +676,77 @@ public final class SpectralProcessor {
         closeSmallMaskGaps(candidates, focusWidth, focusHeight);
         closeSmallMaskGaps(candidates, focusWidth, focusHeight);
         return selectSingleConnectedComponentNearCenter(candidates, focusWidth, focusHeight);
+    }
+
+    /**
+     * Scene NIR gain (>= 1) that lifts a collapsed frame (median index below
+     * NDVI_AUTO_GAIN_COLLAPSE_BG_INDEX) to NDVI_AUTO_GAIN_TARGET_BG_INDEX. Returns 1.0 when the
+     * frame is not collapsed or has too few valid samples. Uses a sparse sample grid.
+     */
+    private static float estimateAutoNirGain(
+            Bitmap source, Rect rgbRect, int width, int height,
+            int nirWidth, int nirHeight, int[] nirPixels, Config config
+    ) {
+        final int stride = Math.max(1, (int) Math.ceil(Math.sqrt(
+                (double) width * (double) height / NDVI_AUTO_GAIN_MAX_SAMPLES)));
+        final int[] rgbRow = new int[width];
+        final float[] samples = new float[(height / stride + 1) * (width / stride + 1)];
+        int sampled = 0;
+        int n = 0;
+        for (int y = 0; y < height; y += stride) {
+            source.getPixels(rgbRow, 0, width, rgbRect.left, rgbRect.top + y, width, 1);
+            for (int x = 0; x < width; x += stride) {
+                final long uv = mapUnifiedPixelToNirUv(
+                        x, y, width, height, nirWidth, nirHeight, config);
+                if (uv < 0L) continue;
+                final int nirEncoded = sampleNirBlueBilinear(nirPixels, nirWidth, nirHeight, uv);
+                if (nirEncoded < 0) continue;
+                sampled++;
+                final float v = calculateRelativeNdvi(Color.red(rgbRow[x]), nirEncoded, config);
+                if (Float.isFinite(v)) samples[n++] = v;
+            }
+        }
+        if (n < Math.max(NDVI_AUTO_GAIN_MIN_SAMPLES, sampled / 20)) return 1.0f;
+        Arrays.sort(samples, 0, n);
+        final float median = samples[n / 2];
+        if (!(median < NDVI_AUTO_GAIN_COLLAPSE_BG_INDEX)) return 1.0f;
+        final float m = Math.max(median, -0.98f);
+        final float effective = (1.0f + m) / (1.0f - m);
+        final float target = (1.0f + NDVI_AUTO_GAIN_TARGET_BG_INDEX)
+                / (1.0f - NDVI_AUTO_GAIN_TARGET_BG_INDEX);
+        return clampFloat(target / effective, 1.0f, NDVI_AUTO_GAIN_MAX);
+    }
+
+    /** True when enough of the sampled Red channel is clipped to indicate direct sun. */
+    private static boolean isDirectSunFrame(Bitmap source, Rect rgbRect, int width, int height) {
+        final int stride = Math.max(1, (int) Math.ceil(Math.sqrt(
+                (double) width * (double) height / NDVI_AUTO_GAIN_MAX_SAMPLES)));
+        final int[] row = new int[width];
+        int total = 0;
+        int clipped = 0;
+        for (int y = 0; y < height; y += stride) {
+            source.getPixels(row, 0, width, rgbRect.left, rgbRect.top + y, width, 1);
+            for (int x = 0; x < width; x += stride) {
+                total++;
+                if (Color.red(row[x]) >= 250) clipped++;
+            }
+        }
+        return total > 0 && clipped >= total * NDVI_OUTDOOR_CLIPPED_SHARE;
+    }
+
+    private static boolean isOutsideLensCircle(int x, int y, int width, int height) {
+        final float dx = (x + 0.5f) / width - 0.5f;
+        final float dy = (y + 0.5f) / height - 0.5f;
+        return dx * dx + dy * dy > NDVI_OUTDOOR_LENS_RADIUS * NDVI_OUTDOOR_LENS_RADIUS;
+    }
+
+    /** Outdoor registration correction; safe on the per-call config snapshot only. */
+    private static void applyOutdoorNirScale(Config config) {
+        final float factor = config.outdoorNirScale;
+        if (!Float.isFinite(factor) || factor < 0.5f || factor > 1.5f) return;
+        config.registrationScaleX *= factor;
+        config.registrationScaleY *= factor;
+        config.clampNirEdge = true;
     }
 
     private static boolean isValidReferenceCalibration(Config config) {
@@ -664,12 +841,17 @@ public final class SpectralProcessor {
         final float nirU = rotatedX / safeScaleX + 0.5f;
         final float nirV = rotatedY / safeScaleY + 0.5f;
 
-        if (!Float.isFinite(nirU) || !Float.isFinite(nirV)
-                || nirU < 0.0f || nirV < 0.0f || nirU > 1.0f || nirV > 1.0f) {
+        if (!Float.isFinite(nirU) || !Float.isFinite(nirV)) return -1L;
+        float sampleU = nirU;
+        float sampleV = nirV;
+        if (config.clampNirEdge) {
+            sampleU = clampFloat(sampleU, 0.0f, 1.0f);
+            sampleV = clampFloat(sampleV, 0.0f, 1.0f);
+        } else if (sampleU < 0.0f || sampleV < 0.0f || sampleU > 1.0f || sampleV > 1.0f) {
             return -1L;
         }
-        return (((long) Float.floatToIntBits(nirU)) << 32)
-                | (Float.floatToIntBits(nirV) & 0xFFFFFFFFL);
+        return (((long) Float.floatToIntBits(sampleU)) << 32)
+                | (Float.floatToIntBits(sampleV) & 0xFFFFFFFFL);
     }
 
     private static float calculateRelativeNdvi(
@@ -951,6 +1133,10 @@ public final class SpectralProcessor {
     }
 
     private static boolean isVisibleFoliageColorCandidate(int rgbColor) {
+        return isVisibleFoliageColorCandidate(rgbColor, false);
+    }
+
+    private static boolean isVisibleFoliageColorCandidate(int rgbColor, boolean outdoor) {
         final float red = Color.red(rgbColor) / 255.0f;
         final float green = Color.green(rgbColor) / 255.0f;
         final float blue = Color.blue(rgbColor) / 255.0f;
@@ -966,8 +1152,10 @@ public final class SpectralProcessor {
 
         final boolean greenFoliage =
                 green > red * NDVI_VEG_GREEN_RED_RATIO
-                        && green > blue * NDVI_VEG_GREEN_BLUE_RATIO
-                        && excessGreen >= NDVI_VEG_GREEN_EXCESS_MIN;
+                        && green > blue * (outdoor
+                                ? NDVI_OUTDOOR_GREEN_BLUE_RATIO : NDVI_VEG_GREEN_BLUE_RATIO)
+                        && excessGreen >= (outdoor
+                                ? NDVI_OUTDOOR_GREEN_EXCESS_MIN : NDVI_VEG_GREEN_EXCESS_MIN);
 
         // Keep the warm-foliage gate deliberately narrow. A broad orange/brown
         // test also accepts sunlit floors, skin and clothing, which caused large
@@ -1002,7 +1190,8 @@ public final class SpectralProcessor {
             byte[] foliage,
             int width,
             int height,
-            int scale
+            int scale,
+            boolean outdoor
     ) {
         final int count = width * height;
         double sum = 0.0d;
@@ -1046,6 +1235,7 @@ public final class SpectralProcessor {
             }
         }
 
+        final float[] rawField = outdoor ? field.clone() : null;
         if (count <= NDVI_SMOOTH_MAX_PIXELS) {
             field = median3x3(field, width, height);
             boxBlur(field, width, height, 1, 2);
@@ -1057,10 +1247,91 @@ public final class SpectralProcessor {
         }
         boxBlur(weight, width, height, Math.max(1, Math.min(width, height) / 160), 2);
 
+        // Outdoor display statistics: foliage and backdrop distributions of the smoothed field.
+        boolean outdoorNormalize = false;
+        float leafMedian = 0.0f;
+        float leafScale = 1.0f;
+        float backdropMedian = 0.0f;
+        if (outdoor) {
+            final int bins = 512;
+            final int[] leafHist = new int[bins];
+            final int[] backHist = new int[bins];
+            int leafCells = 0;
+            int backCells = 0;
+            for (int i = 0; i < count; i++) {
+                final float s = clampFloat(field[i], -1.0f, 1.0f);
+                final int bin = clampInt(Math.round((s + 1.0f) * 0.5f * (bins - 1)), 0, bins - 1);
+                if (weight[i] >= 0.5f) {
+                    leafHist[bin]++;
+                    leafCells++;
+                } else if (weight[i] < 0.1f) {
+                    backHist[bin]++;
+                    backCells++;
+                }
+            }
+            if (leafCells >= NDVI_OUTDOOR_MIN_CELLS && backCells >= NDVI_OUTDOOR_MIN_CELLS) {
+                outdoorNormalize = true;
+                leafMedian = histogramValue(leafHist, leafCells, 0.50f);
+                final float low = histogramValue(leafHist, leafCells, 0.05f);
+                final float high = histogramValue(leafHist, leafCells, 0.95f);
+                leafScale = Math.max(0.5f * (high - low), NDVI_OUTDOOR_LEAF_MIN_SPREAD);
+                backdropMedian = histogramValue(backHist, backCells, 0.50f);
+            }
+        }
+
+        float[] detail = null;
+        if (outdoorNormalize && rawField != null && NDVI_OUTDOOR_DETAIL_GAIN > 0.0f) {
+            final float[] member = new float[count];
+            final float[] average = new float[count];
+            for (int i = 0; i < count; i++) {
+                if (weight[i] >= 0.5f) {
+                    member[i] = 1.0f;
+                    average[i] = rawField[i];
+                }
+            }
+            final int radius = Math.max(3,
+                    Math.min(width, height) / NDVI_OUTDOOR_DETAIL_RADIUS_DIVISOR);
+            boxBlur(average, width, height, radius, 2);
+            boxBlur(member, width, height, radius, 2);
+            final float[] high = new float[count];
+            double squares = 0.0d;
+            int members = 0;
+            for (int i = 0; i < count; i++) {
+                if (weight[i] >= 0.5f && member[i] > 0.02f) {
+                    high[i] = rawField[i] - average[i] / member[i];
+                    squares += (double) high[i] * high[i];
+                    members++;
+                }
+            }
+            final float rms = members > 0 ? (float) Math.sqrt(squares / members) : 0.0f;
+            if (rms > 1e-4f) {
+                boxBlur(high, width, height, 1, 1); // light denoise of single-cell noise
+                detail = high;
+                for (int i = 0; i < count; i++) {
+                    detail[i] = clampFloat(high[i] / rms,
+                            -NDVI_OUTDOOR_DETAIL_CLIP, NDVI_OUTDOOR_DETAIL_CLIP)
+                            * NDVI_OUTDOOR_DETAIL_GAIN;
+                }
+            }
+        }
+
         for (int i = 0; i < count; i++) {
             final float s = clampFloat(field[i], -1.0f, 1.0f);
             final float w = clampFloat(weight[i], 0.0f, 1.0f);
-            field[i] = w * s + (1.0f - w) * ((s - 1.0f) * 0.5f);
+            if (outdoorNormalize) {
+                final float z = (s - leafMedian) / leafScale
+                        + (detail != null ? detail[i] : 0.0f);
+                final float t = 0.5f + 0.5f * (float) Math.tanh(NDVI_OUTDOOR_LEAF_CURVE * z);
+                final float leafValue = NDVI_OUTDOOR_LEAF_RANGE_LOW
+                        + (NDVI_OUTDOOR_LEAF_RANGE_HIGH - NDVI_OUTDOOR_LEAF_RANGE_LOW) * t;
+                final float backValue = NDVI_OUTDOOR_BG_VALUE + (Float.isFinite(ndvi[i])
+                        ? clampFloat((s - backdropMedian) * NDVI_OUTDOOR_BG_SPREAD,
+                                -NDVI_OUTDOOR_BG_MAX_DEVIATION, NDVI_OUTDOOR_BG_MAX_DEVIATION)
+                        : 0.0f);
+                field[i] = w * leafValue + (1.0f - w) * backValue;
+            } else {
+                field[i] = w * s + (1.0f - w) * ((s - 1.0f) * 0.5f);
+            }
         }
 
         final int outW = width * scale;
@@ -1111,6 +1382,19 @@ public final class SpectralProcessor {
             result.setPixels(row, 0, outW, 0, oy, outW, 1);
         }
         return result;
+    }
+
+    /** Value (-1..1) at the given fraction of a 512-bin histogram spanning -1..1. */
+    private static float histogramValue(int[] histogram, int total, float fraction) {
+        final int target = Math.max(1, Math.round(total * fraction));
+        int cumulative = 0;
+        for (int i = 0; i < histogram.length; i++) {
+            cumulative += histogram[i];
+            if (cumulative >= target) {
+                return i / (float) (histogram.length - 1) * 2.0f - 1.0f;
+            }
+        }
+        return 1.0f;
     }
 
     private static void fillCubicTaps(int srcLen, int scale, int[] idx, float[] wts) {
